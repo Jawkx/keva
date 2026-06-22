@@ -1,0 +1,25 @@
+{
+  "name": "@keva/schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "effect": "3.21.4"
+  },
+  "devDependencies": {
+    "@keva/tsconfig": "workspace:*",
+    "vitest": "4.1.9"
+  }
+}

@@ -1,0 +1,3 @@
+name = "keva-server"
+main = "src/worker.ts"
+compatibility_date = "2026-06-20"
