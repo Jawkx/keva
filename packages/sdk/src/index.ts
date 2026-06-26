@@ -63,7 +63,7 @@ export class KevaClient {
     this.#token = options.token;
     this.#credentials =
       options.credentials ?? (options.token ? "same-origin" : "include");
-    this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   async #request<A, I>(

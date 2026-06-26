@@ -23,7 +23,7 @@
     "test": "vitest run src",
     "lint": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "node --env-file-if-exists=../../apps/server/.env node_modules/drizzle-kit/bin.cjs migrate"
   },
   "dependencies": {
     "@keva/schema": "workspace:*",

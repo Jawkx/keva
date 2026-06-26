@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx watch src/node.ts",
+    "dev": "node --env-file-if-exists=.env node_modules/tsx/dist/cli.mjs watch src/node.ts",
+    "dev:raw": "tsx watch src/node.ts",
     "start": "node dist/node.js",
     "jobs": "tsx src/jobs.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
