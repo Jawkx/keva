@@ -1,10 +1,41 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { IconAlertTriangle, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import type { Operator } from "@keva/schema";
 import type { KevaObject, Query } from "@keva/sdk";
+import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatDate } from "../lib/format";
 import { keva } from "../lib/keva";
 import { useApiError } from "../lib/useApiError";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const OPERATORS: Operator[] = [
   "eq",
@@ -18,6 +49,7 @@ const OPERATORS: Operator[] = [
 ];
 
 type ValueType = "string" | "number" | "boolean";
+const VALUE_TYPES: ValueType[] = ["string", "number", "boolean"];
 
 interface Row {
   key: string;
@@ -82,139 +114,215 @@ export function QueryPage() {
 
   return (
     <div>
-      <h1>Query</h1>
-      <p className="muted">
-        Keys can be a bare attribute name, <code>name</code>, <code>id</code>,
-        or <code>system.&lt;field&gt;</code> (e.g. <code>system.content_type</code>,
-        <code> system.size</code>, <code>system.status</code>).
+      <PageHeader
+        title="Query"
+        description="Filter objects by their attributes and system fields."
+      />
+
+      <p className="mb-4 text-sm text-muted-foreground">
+        Keys can be a bare attribute name, <code className="font-mono">name</code>,{" "}
+        <code className="font-mono">id</code>, or{" "}
+        <code className="font-mono">system.&lt;field&gt;</code> (e.g.{" "}
+        <code className="font-mono">system.content_type</code>,{" "}
+        <code className="font-mono">system.size</code>,{" "}
+        <code className="font-mono">system.status</code>).
       </p>
 
-      <div className="query-builder">
-        {rows.map((row, index) => (
-          <div className="query-row" key={index}>
-            <input
-              placeholder="key"
-              value={row.key}
-              onChange={(e) => update(index, { key: e.target.value })}
-            />
-            <select
-              value={row.op}
-              onChange={(e) =>
-                update(index, { op: e.target.value as Operator })
-              }
-            >
-              {OPERATORS.map((op) => (
-                <option key={op} value={op}>
-                  {op}
-                </option>
-              ))}
-            </select>
-            {row.op === "exists" ? (
-              <span className="muted query-novalue">(no value)</span>
-            ) : (
-              <>
-                <select
-                  value={row.valueType}
-                  onChange={(e) =>
-                    update(index, { valueType: e.target.value as ValueType })
-                  }
-                >
-                  <option value="string">string</option>
-                  <option value="number">number</option>
-                  <option value="boolean">boolean</option>
-                </select>
-                {row.valueType === "boolean" ? (
-                  <select
-                    value={row.value || "true"}
-                    onChange={(e) => update(index, { value: e.target.value })}
-                  >
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </select>
-                ) : (
-                  <input
-                    placeholder="value"
-                    type={row.valueType === "number" ? "number" : "text"}
-                    value={row.value}
-                    onChange={(e) => update(index, { value: e.target.value })}
-                  />
-                )}
-              </>
-            )}
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() =>
-                setRows((prev) =>
-                  prev.length === 1
-                    ? [emptyRow()]
-                    : prev.filter((_, i) => i !== index),
-                )
-              }
-            >
-              Remove
-            </button>
-          </div>
-        ))}
-        <div className="button-row">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => setRows((prev) => [...prev, emptyRow()])}
-          >
-            Add condition
-          </button>
-          <label className="inline-label">
-            Limit
-            <input
-              type="number"
-              min={1}
-              max={1000}
-              value={limit}
-              onChange={(e) =>
-                setLimit(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))
-              }
-            />
-          </label>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={run}
-            disabled={busy}
-          >
-            {busy ? "Running…" : "Run query"}
-          </button>
-        </div>
-      </div>
+      <Card className="mb-6">
+        <CardContent className="flex flex-col gap-3">
+          {rows.map((row, index) => (
+            <div className="flex flex-wrap items-center gap-2" key={index}>
+              <Input
+                placeholder="key"
+                className="w-44"
+                value={row.key}
+                onChange={(e) => update(index, { key: e.target.value })}
+              />
+              <Select
+                value={row.op}
+                onValueChange={(next) => update(index, { op: next as Operator })}
+              >
+                <SelectTrigger className="w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {OPERATORS.map((op) => (
+                      <SelectItem key={op} value={op}>
+                        {op}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
 
-      {error && <div className="alert-error">{error}</div>}
+              {row.op === "exists" ? (
+                <span className="text-sm text-muted-foreground">(no value)</span>
+              ) : (
+                <>
+                  <Select
+                    value={row.valueType}
+                    onValueChange={(next) =>
+                      update(index, { valueType: next as ValueType })
+                    }
+                  >
+                    <SelectTrigger className="w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {VALUE_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {row.valueType === "boolean" ? (
+                    <Select
+                      value={row.value || "true"}
+                      onValueChange={(next) =>
+                        update(index, { value: String(next) })
+                      }
+                    >
+                      <SelectTrigger className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="true">true</SelectItem>
+                          <SelectItem value="false">false</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      placeholder="value"
+                      className="w-44"
+                      type={row.valueType === "number" ? "number" : "text"}
+                      value={row.value}
+                      onChange={(e) => update(index, { value: e.target.value })}
+                    />
+                  )}
+                </>
+              )}
+
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Remove condition"
+                onClick={() =>
+                  setRows((prev) =>
+                    prev.length === 1
+                      ? [emptyRow()]
+                      : prev.filter((_, i) => i !== index),
+                  )
+                }
+              >
+                <IconX />
+              </Button>
+            </div>
+          ))}
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <Button
+              variant="outline"
+              onClick={() => setRows((prev) => [...prev, emptyRow()])}
+            >
+              <IconPlus data-icon="inline-start" />
+              Add condition
+            </Button>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="limit" className="text-muted-foreground">
+                Limit
+              </Label>
+              <Input
+                id="limit"
+                type="number"
+                min={1}
+                max={1000}
+                className="w-24"
+                value={limit}
+                onChange={(e) =>
+                  setLimit(
+                    Math.min(1000, Math.max(1, Number(e.target.value) || 1)),
+                  )
+                }
+              />
+            </div>
+            <Button className="ml-auto" onClick={run} disabled={busy}>
+              {busy ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <IconSearch data-icon="inline-start" />
+              )}
+              {busy ? "Running…" : "Run query"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <IconAlertTriangle />
+          <AlertTitle>{error}</AlertTitle>
+        </Alert>
+      )}
 
       {results !== null && (
         <>
-          <h2>{results.length} result(s)</h2>
-          {results.length > 0 && (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Size</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((object) => (
-                  <tr key={object.id}>
-                    <td>
-                      <Link to={`/objects/${object.id}`}>{object.name}</Link>
-                    </td>
-                    <td>{object.contentType}</td>
-                    <td>{formatBytes(object.size)}</td>
-                    <td>{formatDate(object.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+            {results.length} result{results.length === 1 ? "" : "s"}
+          </h2>
+          {results.length === 0 ? (
+            <Empty className="border">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <IconSearch />
+                </EmptyMedia>
+                <EmptyTitle>No matches</EmptyTitle>
+                <EmptyDescription>
+                  No objects matched these conditions.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <Card className="overflow-hidden p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {results.map((object) => (
+                    <TableRow key={object.id}>
+                      <TableCell className="font-medium">
+                        <Link
+                          to={`/objects/${object.id}`}
+                          className="hover:underline"
+                        >
+                          {object.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {object.contentType}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground tabular-nums">
+                        {formatBytes(object.size)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDate(object.createdAt)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
           )}
         </>
       )}

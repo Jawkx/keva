@@ -1,8 +1,29 @@
 import { useState } from "react";
+import { IconCheck, IconPencil, IconPlus, IconX } from "@tabler/icons-react";
 import type { AttributeValue, Attributes } from "@keva/schema";
 import { formatAttributeValue } from "../lib/format";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type AttrType = "string" | "number" | "boolean";
+const TYPES: AttrType[] = ["string", "number", "boolean"];
 
 interface AttributesEditorProps {
   attributes: Attributes;
@@ -21,6 +42,71 @@ const coerce = (type: AttrType, raw: string): AttributeValue => {
   return raw;
 };
 
+function ValueInput({
+  type,
+  value,
+  onChange,
+}: {
+  type: AttrType;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  if (type === "boolean") {
+    return (
+      <Select
+        value={value === "false" ? "false" : "true"}
+        onValueChange={(next) => onChange(String(next))}
+      >
+        <SelectTrigger className="w-28">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value="true">true</SelectItem>
+            <SelectItem value="false">false</SelectItem>
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    );
+  }
+  return (
+    <Input
+      placeholder="value"
+      type={type === "number" ? "number" : "text"}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+function TypeSelect({
+  value,
+  onChange,
+}: {
+  value: AttrType;
+  onChange: (next: AttrType) => void;
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(next) => onChange(next as AttrType)}
+    >
+      <SelectTrigger className="w-28">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {TYPES.map((t) => (
+            <SelectItem key={t} value={t}>
+              {t}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function AttributesEditor({
   attributes,
   onPatch,
@@ -29,7 +115,6 @@ export function AttributesEditor({
   const [newType, setNewType] = useState<AttrType>("string");
   const [newValue, setNewValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const entries = Object.entries(attributes);
 
@@ -38,12 +123,8 @@ export function AttributesEditor({
     unset: string[],
   ) => {
     setBusy(true);
-    setError(null);
     try {
       await onPatch(set, unset);
-    } catch {
-      // The parent surfaces the message; we just stop the spinner.
-      setError("Update failed.");
     } finally {
       setBusy(false);
     }
@@ -59,20 +140,17 @@ export function AttributesEditor({
   };
 
   return (
-    <div className="attrs">
-      {error && <div className="alert-error">{error}</div>}
-      {entries.length === 0 ? (
-        <p className="muted">No attributes.</p>
-      ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Key</th>
-              <th>Value</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+    <div className="flex flex-col gap-4">
+      {entries.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Key</TableHead>
+              <TableHead>Value</TableHead>
+              <TableHead className="w-0" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {entries.map(([key, value]) => (
               <AttributeRow
                 key={key}
@@ -83,43 +161,26 @@ export function AttributesEditor({
                 onUnset={() => run({}, [key])}
               />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
 
-      <form className="attr-add" onSubmit={onAdd}>
-        <input
+      <form
+        className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3"
+        onSubmit={onAdd}
+      >
+        <Input
           placeholder="key"
+          className="w-40"
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
         />
-        <select
-          value={newType}
-          onChange={(e) => setNewType(e.target.value as AttrType)}
-        >
-          <option value="string">string</option>
-          <option value="number">number</option>
-          <option value="boolean">boolean</option>
-        </select>
-        {newType === "boolean" ? (
-          <select
-            value={newValue || "true"}
-            onChange={(e) => setNewValue(e.target.value)}
-          >
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
-        ) : (
-          <input
-            placeholder="value"
-            type={newType === "number" ? "number" : "text"}
-            value={newValue}
-            onChange={(e) => setNewValue(e.target.value)}
-          />
-        )}
-        <button type="submit" className="btn-primary" disabled={busy}>
+        <TypeSelect value={newType} onChange={setNewType} />
+        <ValueInput type={newType} value={newValue} onChange={setNewValue} />
+        <Button type="submit" disabled={busy || !newKey.trim()}>
+          <IconPlus data-icon="inline-start" />
           Add / Set
-        </button>
+        </Button>
       </form>
     </div>
   );
@@ -154,87 +215,79 @@ function AttributeRow({
 
   if (editing && !isArray) {
     return (
-      <tr>
-        <td className="mono">{attrKey}</td>
-        <td>
-          <div className="attr-edit">
-            <select
-              value={draftType}
-              onChange={(e) => setDraftType(e.target.value as AttrType)}
-            >
-              <option value="string">string</option>
-              <option value="number">number</option>
-              <option value="boolean">boolean</option>
-            </select>
-            {draftType === "boolean" ? (
-              <select
-                value={draft === "false" ? "false" : "true"}
-                onChange={(e) => setDraft(e.target.value)}
-              >
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            ) : (
-              <input
-                type={draftType === "number" ? "number" : "text"}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-              />
-            )}
+      <TableRow>
+        <TableCell className="font-mono align-top">{attrKey}</TableCell>
+        <TableCell>
+          <div className="flex flex-wrap items-center gap-2">
+            <TypeSelect value={draftType} onChange={setDraftType} />
+            <ValueInput type={draftType} value={draft} onChange={setDraft} />
           </div>
-        </td>
-        <td className="button-row">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy}
-            onClick={async () => {
-              await onSave(coerce(draftType, draft));
-              setEditing(false);
-            }}
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => setEditing(false)}
-          >
-            Cancel
-          </button>
-        </td>
-      </tr>
+        </TableCell>
+        <TableCell>
+          <div className="flex justify-end gap-1">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={async () => {
+                await onSave(coerce(draftType, draft));
+                setEditing(false);
+              }}
+            >
+              <IconCheck data-icon="inline-start" />
+              Save
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </TableCell>
+      </TableRow>
     );
   }
 
   return (
-    <tr>
-      <td className="mono">{attrKey}</td>
-      <td>{formatAttributeValue(value)}</td>
-      <td className="button-row">
-        {!isArray && (
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={busy}
-            onClick={() => {
-              setDraft(formatAttributeValue(value));
-              setDraftType(type);
-              setEditing(true);
-            }}
-          >
-            Edit
-          </button>
+    <TableRow>
+      <TableCell className="font-mono align-top">{attrKey}</TableCell>
+      <TableCell className="break-all">
+        {isArray ? (
+          <Badge variant="outline">{formatAttributeValue(value)}</Badge>
+        ) : (
+          formatAttributeValue(value)
         )}
-        <button
-          type="button"
-          className="btn-danger"
-          disabled={busy}
-          onClick={onUnset}
-        >
-          Unset
-        </button>
-      </td>
-    </tr>
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end gap-1">
+          {!isArray && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              disabled={busy}
+              aria-label="Edit"
+              onClick={() => {
+                setDraft(formatAttributeValue(value));
+                setDraftType(type);
+                setEditing(true);
+              }}
+            >
+              <IconPencil />
+            </Button>
+          )}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-destructive"
+            disabled={busy}
+            aria-label="Unset"
+            onClick={onUnset}
+          >
+            <IconX />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

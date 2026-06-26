@@ -1,11 +1,48 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import {
+  IconAlertTriangle,
+  IconDownload,
+  IconTrash,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
 import type { AttributeValue } from "@keva/schema";
 import type { KevaObject } from "@keva/sdk";
 import { AttributesEditor } from "../components/AttributesEditor";
+import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatDate } from "../lib/format";
 import { keva } from "../lib/keva";
 import { useApiError } from "../lib/useApiError";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 border-b py-2.5 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4">
+      <dt className="w-32 shrink-0 text-sm text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-all text-sm">{children}</dd>
+    </div>
+  );
+}
 
 export function FileDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +52,7 @@ export function FileDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -36,7 +74,6 @@ export function FileDetailPage() {
   const onDownload = async () => {
     if (!object) return;
     setBusy(true);
-    setError(null);
     try {
       const bytes = await keva.download(object.id);
       const blob = new Blob([bytes.slice().buffer as ArrayBuffer], {
@@ -51,7 +88,7 @@ export function FileDetailPage() {
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(handleError(err));
+      toast.error(handleError(err));
     } finally {
       setBusy(false);
     }
@@ -59,16 +96,13 @@ export function FileDetailPage() {
 
   const onDelete = async () => {
     if (!object) return;
-    if (!window.confirm(`Delete "${object.name}"? This cannot be undone.`)) {
-      return;
-    }
     setBusy(true);
-    setError(null);
     try {
       await keva.delete(object.id);
+      toast.success(`Deleted ${object.name}`);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(handleError(err));
+      toast.error(handleError(err));
       setBusy(false);
     }
   };
@@ -78,64 +112,103 @@ export function FileDetailPage() {
     unset: string[],
   ) => {
     if (!object) return;
-    setError(null);
     try {
       setObject(await keva.patchAttributes(object.id, { set, unset }));
     } catch (err) {
-      setError(handleError(err));
+      toast.error(handleError(err));
       throw err;
     }
   };
 
-  if (loading) return <p className="muted">Loading…</p>;
-  if (error && !object) return <div className="alert-error">{error}</div>;
-  if (!object) return <p className="muted">Not found.</p>;
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+  if (error && !object) {
+    return (
+      <Alert variant="destructive">
+        <IconAlertTriangle />
+        <AlertTitle>{error}</AlertTitle>
+      </Alert>
+    );
+  }
+  if (!object) {
+    return <p className="text-muted-foreground">Not found.</p>;
+  }
 
   return (
     <div>
-      <div className="page-header">
-        <h1>{object.name}</h1>
-        <div className="button-row">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={onDownload}
-            disabled={busy}
-          >
-            Download
-          </button>
-          <button
-            type="button"
-            className="btn-danger"
-            onClick={onDelete}
-            disabled={busy}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={object.name}
+        actions={
+          <>
+            <Button variant="outline" onClick={onDownload} disabled={busy}>
+              <IconDownload data-icon="inline-start" />
+              Download
+            </Button>
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialogTrigger
+                render={<Button variant="destructive" disabled={busy} />}
+              >
+                <IconTrash data-icon="inline-start" />
+                Delete
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete “{object.name}”?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently removes the object and its attributes. This
+                    cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => {
+                      setConfirmOpen(false);
+                      void onDelete();
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        }
+      />
 
-      {error && <div className="alert-error">{error}</div>}
+      <Card className="mb-6">
+        <CardContent>
+          <dl>
+            <MetaRow label="ID">
+              <span className="font-mono">{object.id}</span>
+            </MetaRow>
+            <MetaRow label="Content type">{object.contentType}</MetaRow>
+            <MetaRow label="Size">{formatBytes(object.size)}</MetaRow>
+            <MetaRow label="Status">
+              <Badge variant="secondary">{object.status}</Badge>
+            </MetaRow>
+            <MetaRow label="Source">{object.source}</MetaRow>
+            <MetaRow label="Created">{formatDate(object.createdAt)}</MetaRow>
+            <MetaRow label="Updated">{formatDate(object.updatedAt)}</MetaRow>
+          </dl>
+        </CardContent>
+      </Card>
 
-      <dl className="meta-grid">
-        <dt>ID</dt>
-        <dd className="mono">{object.id}</dd>
-        <dt>Content type</dt>
-        <dd>{object.contentType}</dd>
-        <dt>Size</dt>
-        <dd>{formatBytes(object.size)}</dd>
-        <dt>Status</dt>
-        <dd>{object.status}</dd>
-        <dt>Source</dt>
-        <dd>{object.source}</dd>
-        <dt>Created</dt>
-        <dd>{formatDate(object.createdAt)}</dd>
-        <dt>Updated</dt>
-        <dd>{formatDate(object.updatedAt)}</dd>
-      </dl>
-
-      <h2>Attributes</h2>
-      <AttributesEditor attributes={object.attributes} onPatch={onPatch} />
+      <Card>
+        <CardHeader>
+          <CardTitle>Attributes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AttributesEditor attributes={object.attributes} onPatch={onPatch} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

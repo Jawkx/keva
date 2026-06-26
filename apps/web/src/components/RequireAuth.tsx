@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authClient } from "../lib/auth";
+import { Spinner } from "@/components/ui/spinner";
 
 // Guards authed routes: while the session is loading we show a placeholder,
 // and when there is no session we redirect to /login (remembering where the
@@ -10,7 +11,11 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
 
   if (isPending) {
-    return <div className="centered muted">Loading…</div>;
+    return (
+      <div className="flex min-h-svh items-center justify-center text-muted-foreground">
+        <Spinner className="size-6" />
+      </div>
+    );
   }
 
   if (!data) {

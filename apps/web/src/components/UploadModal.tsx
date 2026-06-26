@@ -1,22 +1,43 @@
 import { useRef, useState } from "react";
+import { IconCloudUpload, IconFile, IconX } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { errorMessage } from "../lib/errors";
+import { formatBytes } from "../lib/format";
 import { keva } from "../lib/keva";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 interface UploadModalProps {
-  onClose: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onUploaded: () => void;
 }
 
-export function UploadModal({ onClose, onUploaded }: UploadModalProps) {
+export function UploadModal({
+  open,
+  onOpenChange,
+  onUploaded,
+}: UploadModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setFile(null);
+    setDragging(false);
+  };
 
   const upload = async (target: File) => {
     setBusy(true);
-    setError(null);
     try {
       const bytes = new Uint8Array(await target.arrayBuffer());
       await keva.upload(
@@ -29,21 +50,35 @@ export function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         },
         bytes,
       );
+      toast.success(`Uploaded ${target.name}`);
       onUploaded();
-      onClose();
+      onOpenChange(false);
+      reset();
     } catch (err) {
-      setError(errorMessage(err));
+      toast.error(errorMessage(err));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Upload object</h2>
-        <div
-          className={dragging ? "dropzone dropzone-active" : "dropzone"}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Upload object</DialogTitle>
+          <DialogDescription>
+            Add a file to keva. You can edit its attributes afterwards.
+          </DialogDescription>
+        </DialogHeader>
+
+        <button
+          type="button"
           onClick={() => inputRef.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
@@ -56,13 +91,26 @@ export function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             const dropped = e.dataTransfer.files[0];
             if (dropped) setFile(dropped);
           }}
+          className={cn(
+            "flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-8 text-center transition-colors hover:bg-muted/50",
+            dragging && "border-primary bg-primary/5",
+          )}
         >
           {file ? (
-            <span>{file.name}</span>
+            <>
+              <IconFile className="size-6 text-muted-foreground" />
+              <span className="text-sm font-medium">{file.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {formatBytes(file.size)}
+              </span>
+            </>
           ) : (
-            <span className="muted">
-              Drag a file here, or click to choose
-            </span>
+            <>
+              <IconCloudUpload className="size-6 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                Drag a file here, or click to choose
+              </span>
+            </>
           )}
           <input
             ref={inputRef}
@@ -73,22 +121,30 @@ export function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               if (chosen) setFile(chosen);
             }}
           />
-        </div>
-        {error && <div className="alert-error">{error}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
+        </button>
+
+        {file && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={reset}
+            disabled={busy}
+          >
+            <IconX data-icon="inline-start" />
+            Clear selection
+          </Button>
+        )}
+
+        <DialogFooter showCloseButton>
+          <Button
             disabled={!file || busy}
             onClick={() => file && upload(file)}
           >
             {busy ? "Uploading…" : "Upload"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
