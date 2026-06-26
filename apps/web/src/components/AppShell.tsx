@@ -7,6 +7,7 @@ import {
   IconLogout,
   IconSearch,
   IconSelector,
+  IconSettings,
 } from "@tabler/icons-react";
 import { authClient } from "../lib/auth";
 import { ModeToggle } from "./ModeToggle";
@@ -130,7 +131,16 @@ export function AppShell() {
                   align="start"
                   className="min-w-56"
                 >
-                  <DropdownMenuLabel>{email}</DropdownMenuLabel>
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>{email}</DropdownMenuLabel>
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem render={<Link to="/settings" />}>
+                      <IconSettings />
+                      Settings
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
                     <DropdownMenuItem

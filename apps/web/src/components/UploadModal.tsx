@@ -19,61 +19,67 @@ interface UploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUploaded: () => void;
+  // Files dropped onto the page before the modal opened. Seeded as initial
+  // state; callers remount via `key` to refresh it (no effect needed).
+  initialFiles?: File[];
 }
 
 export function UploadModal({
   open,
   onOpenChange,
   onUploaded,
+  initialFiles = [],
 }: UploadModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>(initialFiles);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const reset = () => {
-    setFile(null);
-    setDragging(false);
+  const addFiles = (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    setFiles((prev) => [...prev, ...Array.from(list)]);
   };
 
-  const upload = async (target: File) => {
+  const uploadAll = async () => {
     setBusy(true);
+    let ok = 0;
     try {
-      const bytes = new Uint8Array(await target.arrayBuffer());
-      await keva.upload(
-        {
-          name: target.name,
-          contentType: target.type || "application/octet-stream",
-          size: target.size,
-          source: "upload",
-          attributes: {},
-        },
-        bytes,
-      );
-      toast.success(`Uploaded ${target.name}`);
-      onUploaded();
-      onOpenChange(false);
-      reset();
-    } catch (err) {
-      toast.error(errorMessage(err));
+      for (const target of files) {
+        try {
+          const bytes = new Uint8Array(await target.arrayBuffer());
+          await keva.upload(
+            {
+              name: target.name,
+              contentType: target.type || "application/octet-stream",
+              size: target.size,
+              source: "upload",
+              attributes: {},
+            },
+            bytes,
+          );
+          ok += 1;
+        } catch (err) {
+          toast.error(`${target.name}: ${errorMessage(err)}`);
+        }
+      }
+      if (ok > 0) {
+        toast.success(`Uploaded ${ok} file${ok === 1 ? "" : "s"}`);
+        onUploaded();
+        onOpenChange(false);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) reset();
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Upload object</DialogTitle>
+          <DialogTitle>Upload objects</DialogTitle>
           <DialogDescription>
-            Add a file to keva. You can edit its attributes afterwards.
+            Add one or more files to keva. You can edit their attributes
+            afterwards.
           </DialogDescription>
         </DialogHeader>
 
@@ -88,60 +94,59 @@ export function UploadModal({
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            const dropped = e.dataTransfer.files[0];
-            if (dropped) setFile(dropped);
+            addFiles(e.dataTransfer.files);
           }}
           className={cn(
             "flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-8 text-center transition-colors hover:bg-muted/50",
             dragging && "border-primary bg-primary/5",
           )}
         >
-          {file ? (
-            <>
-              <IconFile className="size-6 text-muted-foreground" />
-              <span className="text-sm font-medium">{file.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {formatBytes(file.size)}
-              </span>
-            </>
-          ) : (
-            <>
-              <IconCloudUpload className="size-6 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">
-                Drag a file here, or click to choose
-              </span>
-            </>
-          )}
+          <IconCloudUpload className="size-6 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">
+            Drag files here, or click to choose
+          </span>
           <input
             ref={inputRef}
             type="file"
             hidden
-            onChange={(e) => {
-              const chosen = e.target.files?.[0];
-              if (chosen) setFile(chosen);
-            }}
+            multiple
+            onChange={(e) => addFiles(e.target.files)}
           />
         </button>
 
-        {file && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="self-start"
-            onClick={reset}
-            disabled={busy}
-          >
-            <IconX data-icon="inline-start" />
-            Clear selection
-          </Button>
+        {files.length > 0 && (
+          <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+            {files.map((file, i) => (
+              <li
+                key={`${file.name}-${i}`}
+                className="flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-sm"
+              >
+                <IconFile className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {formatBytes(file.size)}
+                </span>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Remove ${file.name}`}
+                  disabled={busy}
+                  onClick={() =>
+                    setFiles((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                >
+                  <IconX />
+                </Button>
+              </li>
+            ))}
+          </ul>
         )}
 
         <DialogFooter showCloseButton>
-          <Button
-            disabled={!file || busy}
-            onClick={() => file && upload(file)}
-          >
-            {busy ? "Uploading…" : "Upload"}
+          <Button disabled={files.length === 0 || busy} onClick={uploadAll}>
+            {busy
+              ? "Uploading…"
+              : `Upload${files.length > 1 ? ` ${files.length}` : ""}`}
           </Button>
         </DialogFooter>
       </DialogContent>

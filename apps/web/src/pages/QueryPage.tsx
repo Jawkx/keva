@@ -1,15 +1,22 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { IconAlertTriangle, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconCode,
+  IconPlus,
+  IconSearch,
+  IconX,
+} from "@tabler/icons-react";
 import type { Operator } from "@keva/schema";
 import type { KevaObject, Query } from "@keva/sdk";
+import { CodeBlock } from "../components/CodeBlock";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatDate } from "../lib/format";
 import { keva } from "../lib/keva";
 import { useApiError } from "../lib/useApiError";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Empty,
   EmptyDescription,
@@ -81,6 +88,7 @@ export function QueryPage() {
   const [results, setResults] = useState<readonly KevaObject[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showApi, setShowApi] = useState(false);
 
   const update = (index: number, patch: Partial<Row>) => {
     setRows((prev) =>
@@ -88,11 +96,9 @@ export function QueryPage() {
     );
   };
 
-  const run = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const where: Query["where"] = rows
+  const where = useMemo<Query["where"]>(
+    () =>
+      rows
         .filter((row) => row.key.trim().length > 0)
         .map((row) =>
           row.op === "exists"
@@ -102,7 +108,32 @@ export function QueryPage() {
                 op: row.op,
                 value: coerceValue(row.valueType, row.value),
               },
-        );
+        ),
+    [rows],
+  );
+
+  const snippets = useMemo(() => {
+    const base = window.location.origin;
+    const body = JSON.stringify({ where: where ?? [], limit }, null, 2);
+    const curl = `curl -X POST ${base}/query \\
+  -H "Authorization: Bearer $KEVA_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify({ where: where ?? [], limit })}'`;
+    const sdk = `import { KevaClient } from "@keva/sdk";
+
+const keva = new KevaClient({
+  baseUrl: "${base}",
+  token: process.env.KEVA_TOKEN,
+});
+
+const { objects } = await keva.query(${body});`;
+    return { curl, sdk };
+  }, [where, limit]);
+
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
       const result = await keva.query({ where, limit });
       setResults(result.objects);
     } catch (err) {
@@ -251,7 +282,15 @@ export function QueryPage() {
                 }
               />
             </div>
-            <Button className="ml-auto" onClick={run} disabled={busy}>
+            <Button
+              variant="ghost"
+              className="ml-auto"
+              onClick={() => setShowApi((v) => !v)}
+            >
+              <IconCode data-icon="inline-start" />
+              {showApi ? "Hide API" : "Show API"}
+            </Button>
+            <Button onClick={run} disabled={busy}>
               {busy ? (
                 <Spinner data-icon="inline-start" />
               ) : (
@@ -262,6 +301,25 @@ export function QueryPage() {
           </div>
         </CardContent>
       </Card>
+
+      {showApi && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Run this query from the API</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <CodeBlock label="curl" code={snippets.curl} />
+            <CodeBlock label="TypeScript SDK" code={snippets.sdk} />
+            <p className="text-sm text-muted-foreground">
+              Generate a token on the{" "}
+              <Link to="/tokens" className="text-primary hover:underline">
+                Tokens
+              </Link>{" "}
+              page and export it as <code className="font-mono">KEVA_TOKEN</code>.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Alert variant="destructive" className="mb-4">

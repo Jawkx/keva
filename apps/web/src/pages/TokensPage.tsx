@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   IconAlertTriangle,
   IconCopy,
@@ -7,10 +7,13 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import type { Scope, TokenRecord } from "@keva/schema";
+import { CodeBlock } from "../components/CodeBlock";
+import { CopyButton } from "../components/CopyButton";
 import { PageHeader } from "../components/PageHeader";
 import { formatDate } from "../lib/format";
 import { listTokens, mintToken, revokeToken } from "../lib/tokens";
 import { useApiError } from "../lib/useApiError";
+import { useMountEffect } from "../lib/useMountEffect";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -70,6 +73,12 @@ export function TokensPage() {
   const [minting, setMinting] = useState(false);
   const [plaintext, setPlaintext] = useState<string | null>(null);
 
+  const apiBase = window.location.origin;
+  const exampleCurl = `curl -X POST ${apiBase}/query \\
+  -H "Authorization: Bearer $KEVA_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"where":[],"limit":50}'`;
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -82,9 +91,9 @@ export function TokensPage() {
     }
   }, [handleError]);
 
-  useEffect(() => {
+  useMountEffect(() => {
     void load();
-  }, [load]);
+  });
 
   const toggleScope = (scope: Scope) => {
     setScopes((prev) =>
@@ -288,6 +297,26 @@ export function TokensPage() {
           </Table>
         </Card>
       )}
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Using the API</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              Base URL
+            </span>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2.5 py-1.5 font-mono text-xs">
+                {apiBase}
+              </code>
+              <CopyButton value={apiBase} label="Copy base URL" />
+            </div>
+          </div>
+          <CodeBlock label="Example: query objects" code={exampleCurl} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
