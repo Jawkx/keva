@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   IconAlertTriangle,
   IconDownload,
@@ -33,6 +34,7 @@ import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -64,6 +66,21 @@ const isPreviewable = (o: KevaObject) =>
   (isPdf(o) && (o.size ?? Infinity) <= PDF_MAX) ||
   (isText(o) && (o.size ?? Infinity) <= TEXT_MAX);
 
+type Panel = "preview" | "info" | "attributes";
+
+const PANEL_LABELS: Record<Panel, string> = {
+  preview: "Preview",
+  info: "Info",
+  attributes: "Attributes",
+};
+
+// The panels available for an object, in display order. Preview is offered
+// only when the content can actually be rendered; Info and Attributes always
+// exist. Determines which segmented-control buttons show and which `?panel=`
+// values are valid.
+const panelsFor = (o: KevaObject): Panel[] =>
+  isPreviewable(o) ? ["preview", "info", "attributes"] : ["info", "attributes"];
+
 interface FileDetailProps {
   objectId: string;
   // Renders a close affordance in the header when provided (used by the
@@ -87,6 +104,33 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewUrlRef = useRef<string | null>(null);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Which panels this object exposes (Preview is dropped for non-previewable
+  // files). The first entry is the default — Preview when available, else Info.
+  const panels = useMemo(() => (object ? panelsFor(object) : []), [object]);
+
+  // The active panel is derived from the URL, never stored separately: a valid
+  // `?panel=` wins, otherwise we fall back to the default without touching the
+  // address bar until the user actually picks a tab.
+  const paramPanel = searchParams.get("panel") as Panel | null;
+  const activePanel: Panel =
+    paramPanel && panels.includes(paramPanel) ? paramPanel : (panels[0] ?? "info");
+
+  const setPanel = useCallback(
+    (next: Panel) => {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          sp.set("panel", next);
+          return sp;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const load = useCallback(async (): Promise<KevaObject | null> => {
     setLoading(true);
@@ -279,6 +323,28 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
         </div>
       </header>
 
+      {object && (
+        <div className="shrink-0 px-4 pt-3">
+          <ToggleGroup
+            variant="outline"
+            size="sm"
+            value={[activePanel]}
+            onValueChange={(value) => {
+              const next = value[0] as Panel | undefined;
+              if (next) setPanel(next);
+            }}
+            className="w-full"
+            aria-label="Detail panel"
+          >
+            {panels.map((panel) => (
+              <ToggleGroupItem key={panel} value={panel}>
+                {PANEL_LABELS[panel]}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+      )}
+
       <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-4">
         {loading ? (
           <div className="flex flex-col gap-3">
@@ -292,90 +358,75 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
           </Alert>
         ) : !object ? (
           <p className="text-sm text-muted-foreground">Not found.</p>
-        ) : (
-          <>
-            <section className="min-w-0">
-              {/* Content type and size live in the header above; keep this grid
-                  to the metadata that isn't shown elsewhere. */}
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <MetaItem label="Status">
-                  <Badge variant="secondary">{object.status}</Badge>
-                </MetaItem>
-                <MetaItem label="Source">{object.source}</MetaItem>
-                <MetaItem label="Created">
-                  <span title={formatDate(object.createdAt)}>
-                    {formatRelative(object.createdAt)}
-                  </span>
-                </MetaItem>
-                <MetaItem label="Updated">
-                  <span title={formatDate(object.updatedAt)}>
-                    {formatRelative(object.updatedAt)}
-                  </span>
-                </MetaItem>
-                <MetaItem label="ID" className="col-span-2">
-                  <span className="min-w-0 truncate font-mono text-xs">
-                    {object.id}
-                  </span>
-                  <CopyButton value={object.id} label="Copy ID" />
-                </MetaItem>
-              </dl>
-            </section>
-
-            {isPreviewable(object) && (
-              <section className="flex min-w-0 flex-col gap-2">
-                <h3 className="text-xs font-medium text-muted-foreground uppercase">
-                  Preview
-                </h3>
-                {previewLoading ? (
-                  <Skeleton className="h-48 w-full" />
-                ) : preview?.kind === "image" ? (
-                  <img
-                    src={preview.url}
-                    alt={object.name}
-                    className="max-h-96 max-w-full rounded-md border"
-                  />
-                ) : preview?.kind === "pdf" ? (
-                  <PDFViewer
-                    src={preview.url}
-                    fileName={object.name}
-                    defaultZoom={ZoomMode.FitWidth}
-                    showUpload={false}
-                    showDownload={false}
-                    className="h-[70vh] w-full overflow-hidden rounded-md border"
-                  />
-                ) : preview?.kind === "csv" ? (
-                  <CsvViewer
-                    data={preview.text}
-                    search
-                    className="h-[60vh] w-full overflow-hidden rounded-md border"
-                  />
-                ) : preview?.kind === "text" ? (
-                  // The scroll container is pinned to the content width (w-full
-                  // min-w-0); the <pre> keeps its natural width and scrolls
-                  // inside it, so long lines never widen the panel.
-                  <div className="max-h-96 w-full min-w-0 overflow-auto rounded-md border bg-muted/50">
-                    <pre className="w-max p-3 font-mono text-xs">
-                      {preview.text}
-                    </pre>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Preview unavailable.
-                  </p>
-                )}
-              </section>
-            )}
-
-            <section className="flex min-w-0 flex-col gap-2">
-              <h3 className="text-xs font-medium text-muted-foreground uppercase">
-                Attributes
-              </h3>
-              <AttributesEditor
-                attributes={object.attributes}
-                onPatch={onPatch}
+        ) : activePanel === "preview" ? (
+          <section className="flex min-w-0 flex-col gap-2">
+            {previewLoading ? (
+              <Skeleton className="h-48 w-full" />
+            ) : preview?.kind === "image" ? (
+              <img
+                src={preview.url}
+                alt={object.name}
+                className="max-h-96 max-w-full rounded-md border"
               />
-            </section>
-          </>
+            ) : preview?.kind === "pdf" ? (
+              <PDFViewer
+                src={preview.url}
+                fileName={object.name}
+                defaultZoom={ZoomMode.FitWidth}
+                showUpload={false}
+                showDownload={false}
+                className="h-[70vh] w-full overflow-hidden rounded-md border"
+              />
+            ) : preview?.kind === "csv" ? (
+              <CsvViewer
+                data={preview.text}
+                search
+                className="h-[60vh] w-full overflow-hidden rounded-md border"
+              />
+            ) : preview?.kind === "text" ? (
+              // The scroll container is pinned to the content width (w-full
+              // min-w-0); the <pre> keeps its natural width and scrolls
+              // inside it, so long lines never widen the panel.
+              <div className="max-h-96 w-full min-w-0 overflow-auto rounded-md border bg-muted/50">
+                <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Preview unavailable.
+              </p>
+            )}
+          </section>
+        ) : activePanel === "info" ? (
+          <section className="min-w-0">
+            {/* Content type and size live in the header above; keep this grid
+                to the metadata that isn't shown elsewhere. */}
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+              <MetaItem label="Status">
+                <Badge variant="secondary">{object.status}</Badge>
+              </MetaItem>
+              <MetaItem label="Source">{object.source}</MetaItem>
+              <MetaItem label="Created">
+                <span title={formatDate(object.createdAt)}>
+                  {formatRelative(object.createdAt)}
+                </span>
+              </MetaItem>
+              <MetaItem label="Updated">
+                <span title={formatDate(object.updatedAt)}>
+                  {formatRelative(object.updatedAt)}
+                </span>
+              </MetaItem>
+              <MetaItem label="ID" className="col-span-2">
+                <span className="min-w-0 truncate font-mono text-xs">
+                  {object.id}
+                </span>
+                <CopyButton value={object.id} label="Copy ID" />
+              </MetaItem>
+            </dl>
+          </section>
+        ) : (
+          <section className="flex min-w-0 flex-col gap-2">
+            <AttributesEditor attributes={object.attributes} onPatch={onPatch} />
+          </section>
         )}
       </div>
     </div>
