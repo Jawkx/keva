@@ -11,6 +11,13 @@ UI in this repo (there is no other browser automation) — reach for it whenever
 needs visual confirmation, especially layout/overflow bugs that can't be caught from
 CSS reasoning alone.
 
+## Window manager check
+
+Before starting headed Playwright MCP browser work, verify whether Aerospace is present
+with `command -v aerospace`. If it is present, load the `aerospace-guide` skill before
+changing `.mcp.json` or opening a visible browser window. If it is not present, skip the
+Aerospace-specific guidance.
+
 ## Where to save screenshots — IMPORTANT
 
 Always save screenshots into the **`.playwright-mcp/`** directory (gitignored), with a
