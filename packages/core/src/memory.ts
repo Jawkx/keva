@@ -91,6 +91,18 @@ const matches = (object: KevaObject, condition: QueryCondition): boolean => {
   }
 };
 
+const matchesSearch = (
+  object: KevaObject,
+  search: string | undefined,
+): boolean => {
+  const term = search?.trim().toLowerCase();
+  if (!term) return true;
+  return (
+    object.name.toLowerCase().includes(term) ||
+    object.contentType.toLowerCase().includes(term)
+  );
+};
+
 const encodeCursor = (object: KevaObject): string =>
   btoa(JSON.stringify([object.createdAt, object.id]));
 
@@ -160,6 +172,7 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         const cursor = query.cursor ? decodeCursor(query.cursor) : null;
         let rows = [...objects.values()]
           .filter((object) => object.tenantId === tenantId && object.status === "ready")
+          .filter((object) => matchesSearch(object, query.search))
           .filter((object) => query.where.every((condition) => matches(object, condition)))
           .sort((a, b) =>
             a.createdAt === b.createdAt

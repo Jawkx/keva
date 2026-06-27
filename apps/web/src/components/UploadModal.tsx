@@ -46,17 +46,7 @@ export function UploadModal({
     try {
       for (const target of files) {
         try {
-          const bytes = new Uint8Array(await target.arrayBuffer());
-          await keva.upload(
-            {
-              name: target.name,
-              contentType: target.type || "application/octet-stream",
-              size: target.size,
-              source: "upload",
-              attributes: {},
-            },
-            bytes,
-          );
+          await keva.uploadFile(target, { attributes: {}, source: "upload" });
           ok += 1;
         } catch (err) {
           toast.error(`${target.name}: ${errorMessage(err)}`);

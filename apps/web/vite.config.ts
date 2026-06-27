@@ -5,8 +5,8 @@ import { defineConfig } from "vite";
 
 // The dev API runs on 127.0.0.1:8787. We proxy every API path prefix through
 // Vite so the browser talks to a single same-origin host (5173) and the auth
-// cookie stays first-party. The SDK is created with baseUrl: "" so Keva API
-// requests are relative.
+// cookie stays first-party. The SDK is created with baseUrl: "/api" so Keva
+// API requests stay relative to the web origin.
 const API_TARGET = "http://127.0.0.1:8787";
 
 // The API surface lives under /api (including /api/auth). /health and /__dev

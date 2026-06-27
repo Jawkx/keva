@@ -1,5 +1,8 @@
 import type { Principal } from "@keva/schema";
 import { Effect, Layer } from "effect";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeKevaEngine, reapPending } from "./engine.js";
@@ -33,27 +36,19 @@ const principal = (tenantId: string): Principal => ({
   via: "token",
 });
 
-const createSchema = async (sql: Sql): Promise<void> => {
-  await sql`
-    create table if not exists objects (
-      id uuid primary key,
-      tenant_id text not null,
-      name text not null,
-      content_type text not null,
-      declared_size bigint not null,
-      size bigint,
-      etag text,
-      checksum text,
-      source text not null,
-      status text not null check (status in ('pending', 'ready', 'deleting')),
-      storage_key text not null,
-      staging_key text not null,
-      created_at timestamptz not null,
-      updated_at timestamptz not null,
-      attributes jsonb not null default '{}'::jsonb,
-      unique (tenant_id, id)
-    )
-  `;
+const migrationPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../drizzle/0000_wandering_spiral.sql",
+);
+
+const applyMigration = async (sql: Sql): Promise<void> => {
+  const migration = await readFile(migrationPath, "utf8");
+  for (const statement of migration
+    .split("--> statement-breakpoint")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
+    await sql.unsafe(statement);
+  }
 };
 
 describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
@@ -69,7 +64,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
 
   beforeAll(async () => {
     sql = postgres(DATABASE_URL!, { max: 4 });
-    await createSchema(sql);
+    await applyMigration(sql);
     layer = provide(makePostgresMetadataStore(sql));
   });
 
@@ -103,6 +98,56 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       yield* engine.confirm(initiated.object.id);
       return initiated.object.id;
     });
+
+  const createReadyWithType = (
+    p: Principal,
+    name: string,
+    contentType: string,
+    body: string,
+  ) =>
+    Effect.gen(function* () {
+      const engine = makeKevaEngine(p);
+      const bytes = new TextEncoder().encode(body);
+      const initiated = yield* engine.initiate({
+        name,
+        contentType,
+        size: bytes.byteLength,
+        source: "upload",
+        attributes: {},
+      });
+      const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
+      const blobs = yield* BlobStore;
+      yield* blobs.devPut!(
+        initiated.object.stagingKey,
+        bytes,
+        contentType,
+        token,
+      );
+      yield* engine.confirm(initiated.object.id);
+      return initiated.object.id;
+    });
+
+  it("applies the checked-in migration indexes", async () => {
+    const indexes = await sql<{
+      indexname: string;
+      indexdef: string;
+    }[]>`
+      select indexname, indexdef
+      from pg_indexes
+      where schemaname = current_schema()
+        and indexname in (
+          'objects_attributes_gin_idx',
+          'objects_tenant_status_created_idx',
+          'objects_tenant_created_id_idx',
+          'api_tokens_tenant_created_idx'
+        )
+    `;
+    const byName = new Map(indexes.map((index) => [index.indexname, index.indexdef]));
+    expect(byName.get("objects_attributes_gin_idx")).toContain("USING gin");
+    expect(byName.has("objects_tenant_status_created_idx")).toBe(true);
+    expect(byName.has("objects_tenant_created_id_idx")).toBe(true);
+    expect(byName.has("api_tokens_tenant_created_idx")).toBe(true);
+  });
 
   it("persists objects + attributes across a new store instance", async () => {
     const tenant = crypto.randomUUID();
@@ -216,6 +261,54 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
 
     expect(collected.seen.length).toBe(5);
     expect(new Set(collected.seen)).toEqual(new Set(collected.ids));
+  });
+
+  it("searches by name and content type with tenant-scoped pagination", async () => {
+    const tenantA = crypto.randomUUID();
+    const tenantB = crypto.randomUUID();
+    const found = await run(
+      Effect.gen(function* () {
+        const engine = makeKevaEngine(principal(tenantA));
+        const named = yield* createReady(
+          principal(tenantA),
+          "quarterly-fox.txt",
+          "a",
+        );
+        const typed = yield* createReadyWithType(
+          principal(tenantA),
+          "diagram.svg",
+          "image/fox-icon",
+          "b",
+        );
+        yield* createReady(principal(tenantA), "plain.txt", "c");
+        yield* createReady(principal(tenantB), "other-fox.txt", "d");
+        const all = yield* engine.query({ where: [], search: "fox", limit: 100 });
+        const first = yield* engine.query({ where: [], search: "fox", limit: 1 });
+        const second = yield* engine.query({
+          where: [],
+          search: "fox",
+          limit: 1,
+          cursor: first.nextCursor,
+        });
+        const other = yield* makeKevaEngine(principal(tenantB)).query({
+          where: [],
+          search: "quarterly",
+          limit: 100,
+        });
+        return { named, typed, all, first, second, other };
+      }),
+    );
+
+    expect(found.all.objects.map((object) => object.id).sort()).toEqual(
+      [found.named, found.typed].sort(),
+    );
+    expect(found.first.objects).toHaveLength(1);
+    expect(found.second.objects).toHaveLength(1);
+    expect(new Set([
+      found.first.objects[0]!.id,
+      found.second.objects[0]!.id,
+    ])).toEqual(new Set([found.named, found.typed]));
+    expect(found.other.objects).toHaveLength(0);
   });
 
   it("resolves a concurrent confirm-vs-reaper race to exactly one winner", async () => {

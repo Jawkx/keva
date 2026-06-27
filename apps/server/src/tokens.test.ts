@@ -13,7 +13,9 @@ import { createApp } from "./app.js";
 import {
   ApiTokenStore,
   type ApiTokenStoreService,
+  shouldRefreshLastUsed,
   TokenAndStaticAuthFromStoreLive,
+  type SessionResolver,
 } from "./auth.js";
 
 /**
@@ -91,13 +93,13 @@ const sessionResolver = async (headers: Headers) =>
     ? { tenantId: TENANT, scopes: ["read", "write", "delete", "admin"] as const }
     : null;
 
-const makeApp = () => {
+const makeApp = (resolver: SessionResolver = sessionResolver) => {
   const tokenStore = makeInMemoryTokenStore();
   const tokens = Layer.succeed(ApiTokenStore, tokenStore);
   const auth = TokenAndStaticAuthFromStoreLive({
     staticToken: STATIC,
     tenantId: TENANT,
-    sessionResolver,
+    sessionResolver: resolver,
   }).pipe(Layer.provide(tokens));
   return createApp({
     layer: Layer.mergeAll(
@@ -115,6 +117,44 @@ const adminSession = {
 };
 
 describe("server token subsystem", () => {
+  it("throttles token last-used refresh decisions", () => {
+    const now = new Date("2026-01-01T00:10:00.000Z");
+    expect(shouldRefreshLastUsed(null, now)).toBe(true);
+    expect(shouldRefreshLastUsed("2026-01-01T00:06:00.000Z", now)).toBe(false);
+    expect(shouldRefreshLastUsed("2026-01-01T00:04:59.000Z", now)).toBe(true);
+  });
+
+  it("keeps missing-cookie requests unauthorized without hitting session storage", async () => {
+    const app = makeApp(async () => {
+      throw new Error("session storage should not be called");
+    });
+    const response = await app.request("/api/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ where: [] }),
+    });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ _tag: "Unauthorized" });
+  });
+
+  it("surfaces session resolver failures as storage unavailability", async () => {
+    const app = makeApp(async () => {
+      throw new Error("database unavailable");
+    });
+    const response = await app.request("/api/query", {
+      method: "POST",
+      headers: {
+        cookie: "keva_session=broken",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ where: [] }),
+    });
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      _tag: "StorageUnavailable",
+    });
+  });
+
   it("rejects token management without an admin session (Forbidden)", async () => {
     const app = makeApp();
     // A static API token authenticates (via: "token") but is NOT an admin

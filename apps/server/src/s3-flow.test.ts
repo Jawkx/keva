@@ -52,6 +52,24 @@ const getFromPresigned = async (url: string): Promise<Uint8Array> => {
   return new Uint8Array(await res.arrayBuffer());
 };
 
+const s3Env = (
+  globalThis as { process?: { env?: Record<string, string | undefined> } }
+).process?.env;
+
+const realS3Config = s3Env?.KEVA_TEST_S3_ENDPOINT &&
+    s3Env.KEVA_TEST_S3_ACCESS_KEY_ID &&
+    s3Env.KEVA_TEST_S3_SECRET_ACCESS_KEY &&
+    s3Env.KEVA_TEST_S3_BUCKET
+  ? {
+      endpoint: s3Env.KEVA_TEST_S3_ENDPOINT,
+      region: s3Env.KEVA_TEST_S3_REGION ?? "us-east-1",
+      accessKeyId: s3Env.KEVA_TEST_S3_ACCESS_KEY_ID,
+      secretAccessKey: s3Env.KEVA_TEST_S3_SECRET_ACCESS_KEY,
+      bucket: s3Env.KEVA_TEST_S3_BUCKET,
+      forcePathStyle: s3Env.KEVA_TEST_S3_FORCE_PATH_STYLE !== "false",
+    }
+  : undefined;
+
 describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
   let mock: S3Mock;
   let runtime: ManagedRuntime.ManagedRuntime<BlobStore | MetadataStore, never>;
@@ -229,3 +247,58 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     expect(found).toBeNull();
   });
 });
+
+describe.skipIf(!realS3Config)(
+  "S3 blob store against a real S3-compatible provider",
+  () => {
+    let runtime: ManagedRuntime.ManagedRuntime<BlobStore | MetadataStore, never>;
+
+    beforeEach(() => {
+      runtime = ManagedRuntime.make(
+        Layer.merge(
+          MemoryMetadataStoreLive,
+          S3BlobStoreLive(realS3Config!),
+        ),
+      );
+    });
+
+    afterEach(async () => {
+      await runtime.runPromise(sweepDeleting()).catch(() => undefined);
+      await runtime.dispose();
+    });
+
+    it("uploads, confirms, downloads, and deletes via signed provider requests", async () => {
+      const bytes = new TextEncoder().encode(`real-s3-${crypto.randomUUID()}`);
+      const engine = makeKevaEngine({
+        ...principal,
+        tenantId: `test-${crypto.randomUUID()}`,
+      });
+
+      const initiated = await runtime.runPromise(
+        engine.initiate({
+          name: "real-provider.txt",
+          contentType: "text/plain",
+          size: bytes.byteLength,
+          source: "upload",
+          attributes: {},
+        }),
+      );
+      await putToPresigned(initiated.uploadUrl, bytes, "text/plain");
+
+      const confirmed = await runtime.runPromise(engine.confirm(initiated.object.id));
+      expect(confirmed.status).toBe("ready");
+
+      const download = await runtime.runPromise(engine.download(confirmed.id));
+      expect(await getFromPresigned(download.url)).toEqual(bytes);
+
+      await runtime.runPromise(engine.delete(confirmed.id));
+      await runtime.runPromise(sweepDeleting());
+      const deleted = await runtime.runPromise(
+        Effect.flatMap(MetadataStore, (metadata) =>
+          metadata.get(confirmed.tenantId, confirmed.id)
+        ),
+      );
+      expect(deleted).toBeNull();
+    });
+  },
+);

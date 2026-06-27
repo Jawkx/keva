@@ -7,6 +7,7 @@ import {
   betterAuthSessionResolver,
   createBetterAuth,
 } from "./better-auth.js";
+import { trustedOriginsFor } from "./origins.js";
 import { makeRuntimeLayer } from "./runtime.js";
 
 const required = (name: string): string => {
@@ -20,12 +21,11 @@ const baseUrl = process.env.KEVA_BASE_URL ?? `http://127.0.0.1:${port}`;
 // Origins Better Auth will accept (CSRF). The browser hits the web app's origin
 // (proxied to this API), so it must be trusted. Defaults cover the Vite dev
 // server; set KEVA_TRUSTED_ORIGINS (comma-separated) in production.
-const trustedOrigins = [
+const trustedOrigins = trustedOriginsFor(
   baseUrl,
-  ...(process.env.KEVA_TRUSTED_ORIGINS
-    ? process.env.KEVA_TRUSTED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
-    : ["http://localhost:5173", "http://127.0.0.1:5173"]),
-];
+  process.env.KEVA_TRUSTED_ORIGINS,
+  ["http://localhost:5173", "http://127.0.0.1:5173"],
+);
 const s3 = process.env.S3_ENDPOINT
   ? {
       endpoint: process.env.S3_ENDPOINT,

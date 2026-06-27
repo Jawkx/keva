@@ -4,7 +4,6 @@ import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
   type Column,
@@ -134,6 +133,7 @@ export function FilesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
   const [sorting, setSorting] = useState<SortingState>([
     { id: "createdAt", desc: true },
   ]);
@@ -153,6 +153,7 @@ export function FilesPage() {
       try {
         const result = await keva.query({
           where: [],
+          ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
           limit: PAGE_SIZE,
           ...(reset ? {} : cursor ? { cursor } : {}),
         });
@@ -167,7 +168,7 @@ export function FilesPage() {
         setLoadingMore(false);
       }
     },
-    [cursor, handleError],
+    [activeSearch, cursor, handleError],
   );
 
   useMountEffect(() => {
@@ -186,21 +187,10 @@ export function FilesPage() {
   const table = useReactTable({
     data: objects as KevaObject[],
     columns,
-    state: { sorting, globalFilter: search, columnVisibility },
+    state: { sorting, columnVisibility },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setSearch,
-    globalFilterFn: (row, _columnId, value: string) => {
-      const q = value.trim().toLowerCase();
-      if (!q) return true;
-      const o = row.original;
-      return (
-        o.name.toLowerCase().includes(q) ||
-        o.contentType.toLowerCase().includes(q)
-      );
-    },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
   });
 
   const rows = table.getRowModel().rows;
@@ -223,6 +213,31 @@ export function FilesPage() {
   const onDeleted = () => {
     navigate("/");
     void load(true);
+  };
+
+  const runSearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const next = search.trim();
+    setActiveSearch(next);
+    setCursor(undefined);
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const result = await keva.query({
+          where: [],
+          ...(next ? { search: next } : {}),
+          limit: PAGE_SIZE,
+        });
+        setObjects(result.objects);
+        setCursor(result.nextCursor);
+      } catch (err) {
+        setError(handleError(err));
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    })();
   };
 
   const tableInner = (
@@ -268,7 +283,7 @@ export function FilesPage() {
     </Table>
   );
 
-  const loadMore = cursor && !search && (
+  const loadMore = cursor && (
     <div className="mt-4 flex justify-center">
       <Button
         variant="outline"
@@ -287,15 +302,23 @@ export function FilesPage() {
   const leftPane = (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b p-3">
-        <div className="relative w-full max-w-xs">
-          <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Filter by name or type…"
-            className="pl-8"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        <form
+          className="flex w-full max-w-md items-center gap-2"
+          onSubmit={runSearch}
+        >
+          <div className="relative min-w-0 flex-1">
+            <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search by name or type…"
+              className="pl-8"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Button type="submit" variant="outline">
+            Search
+          </Button>
+        </form>
         <div className="flex-1" />
         <Button onClick={() => openUpload([])}>
           <IconUpload data-icon="inline-start" />
@@ -311,7 +334,7 @@ export function FilesPage() {
               </EmptyMedia>
               <EmptyTitle>No matches</EmptyTitle>
               <EmptyDescription>
-                No objects match “{search}”.
+                No objects match “{activeSearch}”.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>

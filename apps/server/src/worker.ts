@@ -1,10 +1,21 @@
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { createApp } from "./app.js";
+import * as authSchema from "./auth-schema.js";
+import {
+  betterAuthSessionResolver,
+  createBetterAuth,
+} from "./better-auth.js";
+import { trustedOriginsFor } from "./origins.js";
 import { makeRuntimeLayer } from "./runtime.js";
 
 interface Env {
   readonly KEVA_STATIC_TOKEN: string;
   readonly KEVA_TENANT_ID?: string;
   readonly KEVA_BASE_URL: string;
+  readonly BETTER_AUTH_SECRET?: string;
+  readonly BETTER_AUTH_URL?: string;
+  readonly KEVA_TRUSTED_ORIGINS?: string;
   readonly HYPERDRIVE?: { readonly connectionString: string };
   readonly S3_ENDPOINT?: string;
   readonly S3_REGION?: string;
@@ -32,16 +43,32 @@ export default {
             forcePathStyle: env.S3_FORCE_PATH_STYLE !== "false",
           }
         : undefined;
+      const databaseUrl = env.HYPERDRIVE?.connectionString;
+      const auth = databaseUrl && env.BETTER_AUTH_SECRET
+        ? createBetterAuth({
+            database: drizzle(postgres(databaseUrl), {
+              schema: authSchema,
+            }),
+            secret: env.BETTER_AUTH_SECRET,
+            baseURL: env.BETTER_AUTH_URL ?? env.KEVA_BASE_URL,
+            trustedOrigins: trustedOriginsFor(
+              env.KEVA_BASE_URL,
+              env.KEVA_TRUSTED_ORIGINS,
+            ),
+          })
+        : undefined;
       const layer = makeRuntimeLayer({
         staticToken: env.KEVA_STATIC_TOKEN,
         tenantId: env.KEVA_TENANT_ID ?? "local",
         baseUrl: env.KEVA_BASE_URL,
-        ...(env.HYPERDRIVE
-          ? { databaseUrl: env.HYPERDRIVE.connectionString }
-          : {}),
+        ...(databaseUrl ? { databaseUrl } : {}),
+        ...(auth ? { sessionResolver: betterAuthSessionResolver(auth) } : {}),
         ...(s3 ? { s3 } : {}),
       });
-      app = createApp({ layer });
+      app = createApp({
+        layer,
+        ...(auth ? { authHandler: auth.handler } : {}),
+      });
     }
     return Promise.resolve(app.fetch(request));
   },

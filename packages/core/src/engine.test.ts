@@ -65,6 +65,68 @@ describe("KevaEngine", () => {
     expect(result.other.objects).toHaveLength(0);
   });
 
+  it("searches ready objects by name and content type with tenant-scoped pagination", async () => {
+    const layer = Layer.merge(
+      MemoryMetadataStoreLive,
+      MemoryBlobStoreLive(),
+    );
+    const program = Effect.gen(function* () {
+      const tenant = makeKevaEngine(principal("tenant-a"));
+      const named = yield* upload(
+        "tenant-a",
+        "quarterly-fox.txt",
+        new TextEncoder().encode("one"),
+      );
+      const typed = yield* tenant.initiate({
+        name: "diagram.svg",
+        contentType: "image/fox-icon",
+        size: 3,
+        source: "upload",
+        attributes: {},
+      });
+      const token = new URL(typed.uploadUrl).searchParams.get("token")!;
+      const blobs = yield* BlobStore;
+      yield* blobs.devPut!(
+        typed.object.stagingKey,
+        new TextEncoder().encode("two"),
+        "image/fox-icon",
+        token,
+      );
+      const contentTypeMatch = yield* tenant.confirm(typed.object.id);
+      yield* upload("tenant-a", "plain.txt", new TextEncoder().encode("three"));
+      yield* upload("tenant-b", "other-fox.txt", new TextEncoder().encode("four"));
+
+      const all = yield* tenant.query({ where: [], search: "fox", limit: 100 });
+      const firstPage = yield* tenant.query({ where: [], search: "fox", limit: 1 });
+      const secondPage = yield* tenant.query({
+        where: [],
+        search: "fox",
+        limit: 1,
+        cursor: firstPage.nextCursor,
+      });
+      const otherTenant = yield* makeKevaEngine(principal("tenant-b")).query({
+        where: [],
+        search: "quarterly",
+        limit: 100,
+      });
+      return { named, contentTypeMatch, all, firstPage, secondPage, otherTenant };
+    }).pipe(Effect.provide(layer));
+
+    const result = await Effect.runPromise(program);
+    expect(result.all.objects.map((object) => object.id).sort()).toEqual(
+      [result.named.id, result.contentTypeMatch.id].sort(),
+    );
+    expect(result.firstPage.objects).toHaveLength(1);
+    expect(result.secondPage.objects).toHaveLength(1);
+    expect(
+      new Set([
+        result.firstPage.objects[0]!.id,
+        result.secondPage.objects[0]!.id,
+      ]),
+    ).toEqual(new Set([result.named.id, result.contentTypeMatch.id]));
+    expect(result.otherTenant.objects).toHaveLength(0);
+  });
+
   it("does not overwrite final bytes when a staging grant is replayed", async () => {
     const layer = Layer.merge(
       MemoryMetadataStoreLive,

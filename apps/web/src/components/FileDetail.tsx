@@ -90,7 +90,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
   const loadPreview = useCallback(async (obj: KevaObject) => {
     setPreviewLoading(true);
     try {
-      const bytes = await keva.download(obj.id);
+      const bytes = await keva.downloadBytes(obj.id);
       if (isImage(obj)) {
         const url = URL.createObjectURL(
           new Blob([bytes.slice().buffer as ArrayBuffer], {
@@ -126,18 +126,13 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
     if (!object) return;
     setBusy(true);
     try {
-      const bytes = await keva.download(object.id);
-      const blob = new Blob([bytes.slice().buffer as ArrayBuffer], {
-        type: object.contentType,
-      });
-      const url = URL.createObjectURL(blob);
+      const { url } = await keva.getDownloadUrl(object.id);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = object.name;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(url);
     } catch (err) {
       toast.error(handleError(err));
     } finally {

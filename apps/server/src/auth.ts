@@ -171,6 +171,15 @@ const tokenRecord = (row: TokenRow): TokenRecord => ({
 const storageError = (): StorageUnavailable =>
   new StorageUnavailable({ message: "Token storage unavailable" });
 
+export const LAST_USED_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+
+export const shouldRefreshLastUsed = (
+  lastUsedAt: Date | string | null,
+  now: Date,
+): boolean =>
+  lastUsedAt === null ||
+  now.getTime() - new Date(lastUsedAt).getTime() >= LAST_USED_UPDATE_INTERVAL_MS;
+
 export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
   resolve: (token) =>
     Effect.tryPromise({
@@ -188,7 +197,13 @@ export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
         const candidate = await hashSecret(secret!);
         if (!secureEqual(candidate, row.secret_hash)) return null;
         await sql`
-          update api_tokens set last_used_at = now() where id = ${row.id}
+          update api_tokens
+          set last_used_at = now()
+          where id = ${row.id}
+            and (
+              last_used_at is null or
+              last_used_at < now() - interval '5 minutes'
+            )
         `;
         return {
           tenantId: row.tenant_id,
@@ -323,8 +338,13 @@ export type SessionResolver = (
 export const sessionStrategy = (
   resolve: SessionResolver,
 ): AuthStrategy =>
-  ({ headers }) =>
-    Effect.promise(() => resolve(headers)).pipe(
+  ({ headers }) => {
+    if (!headers.get("cookie")) return Effect.succeed(null);
+    return Effect.tryPromise({
+      try: () => resolve(headers),
+      catch: () =>
+        new StorageUnavailable({ message: "Session storage unavailable" }),
+    }).pipe(
       Effect.map((session) =>
         session
           ? {
@@ -334,8 +354,8 @@ export const sessionStrategy = (
             }
           : null
       ),
-      Effect.catchAll(() => Effect.succeed(null)),
     );
+  };
 
 export const requireAdminSession = (
   principal: Principal,

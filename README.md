@@ -22,7 +22,7 @@ Postgres and S3 configuration.
 import { KevaClient } from "@keva/sdk";
 
 const keva = new KevaClient({
-  baseUrl: "http://127.0.0.1:8787",
+  baseUrl: "http://127.0.0.1:8787/api",
   token: "dev-secret",
 });
 
@@ -31,6 +31,8 @@ const object = await keva.upload(
   new TextEncoder().encode("hello"),
 );
 ```
+
+The SDK base URL should point at the API prefix (`/api`), not the server root.
 
 ## Database
 

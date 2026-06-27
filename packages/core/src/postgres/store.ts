@@ -181,6 +181,9 @@ const compileCondition = (
   return sql`(jsonb_typeof(attributes -> ${key}) = 'string' and attributes ->> ${key} ${comparison(sql, condition.op)} ${value as string})`;
 };
 
+const escapeLikePattern = (value: string): string =>
+  value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+
 export const makePostgresMetadataStore = (
   sql: Sql,
 ): MetadataStoreService => ({
@@ -268,6 +271,13 @@ export const makePostgresMetadataStore = (
         sql`status = 'ready'`,
         ...query.where.map((condition) => compileCondition(sql, condition)),
       ];
+      const search = query.search?.trim();
+      if (search) {
+        const pattern = `%${escapeLikePattern(search)}%`;
+        predicates.push(
+          sql`(name ilike ${pattern} escape '\' or content_type ilike ${pattern} escape '\')`,
+        );
+      }
       if (query.cursor) {
         const cursor = yield* decodeCursor(query.cursor);
         predicates.push(

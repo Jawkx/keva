@@ -28,4 +28,15 @@ describe("schema", () => {
       }),
     ).toThrow();
   });
+
+  it("validates optional query search", () => {
+    expect(Schema.decodeUnknownSync(Query)({ search: "fox" })).toEqual({
+      where: [],
+      search: "fox",
+      limit: 100,
+    });
+    expect(() =>
+      Schema.decodeUnknownSync(Query)({ search: "x".repeat(257) }),
+    ).toThrow();
+  });
 });

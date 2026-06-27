@@ -8,6 +8,7 @@ import {
   Query,
   QueryResult,
   type AttributePatch as AttributePatchType,
+  type DownloadResult as DownloadResultType,
   type InitiateUpload as InitiateUploadType,
   type KevaError as KevaErrorType,
   type KevaObject as KevaObjectType,
@@ -23,7 +24,10 @@ export type {
   KevaObjectType as KevaObject,
   QueryType as Query,
   QueryResultType as QueryResult,
+  DownloadResultType as DownloadResult,
 };
+
+export type UploadBody = BodyInit;
 
 /**
  * Two ways to authenticate, one client:
@@ -111,17 +115,43 @@ export class KevaClient {
     return this.#request("POST", "/objects", InitiateUploadResult, body);
   }
 
-  async upload(input: InitiateUploadType, bytes: Uint8Array): Promise<KevaObjectType> {
+  async uploadBody(
+    input: InitiateUploadType,
+    body: UploadBody,
+  ): Promise<KevaObjectType> {
     const initiated = await this.initiate(input);
     const response = await this.#fetch(initiated.uploadUrl, {
       method: "PUT",
       headers: initiated.headers,
-      body: bytes.slice().buffer as ArrayBuffer,
+      body,
     });
     if (!response.ok) {
       throw new KevaProtocolError(`Blob upload failed with ${response.status}`);
     }
     return this.confirm(initiated.object.id);
+  }
+
+  uploadFile(
+    file: File,
+    options: {
+      readonly attributes?: InitiateUploadType["attributes"];
+      readonly source?: string;
+    } = {},
+  ): Promise<KevaObjectType> {
+    return this.uploadBody(
+      {
+        name: file.name,
+        contentType: file.type || "application/octet-stream",
+        size: file.size,
+        source: options.source ?? "upload",
+        attributes: options.attributes ?? {},
+      },
+      file,
+    );
+  }
+
+  upload(input: InitiateUploadType, body: UploadBody): Promise<KevaObjectType> {
+    return this.uploadBody(input, body);
   }
 
   confirm(id: string): Promise<KevaObjectType> {
@@ -132,17 +162,30 @@ export class KevaClient {
     return this.#request("GET", `/objects/${encodeURIComponent(id)}`, KevaObject);
   }
 
-  async download(id: string): Promise<Uint8Array> {
-    const target = await this.#request(
+  getDownloadUrl(id: string): Promise<DownloadResultType> {
+    return this.#request(
       "GET",
       `/objects/${encodeURIComponent(id)}/content`,
       DownloadResult,
     );
+  }
+
+  async downloadResponse(id: string): Promise<Response> {
+    const target = await this.getDownloadUrl(id);
     const response = await this.#fetch(target.url);
     if (!response.ok) {
       throw new KevaProtocolError(`Blob download failed with ${response.status}`);
     }
+    return response;
+  }
+
+  async downloadBytes(id: string): Promise<Uint8Array> {
+    const response = await this.downloadResponse(id);
     return new Uint8Array(await response.arrayBuffer());
+  }
+
+  download(id: string): Promise<Uint8Array> {
+    return this.downloadBytes(id);
   }
 
   patchAttributes(

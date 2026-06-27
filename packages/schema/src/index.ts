@@ -162,6 +162,7 @@ export const Query = Schema.Struct({
   where: Schema.optionalWith(Schema.Array(QueryCondition), {
     default: () => [],
   }),
+  search: Schema.optional(Schema.String.pipe(Schema.maxLength(256))),
   limit: Schema.optionalWith(
     Schema.Number.pipe(Schema.int(), Schema.between(1, 1000)),
     { default: () => 100 },
