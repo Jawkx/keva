@@ -8,3 +8,6 @@ coverage
 .env.*
 !.env.example
 *.tsbuildinfo
+
+# Playwright MCP scratch output: screenshots, page snapshots, console logs
+.playwright-mcp/
