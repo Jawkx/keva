@@ -60,6 +60,10 @@ export function AppShell() {
   const name = data?.user?.name || email;
   const isActive = (url: string, exact: boolean) =>
     exact ? location.pathname === url : location.pathname.startsWith(url);
+  // The Files screen owns its own full-height, edge-to-edge master/detail
+  // layout; every other page gets the centered, padded container.
+  const fullBleed =
+    location.pathname === "/" || location.pathname.startsWith("/objects/");
 
   return (
     <SidebarProvider>
@@ -159,16 +163,22 @@ export function AppShell() {
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <div className="flex-1" />
           <ModeToggle />
         </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-          <div className="mx-auto w-full max-w-5xl">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {fullBleed ? (
             <Outlet />
-          </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <div className="mx-auto w-full max-w-5xl p-4 md:p-6">
+                <Outlet />
+              </div>
+            </div>
+          )}
         </div>
       </SidebarInset>
     </SidebarProvider>
