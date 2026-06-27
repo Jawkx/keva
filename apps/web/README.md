@@ -51,10 +51,13 @@ Then open http://localhost:5173.
 ## Proxy
 
 `vite.config.ts` proxies these prefixes to `http://127.0.0.1:8787` with
-`changeOrigin: true`: `/api`, `/objects`, `/query`, `/tokens`, `/health`,
-`/__dev`. Because of this:
+`changeOrigin: true`: `/api`, `/health`, `/__dev`. The whole API surface
+(including auth) lives under `/api`. Crucially, `/objects`, `/query` and
+`/tokens` are **not** proxied — those are the web app's own client-side routes,
+so a refresh or deep link falls through to Vite and loads the SPA instead of
+returning the API's JSON. Because of this:
 
-- the SDK is created with `baseUrl: ""` and `credentials: "include"`, and
+- the SDK is created with `baseUrl: "/api"` and `credentials: "include"`, and
 - the Better Auth client uses `baseURL: "/api/auth"`.
 
 ## Scripts

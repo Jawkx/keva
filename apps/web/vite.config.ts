@@ -9,7 +9,11 @@ import { defineConfig } from "vite";
 // requests are relative.
 const API_TARGET = "http://127.0.0.1:8787";
 
-const proxyPaths = ["/api", "/objects", "/query", "/tokens", "/health", "/__dev"];
+// The API surface lives under /api (including /api/auth). /health and /__dev
+// stay at the root. Crucially, /objects, /query and /tokens are NOT proxied:
+// those are the web app's own client-side routes, so a refresh / deep link
+// falls through to Vite and loads the SPA instead of hitting the API.
+const proxyPaths = ["/api", "/health", "/__dev"];
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

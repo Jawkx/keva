@@ -113,7 +113,7 @@ export function QueryPage() {
   );
 
   const snippets = useMemo(() => {
-    const base = window.location.origin;
+    const base = `${window.location.origin}/api`;
     const body = JSON.stringify({ where: where ?? [], limit }, null, 2);
     const curl = `curl -X POST ${base}/query \\
   -H "Authorization: Bearer $KEVA_TOKEN" \\

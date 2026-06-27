@@ -73,7 +73,7 @@ export function TokensPage() {
   const [minting, setMinting] = useState(false);
   const [plaintext, setPlaintext] = useState<string | null>(null);
 
-  const apiBase = window.location.origin;
+  const apiBase = `${window.location.origin}/api`;
   const exampleCurl = `curl -X POST ${apiBase}/query \\
   -H "Authorization: Bearer $KEVA_TOKEN" \\
   -H "Content-Type: application/json" \\

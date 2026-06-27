@@ -119,7 +119,7 @@ describe("server token subsystem", () => {
     const app = makeApp();
     // A static API token authenticates (via: "token") but is NOT an admin
     // session, so token management is Forbidden.
-    const response = await app.request("/tokens", {
+    const response = await app.request("/api/tokens", {
       method: "POST",
       headers: {
         authorization: `Bearer ${STATIC}`,
@@ -133,7 +133,7 @@ describe("server token subsystem", () => {
 
   it("mints a token (admin session) and uses it from the API", async () => {
     const app = makeApp();
-    const minted = await app.request("/tokens", {
+    const minted = await app.request("/api/tokens", {
       method: "POST",
       headers: adminSession,
       body: JSON.stringify({ name: "agent-key", scopes: ["read", "write"] }),
@@ -145,7 +145,7 @@ describe("server token subsystem", () => {
 
     // use the minted token: upload an object that inherits the minter's tenant
     const agentAuth = { authorization: `Bearer ${mintBody.token}` };
-    const initiated = await app.request("/objects", {
+    const initiated = await app.request("/api/objects", {
       method: "POST",
       headers: { ...agentAuth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -163,14 +163,14 @@ describe("server token subsystem", () => {
 
   it("enforces the minted token's scopes (read-only cannot write)", async () => {
     const app = makeApp();
-    const minted = await app.request("/tokens", {
+    const minted = await app.request("/api/tokens", {
       method: "POST",
       headers: adminSession,
       body: JSON.stringify({ name: "ro", scopes: ["read"] }),
     });
     const { token } = (await minted.json()) as MintTokenResult;
 
-    const initiate = await app.request("/objects", {
+    const initiate = await app.request("/api/objects", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ name: "x", contentType: "text/plain", size: 1 }),
@@ -181,7 +181,7 @@ describe("server token subsystem", () => {
 
   it("lists and revokes tokens; a revoked token stops working", async () => {
     const app = makeApp();
-    const minted = await app.request("/tokens", {
+    const minted = await app.request("/api/tokens", {
       method: "POST",
       headers: adminSession,
       body: JSON.stringify({ name: "temp", scopes: ["read"] }),
@@ -189,7 +189,7 @@ describe("server token subsystem", () => {
     const mintBody = (await minted.json()) as MintTokenResult;
     const id = mintBody.record.id;
 
-    const listed = await app.request("/tokens", {
+    const listed = await app.request("/api/tokens", {
       method: "GET",
       headers: { cookie: ADMIN_COOKIE },
     });
@@ -197,7 +197,7 @@ describe("server token subsystem", () => {
     const records = (await listed.json()) as TokenRecord[];
     expect(records.map((r) => r.id)).toContain(id);
 
-    const revoked = await app.request(`/tokens/${id}`, {
+    const revoked = await app.request(`/api/tokens/${id}`, {
       method: "DELETE",
       headers: { cookie: ADMIN_COOKIE },
     });
@@ -205,7 +205,7 @@ describe("server token subsystem", () => {
     expect(await revoked.json()).toMatchObject({ revoked: true });
 
     // the revoked token no longer authenticates
-    const reuse = await app.request("/query", {
+    const reuse = await app.request("/api/query", {
       method: "POST",
       headers: {
         authorization: `Bearer ${mintBody.token}`,

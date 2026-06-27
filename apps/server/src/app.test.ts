@@ -24,7 +24,7 @@ const auth = { authorization: "Bearer test-secret" };
 describe("server API", () => {
   it("requires authentication and completes the local upload flow", async () => {
     const app = createApp({ layer });
-    const unauthorized = await app.request("/query", {
+    const unauthorized = await app.request("/api/query", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
@@ -32,7 +32,7 @@ describe("server API", () => {
     expect(unauthorized.status).toBe(401);
     expect(await unauthorized.json()).toMatchObject({ _tag: "Unauthorized" });
 
-    const initiatedResponse = await app.request("/objects", {
+    const initiatedResponse = await app.request("/api/objects", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -60,7 +60,7 @@ describe("server API", () => {
     expect(uploaded.status).toBe(200);
 
     const confirmed = await app.request(
-      `/objects/${initiated.object.id}/confirm`,
+      `/api/objects/${initiated.object.id}/confirm`,
       { method: "POST", headers: auth },
     );
     expect(confirmed.status).toBe(200);
@@ -70,7 +70,7 @@ describe("server API", () => {
       size: 5,
     });
 
-    const queried = await app.request("/query", {
+    const queried = await app.request("/api/query", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({

@@ -131,7 +131,11 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
     });
   });
 
-  app.post("/objects", async (context) =>
+  // Data routes live under /api so they never collide with the web app's
+  // client-side routes (/objects/:id, /query, /tokens), which share these
+  // names. Auth (/api/auth/*) is already prefixed; /health and /__dev stay at
+  // the root for load balancers and the dev blob shim.
+  app.post("/api/objects", async (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -142,7 +146,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.post("/objects/:id/confirm", (context) =>
+  app.post("/api/objects/:id/confirm", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -152,7 +156,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.get("/objects/:id", (context) =>
+  app.get("/api/objects/:id", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -162,7 +166,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.get("/objects/:id/content", (context) =>
+  app.get("/api/objects/:id/content", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -172,7 +176,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.patch("/objects/:id/attributes", async (context) =>
+  app.patch("/api/objects/:id/attributes", async (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -186,7 +190,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.delete("/objects/:id", (context) =>
+  app.delete("/api/objects/:id", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -197,7 +201,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.post("/query", async (context) =>
+  app.post("/api/query", async (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -208,7 +212,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.post("/tokens", async (context) =>
+  app.post("/api/tokens", async (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -221,7 +225,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.get("/tokens", (context) =>
+  app.get("/api/tokens", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -233,7 +237,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.delete("/tokens/:id", (context) =>
+  app.delete("/api/tokens/:id", (context) =>
     execute(
       context,
       Effect.gen(function* () {

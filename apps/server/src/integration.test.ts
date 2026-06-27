@@ -48,7 +48,7 @@ describe("server integration — HTTP roundtrip", () => {
     const app = makeApp();
     const bytes = new TextEncoder().encode("the quick brown fox");
 
-    const initiatedResponse = await app.request("/objects", {
+    const initiatedResponse = await app.request("/api/objects", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -73,7 +73,7 @@ describe("server integration — HTTP roundtrip", () => {
     expect(uploaded.status).toBe(200);
 
     const confirmed = await app.request(
-      `/objects/${initiated.object.id}/confirm`,
+      `/api/objects/${initiated.object.id}/confirm`,
       { method: "POST", headers: auth },
     );
     expect(confirmed.status).toBe(200);
@@ -85,7 +85,7 @@ describe("server integration — HTTP roundtrip", () => {
 
     // write attributes, then query by one of them
     const patched = await app.request(
-      `/objects/${initiated.object.id}/attributes`,
+      `/api/objects/${initiated.object.id}/attributes`,
       {
         method: "PATCH",
         headers: { ...auth, "content-type": "application/json" },
@@ -94,7 +94,7 @@ describe("server integration — HTTP roundtrip", () => {
     );
     expect(patched.status).toBe(200);
 
-    const queried = await app.request("/query", {
+    const queried = await app.request("/api/query", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -107,7 +107,7 @@ describe("server integration — HTTP roundtrip", () => {
 
     // download: presigned GET → loopback → exact bytes
     const contentResponse = await app.request(
-      `/objects/${initiated.object.id}/content`,
+      `/api/objects/${initiated.object.id}/content`,
       { method: "GET", headers: auth },
     );
     expect(contentResponse.status).toBe(200);
@@ -119,13 +119,13 @@ describe("server integration — HTTP roundtrip", () => {
     );
 
     // delete, then a get is a typed NotFound
-    const deleted = await app.request(`/objects/${initiated.object.id}`, {
+    const deleted = await app.request(`/api/objects/${initiated.object.id}`, {
       method: "DELETE",
       headers: auth,
     });
     expect(deleted.status).toBe(200);
 
-    const gone = await app.request(`/objects/${initiated.object.id}`, {
+    const gone = await app.request(`/api/objects/${initiated.object.id}`, {
       method: "GET",
       headers: auth,
     });
@@ -136,7 +136,7 @@ describe("server integration — HTTP roundtrip", () => {
   it("returns a typed NotFound (404) for an unknown id", async () => {
     const app = makeApp();
     const response = await app.request(
-      "/objects/00000000-0000-0000-0000-000000000000",
+      "/api/objects/00000000-0000-0000-0000-000000000000",
       { method: "GET", headers: auth },
     );
     expect(response.status).toBe(404);
@@ -145,7 +145,7 @@ describe("server integration — HTTP roundtrip", () => {
 
   it("returns a typed Unauthorized (401) for a bad token", async () => {
     const app = makeApp();
-    const response = await app.request("/query", {
+    const response = await app.request("/api/query", {
       method: "POST",
       headers: { authorization: "Bearer wrong", "content-type": "application/json" },
       body: JSON.stringify({ where: [] }),
@@ -157,7 +157,7 @@ describe("server integration — HTTP roundtrip", () => {
   it("returns a typed ValidationError (400) for a malformed query", async () => {
     const app = makeApp();
     // gt with a boolean operand is rejected at schema-decode time
-    const response = await app.request("/query", {
+    const response = await app.request("/api/query", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({ where: [{ key: "x", op: "gt", value: true }] }),
