@@ -45,6 +45,27 @@ export const formatRelative = (iso: string): string => {
   return relativeFormatter.format(Math.round(seconds), "second");
 };
 
+// Short, human label for a MIME type — "application/pdf" → "PDF", "image/png"
+// → "PNG". The full type still appears in the detail panel and as a tooltip.
+const CONTENT_TYPE_LABELS: Record<string, string> = {
+  jpeg: "JPEG",
+  json: "JSON",
+  pdf: "PDF",
+  csv: "CSV",
+  svg: "SVG",
+  html: "HTML",
+  xml: "XML",
+  plain: "Text",
+  markdown: "Markdown",
+  "octet-stream": "Binary",
+};
+
+export const formatContentType = (contentType: string): string => {
+  const subtype = contentType.split(";")[0]?.split("/")[1] ?? contentType;
+  const clean = subtype.replace(/^(x-|vnd\.)/, "").split("+")[0] ?? subtype;
+  return CONTENT_TYPE_LABELS[clean] ?? clean.toUpperCase();
+};
+
 export const formatAttributeValue = (value: AttributeValue): string => {
   if (value === null) return "null";
   if (Array.isArray(value)) return value.join(", ");

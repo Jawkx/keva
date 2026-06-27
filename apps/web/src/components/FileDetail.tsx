@@ -10,6 +10,10 @@ import type { AttributeValue } from "@keva/schema";
 import type { KevaObject } from "@keva/sdk";
 import { AttributesEditor } from "./AttributesEditor";
 import { CopyButton } from "./CopyButton";
+import { FileTypeIcon } from "./FileTypeIcon";
+import { ZoomMode } from "@embedpdf/plugin-zoom";
+import { CsvViewer } from "@/components/ui/csv-viewer";
+import { PDFViewer } from "@/components/ui/pdf-viewer";
 import { formatBytes, formatDate, formatRelative } from "../lib/format";
 import { keva } from "../lib/keva";
 import { useApiError } from "../lib/useApiError";
@@ -29,23 +33,35 @@ import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type Preview = { kind: "image"; url: string } | { kind: "text"; text: string };
+type Preview =
+  | { kind: "image"; url: string }
+  | { kind: "pdf"; url: string }
+  | { kind: "csv"; text: string }
+  | { kind: "text"; text: string };
 
 const IMAGE_MAX = 5 * 1024 * 1024;
+const PDF_MAX = 25 * 1024 * 1024;
 const TEXT_MAX = 256 * 1024;
 const isImage = (o: KevaObject) => o.contentType.startsWith("image/");
+const isPdf = (o: KevaObject) => o.contentType === "application/pdf";
+const isCsv = (o: KevaObject) =>
+  o.contentType === "text/csv" ||
+  o.contentType === "text/tab-separated-values" ||
+  o.contentType === "application/csv";
 const isText = (o: KevaObject) =>
   o.contentType.startsWith("text/") ||
   o.contentType === "application/json" ||
   o.contentType === "application/xml";
 const isPreviewable = (o: KevaObject) =>
   (isImage(o) && (o.size ?? Infinity) <= IMAGE_MAX) ||
+  (isPdf(o) && (o.size ?? Infinity) <= PDF_MAX) ||
   (isText(o) && (o.size ?? Infinity) <= TEXT_MAX);
 
 interface FileDetailProps {
@@ -91,14 +107,17 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
     setPreviewLoading(true);
     try {
       const bytes = await keva.downloadBytes(obj.id);
-      if (isImage(obj)) {
+      if (isImage(obj) || isPdf(obj)) {
         const url = URL.createObjectURL(
           new Blob([bytes.slice().buffer as ArrayBuffer], {
             type: obj.contentType,
           }),
         );
         previewUrlRef.current = url;
-        setPreview({ kind: "image", url });
+        setPreview({ kind: isImage(obj) ? "image" : "pdf", url });
+      } else if (isCsv(obj)) {
+        // The CSV viewer parses the full text itself; don't truncate.
+        setPreview({ kind: "csv", text: new TextDecoder().decode(bytes) });
       } else {
         setPreview({
           kind: "text",
@@ -169,15 +188,21 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <header className="flex items-start justify-between gap-2 border-b p-4">
-        <div className="min-w-0">
-          <h2 className="truncate font-heading text-base font-medium" title={object?.name}>
-            {object?.name ?? "…"}
-          </h2>
-          {object && (
-            <p className="truncate text-xs text-muted-foreground">
-              {object.contentType} · {formatBytes(object.size)}
-            </p>
-          )}
+        <div className="flex min-w-0 items-center gap-3">
+          {object && <FileTypeIcon contentType={object.contentType} />}
+          <div className="min-w-0">
+            <h2
+              className="truncate font-heading text-base font-medium"
+              title={object?.name}
+            >
+              {object?.name ?? "…"}
+            </h2>
+            {object && (
+              <p className="truncate text-xs text-muted-foreground">
+                {object.contentType} · {formatBytes(object.size)}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <Tooltip>
@@ -270,27 +295,29 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
         ) : (
           <>
             <section className="min-w-0">
-              <dl className="rounded-lg border px-4">
-                <MetaRow label="ID">
-                  <span className="min-w-0 truncate font-mono">{object.id}</span>
-                  <CopyButton value={object.id} label="Copy ID" />
-                </MetaRow>
-                <MetaRow label="Content type">{object.contentType}</MetaRow>
-                <MetaRow label="Size">{formatBytes(object.size)}</MetaRow>
-                <MetaRow label="Status">
+              {/* Content type and size live in the header above; keep this grid
+                  to the metadata that isn't shown elsewhere. */}
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+                <MetaItem label="Status">
                   <Badge variant="secondary">{object.status}</Badge>
-                </MetaRow>
-                <MetaRow label="Source">{object.source}</MetaRow>
-                <MetaRow label="Created">
+                </MetaItem>
+                <MetaItem label="Source">{object.source}</MetaItem>
+                <MetaItem label="Created">
                   <span title={formatDate(object.createdAt)}>
                     {formatRelative(object.createdAt)}
                   </span>
-                </MetaRow>
-                <MetaRow label="Updated">
+                </MetaItem>
+                <MetaItem label="Updated">
                   <span title={formatDate(object.updatedAt)}>
                     {formatRelative(object.updatedAt)}
                   </span>
-                </MetaRow>
+                </MetaItem>
+                <MetaItem label="ID" className="col-span-2">
+                  <span className="min-w-0 truncate font-mono text-xs">
+                    {object.id}
+                  </span>
+                  <CopyButton value={object.id} label="Copy ID" />
+                </MetaItem>
               </dl>
             </section>
 
@@ -306,6 +333,21 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
                     src={preview.url}
                     alt={object.name}
                     className="max-h-96 max-w-full rounded-md border"
+                  />
+                ) : preview?.kind === "pdf" ? (
+                  <PDFViewer
+                    src={preview.url}
+                    fileName={object.name}
+                    defaultZoom={ZoomMode.FitWidth}
+                    showUpload={false}
+                    showDownload={false}
+                    className="h-[70vh] w-full overflow-hidden rounded-md border"
+                  />
+                ) : preview?.kind === "csv" ? (
+                  <CsvViewer
+                    data={preview.text}
+                    search
+                    className="h-[60vh] w-full overflow-hidden rounded-md border"
                   />
                 ) : preview?.kind === "text" ? (
                   // The scroll container is pinned to the content width (w-full
@@ -340,19 +382,19 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
   );
 }
 
-function MetaRow({
+function MetaItem({
   label,
+  className,
   children,
 }: {
   label: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b py-2.5 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
-      <dt className="w-28 shrink-0 text-sm text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 items-center gap-1.5 break-all text-sm">
-        {children}
-      </dd>
+    <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="flex min-w-0 items-center gap-1.5 text-sm">{children}</dd>
     </div>
   );
 }

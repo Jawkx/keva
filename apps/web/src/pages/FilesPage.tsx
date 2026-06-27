@@ -22,10 +22,12 @@ import {
 } from "@tabler/icons-react";
 import type { KevaObject } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
+import { FileTypeIcon } from "../components/FileTypeIcon";
 import { UploadModal } from "../components/UploadModal";
 import {
   formatAttributeValue,
   formatBytes,
+  formatContentType,
   formatRelative,
 } from "../lib/format";
 import { keva } from "../lib/keva";
@@ -72,13 +74,18 @@ const columns = [
   columnHelper.accessor("name", {
     header: ({ column }) => <SortButton column={column} label="Name" />,
     cell: (ctx) => (
-      <span className="font-medium">{ctx.getValue()}</span>
+      <div className="flex min-w-0 items-center gap-3">
+        <FileTypeIcon contentType={ctx.row.original.contentType} />
+        <span className="truncate font-medium">{ctx.getValue()}</span>
+      </div>
     ),
   }),
   columnHelper.accessor("contentType", {
     header: "Type",
     cell: (ctx) => (
-      <span className="text-muted-foreground">{ctx.getValue()}</span>
+      <span className="text-muted-foreground" title={ctx.getValue()}>
+        {formatContentType(ctx.getValue())}
+      </span>
     ),
   }),
   columnHelper.accessor((o) => o.size ?? 0, {
@@ -241,7 +248,7 @@ export function FilesPage() {
   };
 
   const tableInner = (
-    <Table>
+    <Table className="[&_td]:px-3 [&_th]:px-3">
       <TableHeader>
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id}>
@@ -301,9 +308,16 @@ export function FilesPage() {
   // Used full-width when no detail is open, and as the left side of the split.
   const leftPane = (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b p-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b p-3">
+        <div className="flex items-baseline gap-2">
+          <h1 className="font-heading text-sm font-medium">Files</h1>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {objects.length}
+            {cursor ? "+" : ""}
+          </span>
+        </div>
         <form
-          className="flex w-full max-w-md items-center gap-2"
+          className="flex min-w-[12rem] flex-1 items-center gap-2 sm:max-w-md"
           onSubmit={runSearch}
         >
           <div className="relative min-w-0 flex-1">
@@ -319,7 +333,6 @@ export function FilesPage() {
             Search
           </Button>
         </form>
-        <div className="flex-1" />
         <Button onClick={() => openUpload([])}>
           <IconUpload data-icon="inline-start" />
           Upload
