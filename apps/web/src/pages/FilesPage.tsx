@@ -309,15 +309,8 @@ export function FilesPage() {
   const leftPane = (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-3 p-3">
-        <div className="flex items-baseline gap-2">
-          <h1 className="font-heading text-sm font-medium">Files</h1>
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {objects.length}
-            {cursor ? "+" : ""}
-          </span>
-        </div>
         <form
-          className="flex min-w-[12rem] flex-1 items-center gap-2 sm:max-w-md"
+          className="flex w-full items-center gap-2 sm:w-72"
           onSubmit={runSearch}
         >
           <div className="relative min-w-0 flex-1">
@@ -333,7 +326,7 @@ export function FilesPage() {
             Search
           </Button>
         </form>
-        <Button onClick={() => openUpload([])}>
+        <Button className="sm:ml-auto" onClick={() => openUpload([])}>
           <IconUpload data-icon="inline-start" />
           Upload
         </Button>
