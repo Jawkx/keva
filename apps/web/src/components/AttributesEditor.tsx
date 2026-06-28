@@ -1,8 +1,30 @@
-import { useState } from "react";
-import { IconCheck, IconPencil, IconPlus, IconX } from "@tabler/icons-react";
+import { useMemo, useState } from "react";
+import {
+  IconAlertTriangle,
+  IconBraces,
+  IconCheck,
+  IconDeviceFloppy,
+  IconListDetails,
+  IconPlus,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react";
 import type { AttributeValue, Attributes } from "@keva/schema";
 import { formatAttributeValue } from "../lib/format";
-import { Badge } from "@/components/ui/badge";
+import {
+  coerceScalar,
+  diffAttributes,
+  inferScalarType,
+  parseAttributesJson,
+  prettyJson,
+  scalarToInput,
+  SCALAR_TYPES,
+  TYPE_LABEL,
+  validateKey,
+  valueType,
+  type ScalarType,
+  type ValueType,
+} from "../lib/attributes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,17 +35,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 
-type AttrType = "string" | "number" | "boolean";
-const TYPES: AttrType[] = ["string", "number", "boolean"];
+type Mode = "form" | "json";
 
 interface AttributesEditorProps {
   attributes: Attributes;
@@ -33,31 +49,469 @@ interface AttributesEditorProps {
   ) => Promise<void>;
 }
 
-const coerce = (type: AttrType, raw: string): AttributeValue => {
-  if (type === "number") {
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (type === "boolean") return raw === "true";
-  return raw;
-};
+// Two views over the same attributes: a Form view that commits each change
+// immediately, and a JSON view that batches a hand-edited object into one
+// patch. They share nothing but the `attributes` prop, so flipping between
+// them is always lossless.
+export function AttributesEditor({
+  attributes,
+  onPatch,
+}: AttributesEditorProps) {
+  const [mode, setMode] = useState<Mode>("form");
+  const [busy, setBusy] = useState(false);
 
-function ValueInput({
-  type,
+  const entries = Object.entries(attributes);
+
+  const commit = async (
+    set: Record<string, AttributeValue>,
+    unset: string[],
+  ) => {
+    setBusy(true);
+    try {
+      await onPatch(set, unset);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {entries.length} {entries.length === 1 ? "attribute" : "attributes"}
+        </span>
+        <ToggleGroup
+          variant="outline"
+          size="sm"
+          value={[mode]}
+          onValueChange={(value) => {
+            const next = value[0] as Mode | undefined;
+            if (next) setMode(next);
+          }}
+          aria-label="Editor mode"
+        >
+          <ToggleGroupItem value="form">
+            <IconListDetails data-icon="inline-start" />
+            Form
+          </ToggleGroupItem>
+          <ToggleGroupItem value="json">
+            <IconBraces data-icon="inline-start" />
+            JSON
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
+      {mode === "form" ? (
+        <FormView
+          attributes={attributes}
+          busy={busy}
+          onSet={(key, value) => commit({ [key]: value }, [])}
+          onUnset={(key) => commit({}, [key])}
+        />
+      ) : (
+        <JsonView attributes={attributes} busy={busy} commit={commit} />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------- Form view ------------------------------- */
+
+function FormView({
+  attributes,
+  busy,
+  onSet,
+  onUnset,
+}: {
+  attributes: Attributes;
+  busy: boolean;
+  onSet: (key: string, value: AttributeValue) => Promise<void>;
+  onUnset: (key: string) => Promise<void>;
+}) {
+  const entries = Object.entries(attributes);
+
+  return (
+    <div className="overflow-hidden rounded-lg border bg-card">
+      {entries.length === 0 ? (
+        <p className="px-3 py-2.5 text-sm text-muted-foreground">
+          No attributes yet — add one below.
+        </p>
+      ) : (
+        <ul className="divide-y">
+          {entries.map(([key, value]) => (
+            <AttributeRow
+              key={key}
+              attrKey={key}
+              value={value}
+              busy={busy}
+              onSave={(next) => onSet(key, next)}
+              onUnset={() => onUnset(key)}
+            />
+          ))}
+        </ul>
+      )}
+      <AddRow
+        busy={busy}
+        existingKeys={entries.map(([k]) => k)}
+        onAdd={onSet}
+      />
+    </div>
+  );
+}
+
+function AttributeRow({
+  attrKey,
+  value,
+  busy,
+  onSave,
+  onUnset,
+}: {
+  attrKey: string;
+  value: AttributeValue;
+  busy: boolean;
+  onSave: (next: AttributeValue) => Promise<void>;
+  onUnset: () => Promise<void>;
+}) {
+  const type = valueType(value);
+  const editable = type !== "array";
+  const [editing, setEditing] = useState(false);
+  const [draftType, setDraftType] = useState<ScalarType>(
+    editable ? (type as ScalarType) : "string",
+  );
+  const [draft, setDraft] = useState(scalarToInput(value));
+
+  const beginEdit = () => {
+    setDraftType(type as ScalarType);
+    setDraft(scalarToInput(value));
+    setEditing(true);
+  };
+
+  const save = async () => {
+    await onSave(coerceScalar(draftType, draft));
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <li className="flex flex-wrap items-center gap-2 bg-muted/40 px-3 py-2">
+        <span
+          className="max-w-[45%] flex-shrink-0 truncate font-mono text-sm font-medium"
+          title={attrKey}
+        >
+          {attrKey}
+        </span>
+        <TypeSelect value={draftType} onChange={setDraftType} />
+        <div className="min-w-0 flex-1">
+          <ValueControl
+            type={draftType}
+            value={draft}
+            onChange={setDraft}
+            onEnter={() => void save()}
+            autoFocus
+          />
+        </div>
+        <Button
+          size="icon-sm"
+          aria-label="Save"
+          disabled={busy}
+          onClick={() => void save()}
+        >
+          <IconCheck />
+        </Button>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Cancel"
+          onClick={() => setEditing(false)}
+        >
+          <IconX />
+        </Button>
+      </li>
+    );
+  }
+
+  return (
+    <li className="group flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-muted/40">
+      <span
+        className="max-w-[45%] flex-shrink-0 truncate font-mono text-sm font-medium"
+        title={attrKey}
+      >
+        {attrKey}
+      </span>
+      <TypePill type={type} />
+      {editable ? (
+        <button
+          type="button"
+          onClick={beginEdit}
+          disabled={busy}
+          title={formatAttributeValue(value)}
+          className="-mx-1 min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          {value === null ? (
+            <span className="text-muted-foreground italic">null</span>
+          ) : (
+            formatAttributeValue(value)
+          )}
+        </button>
+      ) : (
+        <span
+          className="min-w-0 flex-1 truncate text-sm text-muted-foreground"
+          title={formatAttributeValue(value)}
+        >
+          {formatAttributeValue(value)}
+        </span>
+      )}
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
+        aria-label={`Remove ${attrKey}`}
+        disabled={busy}
+        onClick={() => void onUnset()}
+      >
+        <IconTrash />
+      </Button>
+    </li>
+  );
+}
+
+function AddRow({
+  busy,
+  existingKeys,
+  onAdd,
+}: {
+  busy: boolean;
+  existingKeys: string[];
+  onAdd: (key: string, value: AttributeValue) => Promise<void>;
+}) {
+  const [key, setKey] = useState("");
+  const [type, setType] = useState<ScalarType>("string");
+  const [typeLocked, setTypeLocked] = useState(false);
+  const [value, setValue] = useState("");
+  const [touched, setTouched] = useState(false);
+
+  const trimmedKey = key.trim();
+  const keyError = useMemo(() => {
+    if (!trimmedKey) return null;
+    const formatError = validateKey(trimmedKey);
+    if (formatError) return formatError;
+    if (existingKeys.includes(trimmedKey))
+      return "An attribute with this key already exists";
+    return null;
+  }, [trimmedKey, existingKeys]);
+
+  const canAdd = Boolean(trimmedKey) && !keyError && !busy;
+
+  const onValueChange = (next: string) => {
+    setValue(next);
+    // Value-first: keep inferring the type until the user picks one by hand.
+    if (!typeLocked && type !== "null") setType(inferScalarType(next));
+  };
+
+  const reset = () => {
+    setKey("");
+    setValue("");
+    setType("string");
+    setTypeLocked(false);
+    setTouched(false);
+  };
+
+  const submit = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    setTouched(true);
+    if (!canAdd) return;
+    await onAdd(trimmedKey, coerceScalar(type, value));
+    reset();
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="flex flex-wrap items-center gap-2 border-t bg-muted/20 px-3 py-2.5"
+    >
+      <div className="min-w-0 flex-1 basis-32">
+        <Input
+          placeholder="new key"
+          aria-invalid={touched && Boolean(keyError)}
+          className="h-8 font-mono"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          onBlur={() => setTouched(true)}
+        />
+      </div>
+      <TypeSelect
+        value={type}
+        onChange={(next) => {
+          setType(next);
+          setTypeLocked(true);
+        }}
+      />
+      <div className="min-w-0 flex-1 basis-32">
+        <ValueControl
+          type={type}
+          value={value}
+          onChange={onValueChange}
+          onEnter={() => void submit()}
+        />
+      </div>
+      <Button type="submit" size="sm" disabled={!canAdd}>
+        <IconPlus data-icon="inline-start" />
+        Add
+      </Button>
+      {touched && keyError && (
+        <p className="w-full text-xs text-destructive">{keyError}</p>
+      )}
+    </form>
+  );
+}
+
+/* ------------------------------- JSON view ------------------------------- */
+
+function JsonView({
+  attributes,
+  busy,
+  commit,
+}: {
+  attributes: Attributes;
+  busy: boolean;
+  commit: (
+    set: Record<string, AttributeValue>,
+    unset: string[],
+  ) => Promise<void>;
+}) {
+  const baseline = prettyJson(attributes);
+  // Seeded once on mount; the view remounts whenever the mode switches back to
+  // JSON, so it always opens in sync with the latest attributes.
+  const [text, setText] = useState(baseline);
+
+  const parsed = useMemo(() => parseAttributesJson(text), [text]);
+  const diff = useMemo(
+    () => (parsed.ok ? diffAttributes(attributes, parsed.value) : null),
+    [parsed, attributes],
+  );
+  const changeCount = diff
+    ? Object.keys(diff.set).length + diff.unset.length
+    : 0;
+  const modified = text !== baseline;
+
+  const save = async () => {
+    if (!parsed.ok || !diff || changeCount === 0) return;
+    await commit(diff.set, diff.unset);
+    // Normalize to the saved object so dirty state clears once the prop catches
+    // up — no effect needed.
+    setText(prettyJson(parsed.value));
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Textarea
+        spellCheck={false}
+        autoComplete="off"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        aria-invalid={!parsed.ok}
+        className="min-h-56 resize-y font-mono text-xs leading-relaxed"
+      />
+      <div className="flex items-center justify-between gap-3">
+        {!parsed.ok ? (
+          <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
+            <IconAlertTriangle className="size-3.5 shrink-0" />
+            <span className="truncate" title={parsed.error}>
+              {parsed.error}
+            </span>
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {changeCount === 0
+              ? "No pending changes"
+              : `${changeCount} pending change${changeCount === 1 ? "" : "s"}`}
+          </p>
+        )}
+        <div className="flex shrink-0 gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy || !modified}
+            onClick={() => setText(baseline)}
+          >
+            Discard
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || !parsed.ok || changeCount === 0}
+            onClick={() => void save()}
+          >
+            <IconDeviceFloppy data-icon="inline-start" />
+            Save
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------- Controls -------------------------------- */
+
+function TypePill({ type }: { type: ValueType }) {
+  return (
+    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+      {TYPE_LABEL[type]}
+    </span>
+  );
+}
+
+function TypeSelect({
   value,
   onChange,
 }: {
-  type: AttrType;
+  value: ScalarType;
+  onChange: (next: ScalarType) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => onChange(next as ScalarType)}>
+      <SelectTrigger className="w-[5rem] font-mono text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {SCALAR_TYPES.map((t) => (
+            <SelectItem key={t} value={t} className="font-mono text-xs">
+              {TYPE_LABEL[t]}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function ValueControl({
+  type,
+  value,
+  onChange,
+  onEnter,
+  autoFocus,
+}: {
+  type: ScalarType;
   value: string;
   onChange: (next: string) => void;
+  onEnter?: () => void;
+  autoFocus?: boolean;
 }) {
+  if (type === "null") {
+    return (
+      <span className="block px-1 text-sm text-muted-foreground italic">
+        null
+      </span>
+    );
+  }
   if (type === "boolean") {
     return (
       <Select
-        value={value === "false" ? "false" : "true"}
-        onValueChange={(next) => onChange(String(next))}
+        value={value.trim() === "false" ? "false" : "true"}
+        onValueChange={(next) => onChange(next ?? "true")}
       >
-        <SelectTrigger className="w-28">
+        <SelectTrigger className="w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -71,223 +525,19 @@ function ValueInput({
   }
   return (
     <Input
+      // eslint-disable-next-line jsx-a11y/no-autofocus
+      autoFocus={autoFocus}
       placeholder="value"
       type={type === "number" ? "number" : "text"}
+      className="h-8"
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onEnter?.();
+        }
+      }}
     />
-  );
-}
-
-function TypeSelect({
-  value,
-  onChange,
-}: {
-  value: AttrType;
-  onChange: (next: AttrType) => void;
-}) {
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => onChange(next as AttrType)}
-    >
-      <SelectTrigger className="w-28">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {TYPES.map((t) => (
-            <SelectItem key={t} value={t}>
-              {t}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
-  );
-}
-
-export function AttributesEditor({
-  attributes,
-  onPatch,
-}: AttributesEditorProps) {
-  const [newKey, setNewKey] = useState("");
-  const [newType, setNewType] = useState<AttrType>("string");
-  const [newValue, setNewValue] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const entries = Object.entries(attributes);
-
-  const run = async (
-    set: Record<string, AttributeValue>,
-    unset: string[],
-  ) => {
-    setBusy(true);
-    try {
-      await onPatch(set, unset);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onAdd = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!newKey.trim()) return;
-    await run({ [newKey.trim()]: coerce(newType, newValue) }, []);
-    setNewKey("");
-    setNewValue("");
-    setNewType("string");
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      {entries.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Key</TableHead>
-              <TableHead>Value</TableHead>
-              <TableHead className="w-0" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {entries.map(([key, value]) => (
-              <AttributeRow
-                key={key}
-                attrKey={key}
-                value={value}
-                busy={busy}
-                onSave={(next) => run({ [key]: next }, [])}
-                onUnset={() => run({}, [key])}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      )}
-
-      <form
-        className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3"
-        onSubmit={onAdd}
-      >
-        <Input
-          placeholder="key"
-          className="w-40"
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-        />
-        <TypeSelect value={newType} onChange={setNewType} />
-        <ValueInput type={newType} value={newValue} onChange={setNewValue} />
-        <Button type="submit" disabled={busy || !newKey.trim()}>
-          <IconPlus data-icon="inline-start" />
-          Add / Set
-        </Button>
-      </form>
-    </div>
-  );
-}
-
-interface AttributeRowProps {
-  attrKey: string;
-  value: AttributeValue;
-  busy: boolean;
-  onSave: (next: AttributeValue) => Promise<void>;
-  onUnset: () => Promise<void>;
-}
-
-function AttributeRow({
-  attrKey,
-  value,
-  busy,
-  onSave,
-  onUnset,
-}: AttributeRowProps) {
-  const [editing, setEditing] = useState(false);
-  // Arrays are shown read-only; the simple editor handles scalars only.
-  const isArray = Array.isArray(value);
-  const type: AttrType =
-    typeof value === "number"
-      ? "number"
-      : typeof value === "boolean"
-        ? "boolean"
-        : "string";
-  const [draftType, setDraftType] = useState<AttrType>(type);
-  const [draft, setDraft] = useState(formatAttributeValue(value));
-
-  if (editing && !isArray) {
-    return (
-      <TableRow>
-        <TableCell className="font-mono align-top">{attrKey}</TableCell>
-        <TableCell>
-          <div className="flex flex-wrap items-center gap-2">
-            <TypeSelect value={draftType} onChange={setDraftType} />
-            <ValueInput type={draftType} value={draft} onChange={setDraft} />
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex justify-end gap-1">
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={async () => {
-                await onSave(coerce(draftType, draft));
-                setEditing(false);
-              }}
-            >
-              <IconCheck data-icon="inline-start" />
-              Save
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setEditing(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </TableCell>
-      </TableRow>
-    );
-  }
-
-  return (
-    <TableRow>
-      <TableCell className="font-mono align-top">{attrKey}</TableCell>
-      <TableCell className="break-all">
-        {isArray ? (
-          <Badge variant="outline">{formatAttributeValue(value)}</Badge>
-        ) : (
-          formatAttributeValue(value)
-        )}
-      </TableCell>
-      <TableCell>
-        <div className="flex justify-end gap-1">
-          {!isArray && (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              disabled={busy}
-              aria-label="Edit"
-              onClick={() => {
-                setDraft(formatAttributeValue(value));
-                setDraftType(type);
-                setEditing(true);
-              }}
-            >
-              <IconPencil />
-            </Button>
-          )}
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="text-destructive"
-            disabled={busy}
-            aria-label="Unset"
-            onClick={onUnset}
-          >
-            <IconX />
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
   );
 }
