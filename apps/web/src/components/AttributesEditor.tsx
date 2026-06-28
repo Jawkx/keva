@@ -3,9 +3,13 @@ import {
   IconAlertTriangle,
   IconBraces,
   IconCheck,
+  IconCircleOff,
   IconDeviceFloppy,
+  IconLetterCase,
   IconListDetails,
+  IconNumber123,
   IconPlus,
+  IconToggleLeft,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
@@ -460,6 +464,17 @@ function TypePill({ type }: { type: ValueType }) {
   );
 }
 
+// Icon per scalar type. The trigger shows only the icon to stay compact (the
+// full words overflowed a fixed-width text trigger); the dropdown spells the
+// type out in full next to the same icon.
+const TYPE_ICON: Record<ScalarType, React.ComponentType<{ className?: string }>> =
+  {
+    string: IconLetterCase,
+    number: IconNumber123,
+    boolean: IconToggleLeft,
+    null: IconCircleOff,
+  };
+
 function TypeSelect({
   value,
   onChange,
@@ -469,16 +484,25 @@ function TypeSelect({
 }) {
   return (
     <Select value={value} onValueChange={(next) => onChange(next as ScalarType)}>
-      <SelectTrigger className="w-[5rem] font-mono text-xs">
-        <SelectValue />
+      <SelectTrigger className="w-auto" aria-label="Value type" title={value}>
+        <SelectValue>
+          {(selected: ScalarType | null) => {
+            const Icon = TYPE_ICON[selected ?? "string"];
+            return <Icon className="size-4 text-muted-foreground" />;
+          }}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {SCALAR_TYPES.map((t) => (
-            <SelectItem key={t} value={t} className="font-mono text-xs">
-              {TYPE_LABEL[t]}
-            </SelectItem>
-          ))}
+          {SCALAR_TYPES.map((t) => {
+            const Icon = TYPE_ICON[t];
+            return (
+              <SelectItem key={t} value={t} className="font-mono text-xs">
+                <Icon className="size-4 text-muted-foreground" />
+                {t}
+              </SelectItem>
+            );
+          })}
         </SelectGroup>
       </SelectContent>
     </Select>
