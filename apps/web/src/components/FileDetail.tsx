@@ -358,9 +358,9 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
         ) : !object ? (
           <p className="text-sm text-muted-foreground">Not found.</p>
         ) : activePanel === "preview" ? (
-          <section className="flex min-w-0 flex-col gap-2">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {previewLoading ? (
-              <Skeleton className="h-48 w-full" />
+              <Skeleton className="min-h-0 w-full flex-1" />
             ) : preview?.kind === "image" ? (
               <img
                 src={preview.url}
@@ -374,19 +374,19 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
                 defaultZoom={ZoomMode.FitWidth}
                 showUpload={false}
                 showDownload={false}
-                className="h-[70vh] w-full overflow-hidden rounded-md border"
+                className="min-h-0 w-full flex-1 overflow-hidden rounded-md border"
               />
             ) : preview?.kind === "csv" ? (
               <CsvViewer
                 data={preview.text}
                 search
-                className="h-[60vh] w-full overflow-hidden rounded-md border"
+                className="min-h-0 w-full flex-1 overflow-hidden rounded-md border"
               />
             ) : preview?.kind === "text" ? (
               // The scroll container is pinned to the content width (w-full
               // min-w-0); the <pre> keeps its natural width and scrolls
               // inside it, so long lines never widen the panel.
-              <div className="max-h-96 w-full min-w-0 overflow-auto rounded-md border bg-muted/50">
+              <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md border bg-muted/50">
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>
               </div>
             ) : (
