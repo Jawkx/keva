@@ -231,18 +231,18 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      <header className="flex items-start justify-between gap-2 border-b p-4">
+      <header className="flex items-start justify-between gap-2 border-b p-5">
         <div className="flex min-w-0 items-center gap-3">
           {object && <FileTypeIcon contentType={object.contentType} />}
           <div className="min-w-0">
             <h2
-              className="truncate font-heading text-base font-medium"
+              className="truncate font-heading text-lg font-medium"
               title={object?.name}
             >
               {object?.name ?? "…"}
             </h2>
             {object && (
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-sm text-muted-foreground">
                 {object.contentType} · {formatBytes(object.size)}
               </p>
             )}
@@ -254,7 +254,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   aria-label="Download"
                   disabled={busy || !object}
                   onClick={onDownload}
@@ -274,7 +274,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
                     render={
                       <Button
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon"
                         className="text-destructive"
                         aria-label="Delete"
                         disabled={busy || !object}
@@ -327,7 +327,6 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
         <div className="shrink-0 px-4 pt-3">
           <ToggleGroup
             variant="outline"
-            size="sm"
             value={[activePanel]}
             onValueChange={(value) => {
               const next = value[0] as Panel | undefined;
@@ -400,7 +399,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
           <section className="min-w-0">
             {/* Content type and size live in the header above; keep this grid
                 to the metadata that isn't shown elsewhere. */}
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
               <MetaItem label="Status">
                 <Badge variant="secondary">{object.status}</Badge>
               </MetaItem>
@@ -443,8 +442,8 @@ function MetaItem({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
+      <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd className="flex min-w-0 items-center gap-1.5 text-sm">{children}</dd>
     </div>
   );
