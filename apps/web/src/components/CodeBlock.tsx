@@ -14,7 +14,7 @@ export function CodeBlock({ code, label }: CodeBlockProps) {
         </span>
       )}
       <div className="relative">
-        <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-3 pr-12 font-mono text-xs leading-relaxed">
+        <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 pr-12 font-mono text-xs leading-relaxed">
           <code>{code}</code>
         </pre>
         <div className="absolute top-1.5 right-1.5">

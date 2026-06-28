@@ -131,13 +131,13 @@ function FormView({
   const entries = Object.entries(attributes);
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <div className="flex flex-col gap-1">
       {entries.length === 0 ? (
-        <p className="px-3 py-2.5 text-sm text-muted-foreground">
+        <p className="px-1 py-1 text-sm text-muted-foreground">
           No attributes yet — add one below.
         </p>
       ) : (
-        <ul className="divide-y">
+        <ul className="flex flex-col">
           {entries.map(([key, value]) => (
             <AttributeRow
               key={key}
@@ -193,7 +193,7 @@ function AttributeRow({
 
   if (editing) {
     return (
-      <li className="flex flex-wrap items-center gap-2 bg-muted/40 px-3 py-2">
+      <li className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 px-2 py-2">
         <span
           className="max-w-[45%] flex-shrink-0 truncate font-mono text-sm font-medium"
           title={attrKey}
@@ -231,7 +231,7 @@ function AttributeRow({
   }
 
   return (
-    <li className="group flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-muted/40">
+    <li className="group flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-muted/40">
       <span
         className="max-w-[45%] flex-shrink-0 truncate font-mono text-sm font-medium"
         title={attrKey}
@@ -327,7 +327,7 @@ function AddRow({
   return (
     <form
       onSubmit={submit}
-      className="flex flex-wrap items-center gap-2 border-t bg-muted/20 px-3 py-2.5"
+      className="mt-1 flex flex-wrap items-center gap-2 rounded-md bg-muted/30 px-3 py-2.5"
     >
       <div className="min-w-0 flex-1 basis-32">
         <Input

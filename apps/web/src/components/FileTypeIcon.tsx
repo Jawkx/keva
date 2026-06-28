@@ -46,7 +46,7 @@ export function FileTypeIcon({
   return (
     <span
       className={cn(
-        "flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted/40",
+        "flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/40",
         className,
       )}
     >

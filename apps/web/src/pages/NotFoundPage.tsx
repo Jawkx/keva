@@ -11,7 +11,7 @@ import {
 
 export function NotFoundPage() {
   return (
-    <Empty className="border">
+    <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <IconError404 />

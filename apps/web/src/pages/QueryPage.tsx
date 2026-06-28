@@ -334,7 +334,7 @@ const { objects } = await keva.query(${body});`;
             {results.length} result{results.length === 1 ? "" : "s"}
           </h2>
           {results.length === 0 ? (
-            <Empty className="border">
+            <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <IconSearch />

@@ -308,7 +308,7 @@ export function FilesPage() {
   // Used full-width when no detail is open, and as the left side of the split.
   const leftPane = (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b p-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 p-3">
         <div className="flex items-baseline gap-2">
           <h1 className="font-heading text-sm font-medium">Files</h1>
           <span className="text-xs tabular-nums text-muted-foreground">
@@ -404,7 +404,7 @@ export function FilesPage() {
         </div>
       ) : !hasObjects ? (
         <div className="flex flex-1 items-center justify-center p-6">
-          <Empty className="border">
+          <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <IconFiles />

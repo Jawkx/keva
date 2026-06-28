@@ -242,7 +242,7 @@ export function TokensPage() {
           ))}
         </div>
       ) : tokens.length === 0 ? (
-        <Empty className="border">
+        <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <IconKey />

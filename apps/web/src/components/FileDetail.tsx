@@ -231,7 +231,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
+      <header className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           {object && <FileTypeIcon contentType={object.contentType} />}
           <div className="min-w-0">
@@ -372,7 +372,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
               <img
                 src={preview.url}
                 alt={object.name}
-                className="max-h-96 max-w-full rounded-md border"
+                className="max-h-96 max-w-full rounded-md"
               />
             ) : preview?.kind === "pdf" ? (
               <PDFViewer
@@ -381,19 +381,19 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
                 defaultZoom={ZoomMode.FitWidth}
                 showUpload={false}
                 showDownload={false}
-                className="min-h-0 w-full flex-1 overflow-hidden rounded-md border"
+                className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
               />
             ) : preview?.kind === "csv" ? (
               <CsvViewer
                 data={preview.text}
                 search
-                className="min-h-0 w-full flex-1 overflow-hidden rounded-md border"
+                className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
               />
             ) : preview?.kind === "text" ? (
               // The scroll container is pinned to the content width (w-full
               // min-w-0); the <pre> keeps its natural width and scrolls
               // inside it, so long lines never widen the panel.
-              <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md border bg-muted/50">
+              <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md bg-muted/50">
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>
               </div>
             ) : (
