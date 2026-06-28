@@ -231,12 +231,12 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      <header className="flex items-start justify-between gap-2 border-b p-5">
+      <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           {object && <FileTypeIcon contentType={object.contentType} />}
           <div className="min-w-0">
             <h2
-              className="truncate font-heading text-lg font-medium"
+              className="truncate font-heading text-base font-medium"
               title={object?.name}
             >
               {object?.name ?? "…"}
@@ -360,7 +360,14 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
         ) : activePanel === "preview" ? (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {previewLoading ? (
-              <Skeleton className="min-h-0 w-full flex-1" />
+              // Mirror the shape of the content that will replace it: images
+              // render capped at max-h-96 (they don't fill the panel), while
+              // pdf/csv/text viewers stretch to flex-1.
+              isImage(object) ? (
+                <Skeleton className="h-96 w-full max-w-full" />
+              ) : (
+                <Skeleton className="min-h-0 w-full flex-1" />
+              )
             ) : preview?.kind === "image" ? (
               <img
                 src={preview.url}
