@@ -53,7 +53,7 @@ export const inferScalarType = (
 // Turn the editing string + chosen type into a concrete scalar value.
 export const coerceScalar = (type: ScalarType, raw: string): PropertyValue => {
   if (type === "null") return null;
-  if (type === "boolean") return raw.trim() !== "false";
+  if (type === "boolean") return raw.trim().toLowerCase() === "true";
   if (type === "number") {
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;

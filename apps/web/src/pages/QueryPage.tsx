@@ -13,6 +13,7 @@ import { CodeBlock } from "../components/CodeBlock";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatDate } from "../lib/format";
 import { keva } from "../lib/keva";
+import { coerceScalar } from "../lib/properties";
 import { useApiError } from "../lib/useApiError";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -72,15 +73,6 @@ const emptyRow = (): Row => ({
   value: "",
 });
 
-const coerceValue = (type: ValueType, raw: string): string | number | boolean => {
-  if (type === "number") {
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (type === "boolean") return raw !== "false";
-  return raw;
-};
-
 export function QueryPage() {
   const handleError = useApiError();
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
@@ -106,7 +98,7 @@ export function QueryPage() {
             : {
                 key: row.key.trim(),
                 op: row.op,
-                value: coerceValue(row.valueType, row.value),
+                value: coerceScalar(row.valueType, row.value),
               },
         ),
     [rows],
