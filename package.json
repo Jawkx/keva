@@ -1,10 +1,6 @@
 {
   "name": "keva",
   "private": true,
-  "packageManager": "pnpm@11.8.0",
-  "engines": {
-    "node": ">=22"
-  },
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -13,13 +9,23 @@
     "dev:web": "pnpm --filter @keva/web dev",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "lint": "turbo lint && pnpm lint:no-direct-use-effect",
+    "lint": "turbo lint && pnpm lint:ox && pnpm lint:no-direct-use-effect",
+    "lint:fix": "oxlint --fix .",
+    "lint:ox": "oxlint --deny-warnings .",
     "lint:no-direct-use-effect": "node scripts/check-no-direct-use-effect.mjs",
+    "format": "oxfmt apps packages tooling scripts package.json pnpm-workspace.yaml turbo.json",
+    "format:check": "oxfmt --check apps packages tooling scripts package.json pnpm-workspace.yaml turbo.json",
     "db:generate": "pnpm --filter @keva/core db:generate",
     "db:migrate": "pnpm --filter @keva/core db:migrate"
   },
   "devDependencies": {
+    "oxfmt": "0.56.0",
+    "oxlint": "1.71.0",
     "turbo": "2.9.18",
     "typescript": "6.0.3"
-  }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.8.0"
 }

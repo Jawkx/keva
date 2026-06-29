@@ -12,7 +12,6 @@ import postgres, { type Sql } from "postgres";
 import {
   MetadataStore,
   type MetadataStoreService,
-  type ItemTransition,
 } from "../services.js";
 
 export interface PostgresConfig {

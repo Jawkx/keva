@@ -2,7 +2,6 @@ import {
   BlobStore,
   makeKevaEngine,
   MetadataStore,
-  type BlobStoreService,
 } from "@keva/core";
 import {
   ItemPatch,
