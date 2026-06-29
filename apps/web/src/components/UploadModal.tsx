@@ -1,9 +1,6 @@
 import { useRef, useState } from "react";
 import { IconCloudUpload, IconFile, IconX } from "@tabler/icons-react";
-import { toast } from "sonner";
-import { errorMessage } from "../lib/errors";
 import { formatBytes } from "../lib/format";
-import { keva } from "../lib/keva";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +15,9 @@ import { cn } from "@/lib/utils";
 interface UploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUploaded: () => void;
+  // Hands the chosen files to the parent, which uploads them in the background
+  // (rows appear immediately in the list with their own progress/error state).
+  onUpload: (files: File[]) => void;
   // Files dropped onto the page before the modal opened. Seeded as initial
   // state; callers remount via `key` to refresh it (no effect needed).
   initialFiles?: File[];
@@ -27,39 +26,22 @@ interface UploadModalProps {
 export function UploadModal({
   open,
   onOpenChange,
-  onUploaded,
+  onUpload,
   initialFiles = [],
 }: UploadModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>(initialFiles);
   const [dragging, setDragging] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   const addFiles = (list: FileList | null) => {
     if (!list || list.length === 0) return;
     setFiles((prev) => [...prev, ...Array.from(list)]);
   };
 
-  const uploadAll = async () => {
-    setBusy(true);
-    let ok = 0;
-    try {
-      for (const target of files) {
-        try {
-          await keva.uploadFile(target, { properties: {}, source: "upload" });
-          ok += 1;
-        } catch (err) {
-          toast.error(`${target.name}: ${errorMessage(err)}`);
-        }
-      }
-      if (ok > 0) {
-        toast.success(`Uploaded ${ok} file${ok === 1 ? "" : "s"}`);
-        onUploaded();
-        onOpenChange(false);
-      }
-    } finally {
-      setBusy(false);
-    }
+  const submit = () => {
+    if (files.length === 0) return;
+    onUpload(files);
+    onOpenChange(false);
   };
 
   return (
@@ -120,7 +102,6 @@ export function UploadModal({
                   size="icon-xs"
                   variant="ghost"
                   aria-label={`Remove ${file.name}`}
-                  disabled={busy}
                   onClick={() =>
                     setFiles((prev) => prev.filter((_, idx) => idx !== i))
                   }
@@ -133,10 +114,8 @@ export function UploadModal({
         )}
 
         <DialogFooter showCloseButton>
-          <Button disabled={files.length === 0 || busy} onClick={uploadAll}>
-            {busy
-              ? "Uploading…"
-              : `Upload${files.length > 1 ? ` ${files.length}` : ""}`}
+          <Button disabled={files.length === 0} onClick={submit}>
+            Upload{files.length > 1 ? ` ${files.length}` : ""}
           </Button>
         </DialogFooter>
       </DialogContent>

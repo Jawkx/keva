@@ -1,5 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   IconAlertTriangle,
   IconDownload,
@@ -15,10 +20,11 @@ import { FileTypeIcon } from "./FileTypeIcon";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
 import { CsvViewer } from "@/components/ui/csv-viewer";
 import { PDFViewer } from "@/components/ui/pdf-viewer";
+import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate, formatRelative } from "../lib/format";
+import { removeItemsFromPages, type ItemsCache } from "../lib/items-cache";
 import { keva } from "../lib/keva";
-import { useApiError } from "../lib/useApiError";
-import { useMountEffect } from "../lib/useMountEffect";
+import { objectUrlFor, revokeObjectUrl } from "../lib/object-url-cache";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,17 +101,53 @@ interface FileDetailProps {
 // bottom sheet (narrow screens). Loads its own data on mount; remount it with a
 // `key={itemId}` so a new selection re-runs the load.
 export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
-  const handleError = useApiError();
-  const [item, setItem] = useState<KevaItem | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const previewUrlRef = useRef<string | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const itemQuery = useQuery({
+    queryKey: ["item", itemId],
+    queryFn: () => keva.get(itemId),
+  });
+  const item = itemQuery.data ?? null;
+  const loading = itemQuery.isLoading;
+  const error = itemQuery.error ? errorMessage(itemQuery.error) : null;
+
+  // Content bytes are cached (immutable per id), so re-opening a file is
+  // instant and never re-downloads. The Blob is built once here and shared.
+  const contentQuery = useQuery({
+    queryKey: ["content", itemId],
+    enabled: Boolean(item) && isPreviewable(item!),
+    staleTime: Infinity,
+    queryFn: async () => {
+      const bytes = await keva.downloadBytes(itemId);
+      return {
+        bytes,
+        blob: new Blob([bytes.slice().buffer as ArrayBuffer], {
+          type: item!.contentType,
+        }),
+      };
+    },
+  });
+  const previewLoading = contentQuery.isLoading;
+
+  // Derive the preview from cached bytes. `objectUrlFor` is idempotent per id,
+  // so reading it during render is safe (no leak under StrictMode); the URL is
+  // revoked on unmount below. Best-effort: content errors are ignored here.
+  const preview = useMemo<Preview | null>(() => {
+    if (!item || !contentQuery.data) return null;
+    const { bytes, blob } = contentQuery.data;
+    if (isImage(item) || isPdf(item)) {
+      return {
+        kind: isImage(item) ? "image" : "pdf",
+        url: objectUrlFor(itemId, blob),
+      };
+    }
+    if (isCsv(item)) return { kind: "csv", text: new TextDecoder().decode(bytes) };
+    return { kind: "text", text: new TextDecoder().decode(bytes).slice(0, 5000) };
+  }, [item, contentQuery.data, itemId]);
+
 
   // Which panels this item exposes (Preview is dropped for non-previewable
   // files). The first entry is the default — Preview when available, else Info.
@@ -132,101 +174,46 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     [setSearchParams],
   );
 
-  const load = useCallback(async (): Promise<KevaItem | null> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const obj = await keva.get(itemId);
-      setItem(obj);
-      return obj;
-    } catch (err) {
-      setError(handleError(err));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [itemId, handleError]);
-
-  const loadPreview = useCallback(async (obj: KevaItem) => {
-    setPreviewLoading(true);
-    try {
-      const bytes = await keva.downloadBytes(obj.id);
-      if (isImage(obj) || isPdf(obj)) {
-        const url = URL.createObjectURL(
-          new Blob([bytes.slice().buffer as ArrayBuffer], {
-            type: obj.contentType,
-          }),
-        );
-        previewUrlRef.current = url;
-        setPreview({ kind: isImage(obj) ? "image" : "pdf", url });
-      } else if (isCsv(obj)) {
-        // The CSV viewer parses the full text itself; don't truncate.
-        setPreview({ kind: "csv", text: new TextDecoder().decode(bytes) });
-      } else {
-        setPreview({
-          kind: "text",
-          text: new TextDecoder().decode(bytes).slice(0, 5000),
-        });
-      }
-    } catch {
-      // Preview is best-effort; download/delete still surface their own errors.
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, []);
-
-  useMountEffect(() => {
-    void (async () => {
-      const obj = await load();
-      if (obj && isPreviewable(obj)) await loadPreview(obj);
-    })();
-    return () => {
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    };
-  });
-
-  const onDownload = async () => {
-    if (!item) return;
-    setBusy(true);
-    try {
-      const { url } = await keva.getDownloadUrl(item.id);
+  const downloadMutation = useMutation({
+    mutationFn: async () => {
+      const { url } = await keva.getDownloadUrl(itemId);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = item.name;
+      anchor.download = item?.name ?? itemId;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-    } catch (err) {
-      toast.error(handleError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
 
-  const onDelete = async () => {
-    if (!item) return;
-    setBusy(true);
-    try {
-      await keva.delete(item.id);
-      toast.success(`Deleted ${item.name}`);
+  const deleteMutation = useMutation({
+    mutationFn: () => keva.delete(itemId),
+    onSuccess: () => {
+      toast.success(`Deleted ${item?.name ?? "item"}`);
+      // Drop the row from any cached list (whatever search is active) so it
+      // disappears without a refetch; free its preview URL; then navigate away.
+      queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
+        old ? removeItemsFromPages(old, [itemId]) : old,
+      );
+      revokeObjectUrl(itemId);
       onDeleted();
-    } catch (err) {
-      toast.error(handleError(err));
-      setBusy(false);
-    }
-  };
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
 
-  const onPatch = async (
-    set: Record<string, PropertyValue>,
-    unset: string[],
-  ) => {
-    if (!item) return;
-    try {
-      setItem(await keva.patchProperties(item.id, { set, unset }));
-    } catch (err) {
-      toast.error(handleError(err));
-      throw err;
-    }
+  const patchMutation = useMutation({
+    mutationFn: (vars: { set: Record<string, PropertyValue>; unset: string[] }) =>
+      keva.patchProperties(itemId, vars),
+    onSuccess: (updated) => queryClient.setQueryData(["item", itemId], updated),
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  const busy = downloadMutation.isPending || deleteMutation.isPending;
+
+  // PropertiesEditor awaits this and reverts its own UI if it rejects.
+  const onPatch = async (set: Record<string, PropertyValue>, unset: string[]) => {
+    await patchMutation.mutateAsync({ set, unset });
   };
 
   return (
@@ -257,7 +244,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                   size="icon"
                   aria-label="Download"
                   disabled={busy || !item}
-                  onClick={onDownload}
+                  onClick={() => downloadMutation.mutate()}
                 />
               }
             >
@@ -301,7 +288,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                   variant="destructive"
                   onClick={() => {
                     setConfirmOpen(false);
-                    void onDelete();
+                    deleteMutation.mutate();
                   }}
                 >
                   Delete

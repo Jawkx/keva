@@ -1,5 +1,10 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
@@ -19,6 +24,7 @@ import {
   IconArrowUp,
   IconCloudUpload,
   IconFiles,
+  IconLoader2,
   IconSearch,
   IconTrash,
   IconUpload,
@@ -28,16 +34,20 @@ import type { KevaItem } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { UploadModal } from "../components/UploadModal";
+import { errorMessage } from "../lib/errors";
 import {
   formatPropertyValue,
   formatBytes,
   formatContentType,
   formatRelative,
 } from "../lib/format";
+import {
+  prependItemToPages,
+  removeItemsFromPages,
+  type ItemsCache,
+} from "../lib/items-cache";
 import { keva } from "../lib/keva";
-import { useApiError } from "../lib/useApiError";
 import { useMediaQuery } from "../lib/useMediaQuery";
-import { useMountEffect } from "../lib/useMountEffect";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -85,6 +95,7 @@ import { cn } from "@/lib/utils";
 declare module "@tanstack/react-table" {
   interface TableMeta<TData extends RowData> {
     selectMode: boolean;
+    onRetryUpload: (id: string, file: File) => void;
   }
 }
 
@@ -92,7 +103,40 @@ const PAGE_SIZE = 50;
 
 const plural = (n: number) => (n === 1 ? "item" : "items");
 
-const columnHelper = createColumnHelper<KevaItem>();
+// A table row is either a real item from the server or an optimistic row for a
+// file that is still uploading (or failed). The optimistic row borrows the
+// KevaItem shape — only `name`, `contentType` and `size` are real; the rest are
+// placeholders that never reach the screen — plus a client-only `upload` marker.
+type FileRow = KevaItem & {
+  upload?: { status: "uploading" | "error"; file: File; error?: string };
+};
+
+// Placeholder fields are never rendered (uploading rows show name/type/size
+// only); they exist solely to satisfy the KevaItem shape until the real item
+// arrives. `createdAt: now` keeps the row at the top under the default sort.
+const optimisticRow = (id: string, file: File): FileRow => {
+  const now = new Date().toISOString();
+  return {
+    id,
+    tenantId: "",
+    name: file.name,
+    contentType: file.type || "application/octet-stream",
+    declaredSize: file.size,
+    size: file.size,
+    etag: null,
+    checksum: null,
+    source: "upload",
+    status: "pending",
+    storageKey: "pending",
+    stagingKey: "pending",
+    createdAt: now,
+    updatedAt: now,
+    properties: {},
+    upload: { status: "uploading", file },
+  };
+};
+
+const columnHelper = createColumnHelper<FileRow>();
 
 // Selection column stays out of the way until a row is hovered or selection
 // mode is active (anything selected); the table meta carries that flag.
@@ -116,19 +160,45 @@ const columns = [
         )}
       />
     ),
-    cell: ({ row, table }) => (
-      <Checkbox
-        aria-label="Select row"
-        checked={row.getIsSelected()}
-        onCheckedChange={(checked) => row.toggleSelected(checked)}
-        className={cn(
-          "transition-opacity",
-          row.getIsSelected() || selectModeOf(table.options.meta)
-            ? "opacity-100"
-            : "opacity-0 group-hover:opacity-100",
-        )}
-      />
-    ),
+    cell: ({ row, table }) => {
+      const upload = row.original.upload;
+      if (upload?.status === "uploading") {
+        return (
+          <IconLoader2
+            aria-label="Uploading"
+            className="size-4 animate-spin text-muted-foreground"
+          />
+        );
+      }
+      if (upload?.status === "error") {
+        return (
+          <button
+            type="button"
+            aria-label={`Upload failed: ${upload.error ?? "unknown error"}. Click to retry`}
+            title={`${upload.error ?? "Upload failed"} — click to retry`}
+            onClick={() =>
+              table.options.meta?.onRetryUpload(row.original.id, upload.file)
+            }
+            className="flex size-5 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+          >
+            <IconAlertTriangle className="size-4" />
+          </button>
+        );
+      }
+      return (
+        <Checkbox
+          aria-label="Select row"
+          checked={row.getIsSelected()}
+          onCheckedChange={(checked) => row.toggleSelected(checked)}
+          className={cn(
+            "transition-opacity",
+            row.getIsSelected() || selectModeOf(table.options.meta)
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100",
+          )}
+        />
+      );
+    },
   }),
   columnHelper.accessor("name", {
     header: ({ column }) => <SortButton column={column} label="Name" />,
@@ -188,15 +258,9 @@ const columns = [
 export function FilesPage() {
   const navigate = useNavigate();
   const { id: selectedId } = useParams<{ id: string }>();
-  const handleError = useApiError();
+  const queryClient = useQueryClient();
   // Split layout only makes sense once there's room for two panes side by side.
   const isWide = useMediaQuery("(min-width: 1024px)");
-
-  const [items, setItems] = useState<readonly KevaItem[]>([]);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
@@ -206,7 +270,11 @@ export function FilesPage() {
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Optimistic upload rows (uploading / failed-with-retry). Kept separate from
+  // the React Query list cache: failed uploads must persist with a retry
+  // affordance rather than roll back, and survive list refetches.
+  const [uploads, setUploads] = useState<FileRow[]>([]);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -215,35 +283,31 @@ export function FilesPage() {
   const [pageDragging, setPageDragging] = useState(false);
   const dragDepth = useRef(0);
 
-  const load = useCallback(
-    async (reset: boolean) => {
-      if (reset) setLoading(true);
-      else setLoadingMore(true);
-      setError(null);
-      try {
-        const result = await keva.query({
-          where: [],
-          ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
-          limit: PAGE_SIZE,
-          ...(reset ? {} : cursor ? { cursor } : {}),
-        });
-        setItems((prev) =>
-          reset ? result.items : [...prev, ...result.items],
-        );
-        setCursor(result.nextCursor);
-      } catch (err) {
-        setError(handleError(err));
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    },
-    [activeSearch, cursor, handleError],
-  );
-
-  useMountEffect(() => {
-    void load(true);
+  const itemsQuery = useInfiniteQuery({
+    queryKey: ["items", { search: activeSearch }],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      keva.query({
+        where: [],
+        ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
+        limit: PAGE_SIZE,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      }),
+    getNextPageParam: (last) => last.nextCursor,
   });
+
+  const loading = itemsQuery.isLoading;
+  const error = itemsQuery.error ? errorMessage(itemsQuery.error) : null;
+  const serverItems = useMemo(
+    () => itemsQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [itemsQuery.data],
+  );
+  // Upload rows sit on top of the server list; memoized so react-table doesn't
+  // rebuild its row model every render.
+  const tableData = useMemo<FileRow[]>(
+    () => [...uploads, ...serverItems],
+    [uploads, serverItems],
+  );
 
   // Detail open in the side panel; collapse secondary columns so the list
   // stays readable in the narrower remaining space.
@@ -256,17 +320,80 @@ export function FilesPage() {
 
   const selectMode = Object.values(rowSelection).some(Boolean);
 
+  // Upload lifecycle. Files appear instantly as optimistic rows; each upload
+  // runs independently and reconciles its own row — moving the real item into
+  // the list cache on success, or flipping to a retryable error on failure.
+  const uploadOne = useCallback(
+    async (id: string, file: File) => {
+      try {
+        const item = await keva.uploadFile(file, {
+          properties: {},
+          source: "upload",
+        });
+        // Prepend into the (unfiltered) list and drop the optimistic row in the
+        // same tick so the row swaps in place — no refetch, no flicker. With a
+        // search active we can't know if the item matches, so refetch instead.
+        if (activeSearch.trim()) {
+          void queryClient.invalidateQueries({ queryKey: ["items"] });
+        } else {
+          queryClient.setQueryData<ItemsCache>(
+            ["items", { search: activeSearch }],
+            (old) => (old ? prependItemToPages(old, item) : old),
+          );
+        }
+        setUploads((prev) => prev.filter((r) => r.id !== id));
+      } catch (err) {
+        const error = errorMessage(err);
+        setUploads((prev) =>
+          prev.map((r) =>
+            r.id === id ? { ...r, upload: { status: "error", file, error } } : r,
+          ),
+        );
+      }
+    },
+    [activeSearch, queryClient],
+  );
+
+  const startUploads = useCallback(
+    (files: File[]) => {
+      const entries = files.map((file) => ({
+        id: `upload:${crypto.randomUUID()}`,
+        file,
+      }));
+      setUploads((prev) => [
+        ...entries.map((e) => optimisticRow(e.id, e.file)),
+        ...prev,
+      ]);
+      for (const { id, file } of entries) void uploadOne(id, file);
+    },
+    [uploadOne],
+  );
+
+  const retryUpload = useCallback(
+    (id: string, file: File) => {
+      setUploads((prev) =>
+        prev.map((r) =>
+          r.id === id ? { ...r, upload: { status: "uploading", file } } : r,
+        ),
+      );
+      void uploadOne(id, file);
+    },
+    [uploadOne],
+  );
+
   const table = useReactTable({
-    data: items as KevaItem[],
+    data: tableData,
     columns,
     state: { sorting, columnVisibility, rowSelection },
     getRowId: (row) => row.id,
-    enableRowSelection: true,
+    // In-flight / failed uploads aren't real items yet, so they can't be
+    // selected or bulk-deleted.
+    enableRowSelection: (row) => !row.original.upload,
     onSortingChange: setSorting,
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    meta: { selectMode },
+    meta: { selectMode, onRetryUpload: retryUpload },
   });
 
   const rows = table.getRowModel().rows;
@@ -290,17 +417,13 @@ export function FilesPage() {
   };
 
   const closeDetail = () => navigate("/");
-  const onDeleted = () => {
-    navigate("/");
-    void load(true);
-  };
+  // The delete itself (and its list-cache removal) happens in FileDetail; here
+  // we just close the panel.
+  const onDeleted = () => navigate("/");
 
-  const onBulkDelete = async () => {
-    const ids = table.getSelectedRowModel().rows.map((r) => r.original.id);
-    if (ids.length === 0) return;
-    setBulkBusy(true);
-    try {
-      const result = await keva.deleteMany(ids);
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => keva.deleteMany(ids),
+    onSuccess: (result, ids) => {
       if (result.deleted.length > 0) {
         toast.success(
           `Deleted ${result.deleted.length} ${plural(result.deleted.length)}`,
@@ -311,41 +434,29 @@ export function FilesPage() {
           `Failed to delete ${result.failed.length} ${plural(result.failed.length)}`,
         );
       }
+      // Remove only the ids that actually deleted, from every cached list, with
+      // no refetch (keeps loaded pages and scroll).
+      queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
+        old ? removeItemsFromPages(old, result.deleted) : old,
+      );
       setRowSelection({});
       // The open detail may have been one of the deleted rows.
       if (selectedId && ids.includes(selectedId)) navigate("/");
-      await load(true);
-    } catch (err) {
-      toast.error(handleError(err));
-    } finally {
-      setBulkBusy(false);
-    }
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  const onBulkDelete = () => {
+    const ids = table.getSelectedRowModel().rows.map((r) => r.original.id);
+    if (ids.length > 0) bulkDeleteMutation.mutate(ids);
   };
 
   const runSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const next = search.trim();
-    setActiveSearch(next);
-    setCursor(undefined);
+    // Changing the active search swaps the query key, so React Query fetches
+    // the new list automatically.
+    setActiveSearch(search.trim());
     setRowSelection({});
-    setLoading(true);
-    setError(null);
-    void (async () => {
-      try {
-        const result = await keva.query({
-          where: [],
-          ...(next ? { search: next } : {}),
-          limit: PAGE_SIZE,
-        });
-        setItems(result.items);
-        setCursor(result.nextCursor);
-      } catch (err) {
-        setError(handleError(err));
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    })();
   };
 
   const tableInner = (
@@ -391,14 +502,16 @@ export function FilesPage() {
                 ? "selected"
                 : undefined
             }
-            className="group cursor-pointer"
-            onClick={() =>
+            className={cn("group", !row.original.upload && "cursor-pointer")}
+            onClick={() => {
+              // Uploading / failed rows aren't real items — nothing to open.
+              if (row.original.upload) return;
               navigate(
                 row.original.id === selectedId
                   ? "/"
                   : `/items/${row.original.id}`,
-              )
-            }
+              );
+            }}
           >
             {row.getVisibleCells().map((cell) => (
               <TableCell
@@ -420,19 +533,19 @@ export function FilesPage() {
     </Table>
   );
 
-  const loadMore = cursor && (
+  const loadMore = itemsQuery.hasNextPage && (
     <div className="mt-4 flex justify-center">
       <Button
         variant="outline"
-        disabled={loadingMore}
-        onClick={() => void load(false)}
+        disabled={itemsQuery.isFetchingNextPage}
+        onClick={() => void itemsQuery.fetchNextPage()}
       >
-        {loadingMore ? "Loading…" : "Load more"}
+        {itemsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
       </Button>
     </div>
   );
 
-  const hasItems = items.length > 0;
+  const hasItems = tableData.length > 0;
 
   // Left pane: its own toolbar (filter + upload) above the scrollable table.
   // Used full-width when no detail is open, and as the left side of the split.
@@ -456,7 +569,7 @@ export function FilesPage() {
                   <Button
                     variant="destructive"
                     className="ml-auto"
-                    disabled={bulkBusy}
+                    disabled={bulkDeleteMutation.isPending}
                   />
                 }
               >
@@ -480,7 +593,7 @@ export function FilesPage() {
                     variant="destructive"
                     onClick={() => {
                       setBulkConfirmOpen(false);
-                      void onBulkDelete();
+                      onBulkDelete();
                     }}
                   >
                     Delete
@@ -640,7 +753,7 @@ export function FilesPage() {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         initialFiles={pendingFiles}
-        onUploaded={() => void load(true)}
+        onUpload={startUploads}
       />
     </div>
   );
@@ -650,7 +763,7 @@ function SortButton({
   column,
   label,
 }: {
-  column: Column<KevaItem, unknown>;
+  column: Column<FileRow, unknown>;
   label: string;
 }) {
   const sorted = column.getIsSorted();
