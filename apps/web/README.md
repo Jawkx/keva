@@ -10,8 +10,8 @@ session cookie first-party, which is required for cookie-based session auth.
 ## Pages
 
 - `/login`, `/signup` — Better Auth email + password. On success → `/`.
-- `/` — Files: lists objects (`keva.query()`), upload modal, row links to detail.
-- `/objects/:id` — metadata, attributes editor (set/edit/unset scalar attrs),
+- `/` — Files: lists items (`keva.query()`), upload modal, row links to detail.
+- `/items/:id` — metadata, properties editor (set/edit/unset scalar properties),
   Download (blob), Delete.
 - `/query` — condition builder (key / operator / value) → `keva.query()`.
 - `/tokens` — list/mint/revoke API tokens (plaintext shown once on mint).
@@ -52,7 +52,7 @@ Then open http://localhost:5173.
 
 `vite.config.ts` proxies these prefixes to `http://127.0.0.1:8787` with
 `changeOrigin: true`: `/api`, `/health`, `/__dev`. The whole API surface
-(including auth) lives under `/api`. Crucially, `/objects`, `/query` and
+(including auth) lives under `/api`. Crucially, `/items`, `/query` and
 `/tokens` are **not** proxied — those are the web app's own client-side routes,
 so a refresh or deep link falls through to Vite and loads the SPA instead of
 returning the API's JSON. Because of this:

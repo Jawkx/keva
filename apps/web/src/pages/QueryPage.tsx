@@ -77,7 +77,7 @@ const coerceValue = (type: ValueType, raw: string): string | number | boolean =>
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
   }
-  if (type === "boolean") return raw === "true";
+  if (type === "boolean") return raw !== "false";
   return raw;
 };
 
