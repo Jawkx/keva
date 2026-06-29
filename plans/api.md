@@ -31,12 +31,12 @@ contract **cannot drift** — that is the sync mechanism, enforced by the compil
 
 | `_tag` | HTTP | Meaning |
 |---|---|---|
-| `ValidationError` | 400 | malformed input / bad query / bad attribute |
+| `ValidationError` | 400 | malformed input / bad query / bad property |
 | `Unauthorized` | 401 | missing or invalid credential |
 | `Forbidden` | 403 | authenticated but scope/prefix disallows it |
-| `NotFound` | 404 | object (within the caller's prefix) doesn't exist |
-| `Conflict` | 409 | e.g. confirm on an object not in `pending` |
-| `QuotaExceeded` | 413 / 429 | size or attribute limits exceeded |
+| `NotFound` | 404 | item (within the caller's prefix) doesn't exist |
+| `Conflict` | 409 | e.g. confirm on an item not in `pending` |
+| `QuotaExceeded` | 413 / 429 | size or property limits exceeded |
 | `StorageUnavailable` | 502 | the blob backend failed |
 | `Internal` | 500 | catch-all for unexpected defects (no detail leaked) |
 
@@ -50,7 +50,7 @@ confirm copies to an **immutable final** key the client can never write to. The
 full state machine, idempotency, and crash-recovery rules are in
 [`lifecycle.md`](./lifecycle.md); the request path is:
 
-1. **Initiate** — `POST /objects` with `{ name, contentType, size }`. The server
+1. **Initiate** — `POST /items` with `{ name, contentType, size }`. The server
    authorizes (scope `write`), creates a `pending` record, and returns
    `{ id, uploadUrl, expiresAt }`. The presigned PUT targets
    `staging/<tenantId>/<id>`, signed for an **exact `Content-Length` = `size`**,
@@ -58,15 +58,15 @@ full state machine, idempotency, and crash-recovery rules are in
 2. **Upload** — the client `PUT`s the bytes directly to the staging key via
    `uploadUrl`, sending exactly that `Content-Length`. (Requires a one-time
    bucket CORS rule allowing `PUT` from the app origin — owned by the operator.)
-3. **Confirm** — `POST /objects/:id/confirm`. The server `HEAD`s the staging
-   object, validates declared vs. real `size`/`etag`, **`CopyObject`s staging →
-   `objects/<tenantId>/<id>`** (the immutable final key, never presigned for
+3. **Confirm** — `POST /items/:id/confirm`. The server `HEAD`s the staging
+   item, validates declared vs. real `size`/`etag`, **`CopyObject`s staging →
+   `items/<tenantId>/<id>`** (the immutable final key, never presigned for
    write), atomically flips the record to `ready`, and deletes staging. Confirm
    is idempotent and retry-safe.
 
 **Integrity & cleanup**
 
-- No presigned PUT is ever issued for the final key, so a `ready` object's bytes
+- No presigned PUT is ever issued for the final key, so a `ready` item's bytes
   are immutable. `CopyObject` is server-side (no bytes transit the server).
 - A **reaper** expires stale `pending` uploads; a **sweeper** finishes deletions.
   Both rely on durable Postgres metadata — which is why metadata persistence
@@ -77,7 +77,7 @@ full state machine, idempotency, and crash-recovery rules are in
 
 ## Download flow
 
-`GET /objects/:id/content` returns a redirect (or `{ url }`) to a short-TTL
+`GET /items/:id/content` returns a redirect (or `{ url }`) to a short-TTL
 **presigned GET** — bytes stream client ← storage, never through the server (no
 egress through the worker; free on R2).
 
@@ -87,18 +87,18 @@ Every route authenticates to a `Principal` and is scoped by its prefix + scopes.
 
 | Method & path | Scope | Purpose |
 |---|---|---|
-| `POST /objects` | write | initiate: create `pending` record, return presigned PUT |
-| `POST /objects/:id/confirm` | write | HEAD-confirm, flip to `ready` |
-| `GET /objects/:id` | read | fetch the object's metadata |
-| `GET /objects/:id/content` | read | presigned GET for the bytes |
-| `PATCH /objects/:id/attributes` | write | `set` / `unset` user attributes (see [`data-model.md`](./data-model.md)) |
-| `DELETE /objects/:id` | delete | two-phase delete: record intent, then remove blob + row (see [`lifecycle.md`](./lifecycle.md)) |
-| `POST /query` | read | query objects by attribute conditions |
+| `POST /items` | write | initiate: create `pending` record, return presigned PUT |
+| `POST /items/:id/confirm` | write | HEAD-confirm, flip to `ready` |
+| `GET /items/:id` | read | fetch the item's metadata |
+| `GET /items/:id/content` | read | presigned GET for the bytes |
+| `PATCH /items/:id/properties` | write | `set` / `unset` user properties (see [`data-model.md`](./data-model.md)) |
+| `DELETE /items/:id` | delete | two-phase delete: record intent, then remove blob + row (see [`lifecycle.md`](./lifecycle.md)) |
+| `POST /query` | read | query items by property conditions |
 | `POST /tokens` | admin | mint an API token (session-only in practice) |
 | `GET /tokens` · `DELETE /tokens/:id` | admin | list / revoke tokens |
 | `GET /health` | — | liveness |
 
-The MCP server (later) exposes the read/query/patch-attributes subset as tools,
+The MCP server (later) exposes the read/query/patch-properties subset as tools,
 backed by the same core.
 
 ## Conventions

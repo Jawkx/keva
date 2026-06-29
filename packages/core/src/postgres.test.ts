@@ -15,7 +15,7 @@ import { BlobStore, MetadataStore } from "./services.js";
  * Postgres via KEVA_TEST_DATABASE_URL; when unset the whole suite is SKIPPED
  * (never failed) so the default suite passes with no database available.
  *
- *  - objects + attributes persist across a "restart" (a new store instance over
+ *  - items + properties persist across a "restart" (a new store instance over
  *    the same database);
  *  - the query operator matrix (eq / neq / contains / range / exists) is
  *    correct and tenant-scoped;
@@ -75,7 +75,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
   const run = <A, E>(effect: Effect.Effect<A, E, BlobStore | MetadataStore>) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)));
 
-  // initiate → stage bytes → confirm, returning the ready object's id
+  // initiate → stage bytes → confirm, returning the ready item's id
   const createReady = (p: Principal, name: string, body: string) =>
     Effect.gen(function* () {
       const engine = makeKevaEngine(p);
@@ -85,18 +85,18 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         contentType: "text/plain",
         size: bytes.byteLength,
         source: "upload",
-        attributes: {},
+        properties: {},
       });
       const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
       const blobs = yield* BlobStore;
       yield* blobs.devPut!(
-        initiated.object.stagingKey,
+        initiated.item.stagingKey,
         bytes,
         "text/plain",
         token,
       );
-      yield* engine.confirm(initiated.object.id);
-      return initiated.object.id;
+      yield* engine.confirm(initiated.item.id);
+      return initiated.item.id;
     });
 
   const createReadyWithType = (
@@ -113,18 +113,18 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         contentType,
         size: bytes.byteLength,
         source: "upload",
-        attributes: {},
+        properties: {},
       });
       const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
       const blobs = yield* BlobStore;
       yield* blobs.devPut!(
-        initiated.object.stagingKey,
+        initiated.item.stagingKey,
         bytes,
         contentType,
         token,
       );
-      yield* engine.confirm(initiated.object.id);
-      return initiated.object.id;
+      yield* engine.confirm(initiated.item.id);
+      return initiated.item.id;
     });
 
   it("applies the checked-in migration indexes", async () => {
@@ -136,20 +136,20 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       from pg_indexes
       where schemaname = current_schema()
         and indexname in (
-          'objects_attributes_gin_idx',
-          'objects_tenant_status_created_idx',
-          'objects_tenant_created_id_idx',
+          'items_properties_gin_idx',
+          'items_tenant_status_created_idx',
+          'items_tenant_created_id_idx',
           'api_tokens_tenant_created_idx'
         )
     `;
     const byName = new Map(indexes.map((index) => [index.indexname, index.indexdef]));
-    expect(byName.get("objects_attributes_gin_idx")).toContain("USING gin");
-    expect(byName.has("objects_tenant_status_created_idx")).toBe(true);
-    expect(byName.has("objects_tenant_created_id_idx")).toBe(true);
+    expect(byName.get("items_properties_gin_idx")).toContain("USING gin");
+    expect(byName.has("items_tenant_status_created_idx")).toBe(true);
+    expect(byName.has("items_tenant_created_id_idx")).toBe(true);
     expect(byName.has("api_tokens_tenant_created_idx")).toBe(true);
   });
 
-  it("persists objects + attributes across a new store instance", async () => {
+  it("persists items + properties across a new store instance", async () => {
     const tenant = crypto.randomUUID();
     const p = principal(tenant);
 
@@ -157,7 +157,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(p);
         const created = yield* createReady(p, "persist.txt", "durable bytes");
-        yield* engine.patchAttributes(created, {
+        yield* engine.patchProperties(created, {
           set: { project: "keva", rating: 9 },
           unset: [],
         });
@@ -177,7 +177,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         ),
     );
     expect(fetched.status).toBe("ready");
-    expect(fetched.attributes).toEqual({ project: "keva", rating: 9 });
+    expect(fetched.properties).toEqual({ project: "keva", rating: 9 });
   });
 
   it("serves the query operator matrix, tenant-scoped", async () => {
@@ -188,7 +188,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(principal(tenantA));
         const a = yield* createReady(principal(tenantA), "a.txt", "a");
-        yield* engine.patchAttributes(a, {
+        yield* engine.patchProperties(a, {
           set: { kind: "doc", tags: ["x", "y"], rating: 5 },
           unset: [],
         });
@@ -214,7 +214,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
           where: [{ key: "kind", op: "exists" }],
           limit: 100,
         });
-        // tenant B cannot see tenant A's objects
+        // tenant B cannot see tenant A's items
         const crossTenant = yield* makeKevaEngine(principal(tenantB)).query({
           where: [{ key: "kind", op: "eq", value: "doc" }],
           limit: 100,
@@ -223,12 +223,12 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       }),
     );
 
-    expect(found.eqHit.objects.map((o) => o.id)).toEqual([found.a]);
-    expect(found.neqHit.objects.map((o) => o.id)).toEqual([found.a]);
-    expect(found.member.objects.map((o) => o.id)).toEqual([found.a]);
-    expect(found.range.objects.map((o) => o.id)).toEqual([found.a]);
-    expect(found.exists.objects.map((o) => o.id)).toEqual([found.a]);
-    expect(found.crossTenant.objects).toHaveLength(0);
+    expect(found.eqHit.items.map((o) => o.id)).toEqual([found.a]);
+    expect(found.neqHit.items.map((o) => o.id)).toEqual([found.a]);
+    expect(found.member.items.map((o) => o.id)).toEqual([found.a]);
+    expect(found.range.items.map((o) => o.id)).toEqual([found.a]);
+    expect(found.exists.items.map((o) => o.id)).toEqual([found.a]);
+    expect(found.crossTenant.items).toHaveLength(0);
   });
 
   it("paginates with an opaque cursor, covering every row exactly once", async () => {
@@ -251,7 +251,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
             limit: 2,
             ...(cursor !== undefined ? { cursor } : {}),
           });
-          seen.push(...res.objects.map((o) => o.id));
+          seen.push(...res.items.map((o) => o.id));
           if (res.nextCursor === undefined) break;
           cursor = res.nextCursor;
         }
@@ -299,16 +299,16 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       }),
     );
 
-    expect(found.all.objects.map((object) => object.id).sort()).toEqual(
+    expect(found.all.items.map((item) => item.id).sort()).toEqual(
       [found.named, found.typed].sort(),
     );
-    expect(found.first.objects).toHaveLength(1);
-    expect(found.second.objects).toHaveLength(1);
+    expect(found.first.items).toHaveLength(1);
+    expect(found.second.items).toHaveLength(1);
     expect(new Set([
-      found.first.objects[0]!.id,
-      found.second.objects[0]!.id,
+      found.first.items[0]!.id,
+      found.second.items[0]!.id,
     ])).toEqual(new Set([found.named, found.typed]));
-    expect(found.other.objects).toHaveLength(0);
+    expect(found.other.items).toHaveLength(0);
   });
 
   it("resolves a concurrent confirm-vs-reaper race to exactly one winner", async () => {
@@ -324,17 +324,17 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
           contentType: "text/plain",
           size: bytes.byteLength,
           source: "upload",
-          attributes: {},
+          properties: {},
         });
         // backdate the pending row so the reaper's cutoff includes it
         yield* Effect.promise(() =>
-          sql`update objects set created_at = now() - interval '1 hour'
-              where id = ${initiated.object.id}`.then(() => undefined),
+          sql`update items set created_at = now() - interval '1 hour'
+              where id = ${initiated.item.id}`.then(() => undefined),
         );
         const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
         const blobs = yield* BlobStore;
         yield* blobs.devPut!(
-          initiated.object.stagingKey,
+          initiated.item.stagingKey,
           bytes,
           "text/plain",
           token,
@@ -343,20 +343,20 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         // confirm and reaper contend for the same pending row
         const [confirmExit, reaped] = yield* Effect.all(
           [
-            Effect.either(engine.confirm(initiated.object.id)),
+            Effect.either(engine.confirm(initiated.item.id)),
             reapPending({ pendingTtlMs: 1 }),
           ],
           { concurrency: "unbounded" },
         );
 
         const metadata = yield* MetadataStore;
-        const current = yield* metadata.get(tenant, initiated.object.id);
+        const current = yield* metadata.get(tenant, initiated.item.id);
         return { confirmExit, reaped, status: current?.status ?? "gone" };
       }),
     );
 
     if (outcome.confirmExit._tag === "Right") {
-      // confirm won: object is ready, reaper found nothing to reap
+      // confirm won: item is ready, reaper found nothing to reap
       expect(outcome.status).toBe("ready");
       expect(outcome.reaped).toBe(0);
     } else {

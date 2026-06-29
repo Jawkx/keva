@@ -27,7 +27,7 @@ export const errorMessage = (error: unknown): string => {
       case "Forbidden":
         return message ?? "You do not have permission to do that.";
       case "NotFound":
-        return message ?? "That object could not be found.";
+        return message ?? "That item could not be found.";
       case "Conflict":
         return message ?? "That action conflicts with the current state.";
       case "QuotaExceeded":

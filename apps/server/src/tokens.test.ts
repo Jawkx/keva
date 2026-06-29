@@ -183,9 +183,9 @@ describe("server token subsystem", () => {
     expect(mintBody.token).toMatch(/^keva_sk_/);
     expect(mintBody.record.scopes).toEqual(["read", "write"]);
 
-    // use the minted token: upload an object that inherits the minter's tenant
+    // use the minted token: upload an item that inherits the minter's tenant
     const agentAuth = { authorization: `Bearer ${mintBody.token}` };
-    const initiated = await app.request("/api/objects", {
+    const initiated = await app.request("/api/items", {
       method: "POST",
       headers: { ...agentAuth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -196,9 +196,9 @@ describe("server token subsystem", () => {
     });
     expect(initiated.status).toBe(200);
     const initiatedBody = (await initiated.json()) as {
-      object: { tenantId: string };
+      item: { tenantId: string };
     };
-    expect(initiatedBody.object.tenantId).toBe(TENANT);
+    expect(initiatedBody.item.tenantId).toBe(TENANT);
   });
 
   it("enforces the minted token's scopes (read-only cannot write)", async () => {
@@ -210,7 +210,7 @@ describe("server token subsystem", () => {
     });
     const { token } = (await minted.json()) as MintTokenResult;
 
-    const initiate = await app.request("/api/objects", {
+    const initiate = await app.request("/api/items", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ name: "x", contentType: "text/plain", size: 1 }),

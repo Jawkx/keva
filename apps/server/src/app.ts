@@ -5,7 +5,7 @@ import {
   type BlobStoreService,
 } from "@keva/core";
 import {
-  AttributePatch,
+  PropertyPatch,
   BatchDelete,
   InitiateUpload,
   Internal,
@@ -133,10 +133,10 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
   });
 
   // Data routes live under /api so they never collide with the web app's
-  // client-side routes (/objects/:id, /query, /tokens), which share these
+  // client-side routes (/items/:id, /query, /tokens), which share these
   // names. Auth (/api/auth/*) is already prefixed; /health and /__dev stay at
   // the root for load balancers and the dev blob shim.
-  app.post("/api/objects", async (context) =>
+  app.post("/api/items", async (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -147,7 +147,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.post("/api/objects/:id/confirm", (context) =>
+  app.post("/api/items/:id/confirm", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -157,7 +157,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.get("/api/objects/:id", (context) =>
+  app.get("/api/items/:id", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -167,7 +167,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.get("/api/objects/:id/content", (context) =>
+  app.get("/api/items/:id/content", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -177,13 +177,13 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.patch("/api/objects/:id/attributes", async (context) =>
+  app.patch("/api/items/:id/properties", async (context) =>
     execute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        const body = yield* decode(AttributePatch, yield* jsonBody(context));
-        return yield* makeKevaEngine(principal).patchAttributes(
+        const body = yield* decode(PropertyPatch, yield* jsonBody(context));
+        return yield* makeKevaEngine(principal).patchProperties(
           context.req.param("id"),
           body,
         );
@@ -191,7 +191,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.delete("/api/objects/:id", (context) =>
+  app.delete("/api/items/:id", (context) =>
     execute(
       context,
       Effect.gen(function* () {
@@ -204,7 +204,7 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
 
   // Batch delete: fan out over the idempotent per-id delete, isolating each so
   // one failure (missing blob, transient store error) doesn't sink the rest.
-  app.post("/api/objects/delete", (context) =>
+  app.post("/api/items/delete", (context) =>
     execute(
       context,
       Effect.gen(function* () {

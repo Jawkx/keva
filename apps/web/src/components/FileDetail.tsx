@@ -7,9 +7,9 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import type { AttributeValue } from "@keva/schema";
-import type { KevaObject } from "@keva/sdk";
-import { AttributesEditor } from "./AttributesEditor";
+import type { PropertyValue } from "@keva/schema";
+import type { KevaItem } from "@keva/sdk";
+import { PropertiesEditor } from "./PropertiesEditor";
 import { CopyButton } from "./CopyButton";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
@@ -51,38 +51,38 @@ type Preview =
 const IMAGE_MAX = 5 * 1024 * 1024;
 const PDF_MAX = 25 * 1024 * 1024;
 const TEXT_MAX = 256 * 1024;
-const isImage = (o: KevaObject) => o.contentType.startsWith("image/");
-const isPdf = (o: KevaObject) => o.contentType === "application/pdf";
-const isCsv = (o: KevaObject) =>
+const isImage = (o: KevaItem) => o.contentType.startsWith("image/");
+const isPdf = (o: KevaItem) => o.contentType === "application/pdf";
+const isCsv = (o: KevaItem) =>
   o.contentType === "text/csv" ||
   o.contentType === "text/tab-separated-values" ||
   o.contentType === "application/csv";
-const isText = (o: KevaObject) =>
+const isText = (o: KevaItem) =>
   o.contentType.startsWith("text/") ||
   o.contentType === "application/json" ||
   o.contentType === "application/xml";
-const isPreviewable = (o: KevaObject) =>
+const isPreviewable = (o: KevaItem) =>
   (isImage(o) && (o.size ?? Infinity) <= IMAGE_MAX) ||
   (isPdf(o) && (o.size ?? Infinity) <= PDF_MAX) ||
   (isText(o) && (o.size ?? Infinity) <= TEXT_MAX);
 
-type Panel = "preview" | "info" | "attributes";
+type Panel = "preview" | "info" | "properties";
 
 const PANEL_LABELS: Record<Panel, string> = {
   preview: "Preview",
   info: "Info",
-  attributes: "Attributes",
+  properties: "Properties",
 };
 
-// The panels available for an object, in display order. Preview is offered
-// only when the content can actually be rendered; Info and Attributes always
+// The panels available for an item, in display order. Preview is offered
+// only when the content can actually be rendered; Info and Properties always
 // exist. Determines which segmented-control buttons show and which `?panel=`
 // values are valid.
-const panelsFor = (o: KevaObject): Panel[] =>
-  isPreviewable(o) ? ["preview", "info", "attributes"] : ["info", "attributes"];
+const panelsFor = (o: KevaItem): Panel[] =>
+  isPreviewable(o) ? ["preview", "info", "properties"] : ["info", "properties"];
 
 interface FileDetailProps {
-  objectId: string;
+  itemId: string;
   // Renders a close affordance in the header when provided (used by the
   // side panel; the bottom sheet supplies its own close button).
   onClose?: () => void;
@@ -90,13 +90,13 @@ interface FileDetailProps {
   onDeleted: () => void;
 }
 
-// Detail view for a single object — metadata, a best-effort preview, and the
-// attribute editor. Shared by the resizable side panel (wide screens) and the
+// Detail view for a single item — metadata, a best-effort preview, and the
+// property editor. Shared by the resizable side panel (wide screens) and the
 // bottom sheet (narrow screens). Loads its own data on mount; remount it with a
-// `key={objectId}` so a new selection re-runs the load.
-export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
+// `key={itemId}` so a new selection re-runs the load.
+export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const handleError = useApiError();
-  const [object, setObject] = useState<KevaObject | null>(null);
+  const [item, setItem] = useState<KevaItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -107,9 +107,9 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
 
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Which panels this object exposes (Preview is dropped for non-previewable
+  // Which panels this item exposes (Preview is dropped for non-previewable
   // files). The first entry is the default — Preview when available, else Info.
-  const panels = useMemo(() => (object ? panelsFor(object) : []), [object]);
+  const panels = useMemo(() => (item ? panelsFor(item) : []), [item]);
 
   // The active panel is derived from the URL, never stored separately: a valid
   // `?panel=` wins, otherwise we fall back to the default without touching the
@@ -132,12 +132,12 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
     [setSearchParams],
   );
 
-  const load = useCallback(async (): Promise<KevaObject | null> => {
+  const load = useCallback(async (): Promise<KevaItem | null> => {
     setLoading(true);
     setError(null);
     try {
-      const obj = await keva.get(objectId);
-      setObject(obj);
+      const obj = await keva.get(itemId);
+      setItem(obj);
       return obj;
     } catch (err) {
       setError(handleError(err));
@@ -145,9 +145,9 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
     } finally {
       setLoading(false);
     }
-  }, [objectId, handleError]);
+  }, [itemId, handleError]);
 
-  const loadPreview = useCallback(async (obj: KevaObject) => {
+  const loadPreview = useCallback(async (obj: KevaItem) => {
     setPreviewLoading(true);
     try {
       const bytes = await keva.downloadBytes(obj.id);
@@ -186,13 +186,13 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
   });
 
   const onDownload = async () => {
-    if (!object) return;
+    if (!item) return;
     setBusy(true);
     try {
-      const { url } = await keva.getDownloadUrl(object.id);
+      const { url } = await keva.getDownloadUrl(item.id);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = object.name;
+      anchor.download = item.name;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -204,11 +204,11 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
   };
 
   const onDelete = async () => {
-    if (!object) return;
+    if (!item) return;
     setBusy(true);
     try {
-      await keva.delete(object.id);
-      toast.success(`Deleted ${object.name}`);
+      await keva.delete(item.id);
+      toast.success(`Deleted ${item.name}`);
       onDeleted();
     } catch (err) {
       toast.error(handleError(err));
@@ -217,12 +217,12 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
   };
 
   const onPatch = async (
-    set: Record<string, AttributeValue>,
+    set: Record<string, PropertyValue>,
     unset: string[],
   ) => {
-    if (!object) return;
+    if (!item) return;
     try {
-      setObject(await keva.patchAttributes(object.id, { set, unset }));
+      setItem(await keva.patchProperties(item.id, { set, unset }));
     } catch (err) {
       toast.error(handleError(err));
       throw err;
@@ -233,17 +233,17 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <header className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
-          {object && <FileTypeIcon contentType={object.contentType} />}
+          {item && <FileTypeIcon contentType={item.contentType} />}
           <div className="min-w-0">
             <h2
               className="truncate font-heading text-base font-medium"
-              title={object?.name}
+              title={item?.name}
             >
-              {object?.name ?? "…"}
+              {item?.name ?? "…"}
             </h2>
-            {object && (
+            {item && (
               <p className="truncate text-sm text-muted-foreground">
-                {object.contentType} · {formatBytes(object.size)}
+                {item.contentType} · {formatBytes(item.size)}
               </p>
             )}
           </div>
@@ -256,7 +256,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
                   variant="ghost"
                   size="icon"
                   aria-label="Download"
-                  disabled={busy || !object}
+                  disabled={busy || !item}
                   onClick={onDownload}
                 />
               }
@@ -277,7 +277,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
                         size="icon"
                         className="text-destructive"
                         aria-label="Delete"
-                        disabled={busy || !object}
+                        disabled={busy || !item}
                       />
                     }
                   />
@@ -289,9 +289,9 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
             </Tooltip>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete “{object?.name}”?</AlertDialogTitle>
+                <AlertDialogTitle>Delete “{item?.name}”?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This permanently removes the object and its attributes. This
+                  This permanently removes the item and its properties. This
                   cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -323,7 +323,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
         </div>
       </header>
 
-      {object && (
+      {item && (
         <div className="shrink-0 px-4 pt-3">
           <ToggleGroup
             variant="outline"
@@ -350,12 +350,12 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
             <Skeleton className="h-40 w-full" />
             <Skeleton className="h-24 w-full" />
           </div>
-        ) : error && !object ? (
+        ) : error && !item ? (
           <Alert variant="destructive">
             <IconAlertTriangle />
             <AlertTitle>{error}</AlertTitle>
           </Alert>
-        ) : !object ? (
+        ) : !item ? (
           <p className="text-sm text-muted-foreground">Not found.</p>
         ) : activePanel === "preview" ? (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
@@ -363,7 +363,7 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
               // Mirror the shape of the content that will replace it: images
               // render capped at max-h-96 (they don't fill the panel), while
               // pdf/csv/text viewers stretch to flex-1.
-              isImage(object) ? (
+              isImage(item) ? (
                 <Skeleton className="h-96 w-full max-w-full" />
               ) : (
                 <Skeleton className="min-h-0 w-full flex-1" />
@@ -371,13 +371,13 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
             ) : preview?.kind === "image" ? (
               <img
                 src={preview.url}
-                alt={object.name}
+                alt={item.name}
                 className="max-h-96 max-w-full rounded-md"
               />
             ) : preview?.kind === "pdf" ? (
               <PDFViewer
                 src={preview.url}
-                fileName={object.name}
+                fileName={item.name}
                 defaultZoom={ZoomMode.FitWidth}
                 showUpload={false}
                 showDownload={false}
@@ -408,30 +408,30 @@ export function FileDetail({ objectId, onClose, onDeleted }: FileDetailProps) {
                 to the metadata that isn't shown elsewhere. */}
             <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
               <MetaItem label="Status">
-                <Badge variant="secondary">{object.status}</Badge>
+                <Badge variant="secondary">{item.status}</Badge>
               </MetaItem>
-              <MetaItem label="Source">{object.source}</MetaItem>
+              <MetaItem label="Source">{item.source}</MetaItem>
               <MetaItem label="Created">
-                <span title={formatDate(object.createdAt)}>
-                  {formatRelative(object.createdAt)}
+                <span title={formatDate(item.createdAt)}>
+                  {formatRelative(item.createdAt)}
                 </span>
               </MetaItem>
               <MetaItem label="Updated">
-                <span title={formatDate(object.updatedAt)}>
-                  {formatRelative(object.updatedAt)}
+                <span title={formatDate(item.updatedAt)}>
+                  {formatRelative(item.updatedAt)}
                 </span>
               </MetaItem>
               <MetaItem label="ID" className="col-span-2">
                 <span className="min-w-0 truncate font-mono text-xs">
-                  {object.id}
+                  {item.id}
                 </span>
-                <CopyButton value={object.id} label="Copy ID" />
+                <CopyButton value={item.id} label="Copy ID" />
               </MetaItem>
             </dl>
           </section>
         ) : (
           <section className="flex min-w-0 flex-col gap-2">
-            <AttributesEditor attributes={object.attributes} onPatch={onPatch} />
+            <PropertiesEditor properties={item.properties} onPatch={onPatch} />
           </section>
         )}
       </div>

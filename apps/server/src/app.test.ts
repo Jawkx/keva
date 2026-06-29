@@ -32,7 +32,7 @@ describe("server API", () => {
     expect(unauthorized.status).toBe(401);
     expect(await unauthorized.json()).toMatchObject({ _tag: "Unauthorized" });
 
-    const initiatedResponse = await app.request("/api/objects", {
+    const initiatedResponse = await app.request("/api/items", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -43,7 +43,7 @@ describe("server API", () => {
     });
     expect(initiatedResponse.status).toBe(200);
     const initiated = await initiatedResponse.json() as {
-      object: { id: string };
+      item: { id: string };
       uploadUrl: string;
       headers: Record<string, string>;
     };
@@ -60,12 +60,12 @@ describe("server API", () => {
     expect(uploaded.status).toBe(200);
 
     const confirmed = await app.request(
-      `/api/objects/${initiated.object.id}/confirm`,
+      `/api/items/${initiated.item.id}/confirm`,
       { method: "POST", headers: auth },
     );
     expect(confirmed.status).toBe(200);
     expect(await confirmed.json()).toMatchObject({
-      id: initiated.object.id,
+      id: initiated.item.id,
       status: "ready",
       size: 5,
     });
@@ -78,6 +78,6 @@ describe("server API", () => {
       }),
     });
     expect(queried.status).toBe(200);
-    expect((await queried.json() as { objects: unknown[] }).objects).toHaveLength(1);
+    expect((await queried.json() as { items: unknown[] }).items).toHaveLength(1);
   });
 });

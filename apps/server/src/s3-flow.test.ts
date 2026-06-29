@@ -18,7 +18,7 @@ import { type S3Mock, startS3Mock } from "./test/s3-mock.js";
  *  - the server never streams bytes (presigned upload/download + server-side
  *    copy);
  *  - an abandoned `pending` is reaped to `deleting` and swept to completion;
- *  - replaying a still-valid staging PUT cannot alter a `ready` object.
+ *  - replaying a still-valid staging PUT cannot alter a `ready` item.
  *
  * Lives in @keva/server (not @keva/core) because the mock needs Node's http
  * server types, which only this package depends on.
@@ -108,10 +108,10 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
         contentType: "application/octet-stream",
         size: bytes.byteLength,
         source: "upload",
-        attributes: {},
+        properties: {},
       }),
     );
-    const { id } = initiated.object;
+    const { id } = initiated.item;
 
     expect(initiated.uploadUrl).toContain(`staging/t1/${id}`);
     await putToPresigned(
@@ -123,20 +123,20 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
 
     const confirmed = await runtime.runPromise(engine.confirm(id));
     expect(confirmed.status).toBe("ready");
-    expect(confirmed.storageKey).toBe(`objects/t1/${id}`);
+    expect(confirmed.storageKey).toBe(`items/t1/${id}`);
 
     // final key has the bytes; staging was cleaned up after the copy
-    expect(mock.store.has(`objects/t1/${id}`)).toBe(true);
+    expect(mock.store.has(`items/t1/${id}`)).toBe(true);
     expect(mock.store.has(`staging/t1/${id}`)).toBe(false);
 
     const dl = await runtime.runPromise(engine.download(id));
-    expect(dl.url).toContain(`objects/t1/${id}`);
+    expect(dl.url).toContain(`items/t1/${id}`);
     expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe(
       "immutable bytes",
     );
   });
 
-  it("replaying a staging URL cannot alter a ready object", async () => {
+  it("replaying a staging URL cannot alter a ready item", async () => {
     const original = new TextEncoder().encode("ORIGINAL");
     const tampered = new TextEncoder().encode("TAMPERED!");
     const engine = makeKevaEngine(principal);
@@ -147,10 +147,10 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
         contentType: "text/plain",
         size: original.byteLength,
         source: "upload",
-        attributes: {},
+        properties: {},
       }),
     );
-    const { id } = initiated.object;
+    const { id } = initiated.item;
 
     await putToPresigned(initiated.uploadUrl, original, "text/plain");
     await runtime.runPromise(engine.confirm(id));
@@ -182,11 +182,11 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
           checksum: null,
           source: "upload",
           status: "pending",
-          storageKey: `objects/t1/${id}`,
+          storageKey: `items/t1/${id}`,
           stagingKey: `staging/t1/${id}`,
           createdAt: timestamp,
           updatedAt: timestamp,
-          attributes: {},
+          properties: {},
         }),
       ),
     );
@@ -220,13 +220,13 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
         contentType: "text/plain",
         size: bytes.byteLength,
         source: "upload",
-        attributes: {},
+        properties: {},
       }),
     );
-    const { id } = initiated.object;
+    const { id } = initiated.item;
     await putToPresigned(initiated.uploadUrl, bytes, "text/plain");
     await runtime.runPromise(engine.confirm(id));
-    expect(mock.store.has(`objects/t1/${id}`)).toBe(true);
+    expect(mock.store.has(`items/t1/${id}`)).toBe(true);
 
     // record delete intent (ready → deleting), then let the sweeper finish it
     await runtime.runPromise(
@@ -240,7 +240,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     const swept = await runtime.runPromise(sweepDeleting());
     expect(swept).toBe(1);
 
-    expect(mock.store.has(`objects/t1/${id}`)).toBe(false);
+    expect(mock.store.has(`items/t1/${id}`)).toBe(false);
     const found = await runtime.runPromise(
       Effect.flatMap(MetadataStore, (m) => m.get("t1", id)),
     );
@@ -280,12 +280,12 @@ describe.skipIf(!realS3Config)(
           contentType: "text/plain",
           size: bytes.byteLength,
           source: "upload",
-          attributes: {},
+          properties: {},
         }),
       );
       await putToPresigned(initiated.uploadUrl, bytes, "text/plain");
 
-      const confirmed = await runtime.runPromise(engine.confirm(initiated.object.id));
+      const confirmed = await runtime.runPromise(engine.confirm(initiated.item.id));
       expect(confirmed.status).toBe("ready");
 
       const download = await runtime.runPromise(engine.download(confirmed.id));

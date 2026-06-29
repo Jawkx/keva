@@ -1,4 +1,4 @@
-import type { Attributes, ObjectStatus, Scope } from "@keva/schema";
+import type { Properties, ItemStatus, Scope } from "@keva/schema";
 import {
   bigint,
   check,
@@ -12,8 +12,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const objects = pgTable(
-  "objects",
+export const items = pgTable(
+  "items",
   {
     id: uuid("id").primaryKey(),
     tenantId: text("tenant_id").notNull(),
@@ -24,35 +24,35 @@ export const objects = pgTable(
     etag: text("etag"),
     checksum: text("checksum"),
     source: text("source").notNull(),
-    status: text("status").$type<ObjectStatus>().notNull(),
+    status: text("status").$type<ItemStatus>().notNull(),
     storageKey: text("storage_key").notNull(),
     stagingKey: text("staging_key").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
       .notNull(),
-    attributes: jsonb("attributes").$type<Attributes>().notNull().default({}),
+    properties: jsonb("properties").$type<Properties>().notNull().default({}),
   },
   (table) => [
-    uniqueIndex("objects_tenant_id_id_unique").on(table.tenantId, table.id),
-    index("objects_tenant_status_created_idx").on(
+    uniqueIndex("items_tenant_id_id_unique").on(table.tenantId, table.id),
+    index("items_tenant_status_created_idx").on(
       table.tenantId,
       table.status,
       table.createdAt,
     ),
-    index("objects_tenant_content_type_idx").on(
+    index("items_tenant_content_type_idx").on(
       table.tenantId,
       table.contentType,
     ),
-    index("objects_tenant_size_idx").on(table.tenantId, table.size),
-    index("objects_tenant_created_id_idx").on(
+    index("items_tenant_size_idx").on(table.tenantId, table.size),
+    index("items_tenant_created_id_idx").on(
       table.tenantId,
       table.createdAt,
       table.id,
     ),
-    index("objects_attributes_gin_idx").using("gin", table.attributes),
+    index("items_properties_gin_idx").using("gin", table.properties),
     check(
-      "objects_status_check",
+      "items_status_check",
       sql`${table.status} in ('pending', 'ready', 'deleting')`,
     ),
   ],

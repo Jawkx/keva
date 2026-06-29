@@ -24,6 +24,6 @@ describe("worker entry", () => {
       env,
     );
     expect(query.status).toBe(200);
-    expect(await query.json()).toMatchObject({ objects: [] });
+    expect(await query.json()).toMatchObject({ items: [] });
   });
 });

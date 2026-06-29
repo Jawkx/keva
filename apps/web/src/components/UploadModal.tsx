@@ -46,7 +46,7 @@ export function UploadModal({
     try {
       for (const target of files) {
         try {
-          await keva.uploadFile(target, { attributes: {}, source: "upload" });
+          await keva.uploadFile(target, { properties: {}, source: "upload" });
           ok += 1;
         } catch (err) {
           toast.error(`${target.name}: ${errorMessage(err)}`);
@@ -66,9 +66,9 @@ export function UploadModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Upload objects</DialogTitle>
+          <DialogTitle>Upload items</DialogTitle>
           <DialogDescription>
-            Add one or more files to keva. You can edit their attributes
+            Add one or more files to keva. You can edit their properties
             afterwards.
           </DialogDescription>
         </DialogHeader>

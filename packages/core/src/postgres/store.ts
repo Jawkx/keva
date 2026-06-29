@@ -1,9 +1,9 @@
 import {
   Internal,
   ValidationError,
-  type AttributeValue,
+  type PropertyValue,
   type KevaError,
-  type KevaObject,
+  type KevaItem,
   type QueryCondition,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
@@ -11,7 +11,7 @@ import postgres, { type Sql } from "postgres";
 import {
   MetadataStore,
   type MetadataStoreService,
-  type ObjectTransition,
+  type ItemTransition,
 } from "../services.js";
 
 export interface PostgresConfig {
@@ -21,7 +21,7 @@ export interface PostgresConfig {
   readonly connectTimeoutSeconds?: number;
 }
 
-interface ObjectRow {
+interface ItemRow {
   readonly id: string;
   readonly tenant_id: string;
   readonly name: string;
@@ -36,13 +36,13 @@ interface ObjectRow {
   readonly staging_key: string;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
-  readonly attributes: KevaObject["attributes"];
+  readonly properties: KevaItem["properties"];
 }
 
 const asIso = (value: Date | string): string =>
   value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 
-const mapRow = (row: ObjectRow): KevaObject => ({
+const mapRow = (row: ItemRow): KevaItem => ({
   id: row.id,
   tenantId: row.tenant_id,
   name: row.name,
@@ -57,7 +57,7 @@ const mapRow = (row: ObjectRow): KevaObject => ({
   stagingKey: row.staging_key,
   createdAt: asIso(row.created_at),
   updatedAt: asIso(row.updated_at),
-  attributes: row.attributes,
+  properties: row.properties,
 });
 
 const dbFailure = (): Internal =>
@@ -66,8 +66,8 @@ const dbFailure = (): Internal =>
 const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, KevaError> =>
   Effect.tryPromise({ try: operation, catch: dbFailure });
 
-const encodeCursor = (object: KevaObject): string =>
-  btoa(JSON.stringify([object.createdAt, object.id]));
+const encodeCursor = (item: KevaItem): string =>
+  btoa(JSON.stringify([item.createdAt, item.id]));
 
 const decodeCursor = (
   cursor: string,
@@ -160,25 +160,25 @@ const compileCondition = (
   }
 
   const key = condition.key;
-  if (condition.op === "exists") return sql`attributes ? ${key}`;
+  if (condition.op === "exists") return sql`properties ? ${key}`;
   if (condition.op === "eq") {
-    return sql`attributes @> ${sql.json({ [key]: value })}`;
+    return sql`properties @> ${sql.json({ [key]: value })}`;
   }
   if (condition.op === "neq") {
-    return sql`attributes ? ${key} and not (attributes @> ${sql.json({ [key]: value })})`;
+    return sql`properties ? ${key} and not (properties @> ${sql.json({ [key]: value })})`;
   }
   if (condition.op === "contains") {
     const member = value as string | number | boolean;
     const arrayMatch =
-      sql`(jsonb_typeof(attributes -> ${key}) = 'array' and (attributes -> ${key}) @> ${sql.json([member])})`;
+      sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${sql.json([member])})`;
     return typeof value === "string"
-      ? sql`(${arrayMatch} or (jsonb_typeof(attributes -> ${key}) = 'string' and position(${value} in attributes ->> ${key}) > 0))`
+      ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${value} in properties ->> ${key}) > 0))`
       : arrayMatch;
   }
   if (typeof value === "number") {
-    return sql`(jsonb_typeof(attributes -> ${key}) = 'number' and (attributes ->> ${key})::numeric ${comparison(sql, condition.op)} ${value})`;
+    return sql`(jsonb_typeof(properties -> ${key}) = 'number' and (properties ->> ${key})::numeric ${comparison(sql, condition.op)} ${value})`;
   }
-  return sql`(jsonb_typeof(attributes -> ${key}) = 'string' and attributes ->> ${key} ${comparison(sql, condition.op)} ${value as string})`;
+  return sql`(jsonb_typeof(properties -> ${key}) = 'string' and properties ->> ${key} ${comparison(sql, condition.op)} ${value as string})`;
 };
 
 const escapeLikePattern = (value: string): string =>
@@ -187,26 +187,26 @@ const escapeLikePattern = (value: string): string =>
 export const makePostgresMetadataStore = (
   sql: Sql,
 ): MetadataStoreService => ({
-  insert: (object) =>
+  insert: (item) =>
     attempt(async () => {
       await sql`
-        insert into objects (
+        insert into items (
           id, tenant_id, name, content_type, declared_size, size, etag,
           checksum, source, status, storage_key, staging_key, created_at,
-          updated_at, attributes
+          updated_at, properties
         ) values (
-          ${object.id}, ${object.tenantId}, ${object.name}, ${object.contentType},
-          ${object.declaredSize}, ${object.size}, ${object.etag}, ${object.checksum},
-          ${object.source}, ${object.status}, ${object.storageKey},
-          ${object.stagingKey}, ${object.createdAt}, ${object.updatedAt},
-          ${sql.json(object.attributes)}
+          ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
+          ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
+          ${item.source}, ${item.status}, ${item.storageKey},
+          ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
+          ${sql.json(item.properties)}
         )
       `;
     }),
   get: (tenantId, id) =>
     attempt(async () => {
-      const rows = await sql<ObjectRow[]>`
-        select * from objects where tenant_id = ${tenantId} and id = ${id} limit 1
+      const rows = await sql<ItemRow[]>`
+        select * from items where tenant_id = ${tenantId} and id = ${id} limit 1
       `;
       return rows[0] ? mapRow(rows[0]) : null;
     }),
@@ -221,34 +221,34 @@ export const makePostgresMetadataStore = (
       if (patch.contentType !== undefined) values.content_type = patch.contentType;
       const rows = olderThan === undefined
         ? await sql`
-            update objects set ${sql(values)}
+            update items set ${sql(values)}
             where tenant_id = ${tenantId} and id = ${id}
               and status in ${sql(from)}
             returning id
           `
         : await sql`
-            update objects set ${sql(values)}
+            update items set ${sql(values)}
             where tenant_id = ${tenantId} and id = ${id}
               and status in ${sql(from)} and created_at < ${olderThan}
             returning id
           `;
       return rows.length === 1;
     }),
-  patchAttributes: (tenantId, id, patch, updatedAt) =>
+  patchProperties: (tenantId, id, patch, updatedAt) =>
     attempt(async () => {
       return sql.begin(async (transaction) => {
-        const rows = await transaction<ObjectRow[]>`
-          select * from objects
+        const rows = await transaction<ItemRow[]>`
+          select * from items
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           for update
         `;
         const row = rows[0];
         if (!row) return null;
-        const attributes = { ...row.attributes, ...patch.set };
-        for (const key of patch.unset) delete attributes[key];
-        const updated = await transaction<ObjectRow[]>`
-          update objects
-          set attributes = ${transaction.json(attributes)}, updated_at = ${updatedAt}
+        const properties = { ...row.properties, ...patch.set };
+        for (const key of patch.unset) delete properties[key];
+        const updated = await transaction<ItemRow[]>`
+          update items
+          set properties = ${transaction.json(properties)}, updated_at = ${updatedAt}
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           returning *
         `;
@@ -258,7 +258,7 @@ export const makePostgresMetadataStore = (
   remove: (tenantId, id, expectedStatus) =>
     attempt(async () => {
       const rows = await sql`
-        delete from objects
+        delete from items
         where tenant_id = ${tenantId} and id = ${id} and status = ${expectedStatus}
         returning id
       `;
@@ -286,30 +286,30 @@ export const makePostgresMetadataStore = (
       }
       const where = predicates.reduce((left, right) => sql`${left} and ${right}`);
       const rows = yield* attempt(() =>
-        sql<ObjectRow[]>`
-          select * from objects
+        sql<ItemRow[]>`
+          select * from items
           where ${where}
           order by created_at asc, id asc
           limit ${query.limit + 1}
         `
       );
-      const objects = rows.slice(0, query.limit).map(mapRow);
+      const items = rows.slice(0, query.limit).map(mapRow);
       return {
-        objects,
-        ...(rows.length > query.limit && objects.at(-1)
-          ? { nextCursor: encodeCursor(objects.at(-1)!) }
+        items,
+        ...(rows.length > query.limit && items.at(-1)
+          ? { nextCursor: encodeCursor(items.at(-1)!) }
           : {}),
       };
     }),
   listByStatus: (status, limit, olderThan) =>
     attempt(async () => {
       const rows = olderThan === undefined
-        ? await sql<ObjectRow[]>`
-            select * from objects where status = ${status}
+        ? await sql<ItemRow[]>`
+            select * from items where status = ${status}
             order by created_at asc limit ${limit}
           `
-        : await sql<ObjectRow[]>`
-            select * from objects
+        : await sql<ItemRow[]>`
+            select * from items
             where status = ${status} and created_at < ${olderThan}
             order by created_at asc limit ${limit}
           `;

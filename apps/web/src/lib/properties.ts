@@ -1,6 +1,6 @@
-import type { AttributeValue } from "@keva/schema";
+import type { PropertyValue } from "@keva/schema";
 
-// Client-side mirror of the attribute rules enforced by @keva/schema. The web
+// Client-side mirror of the property rules enforced by @keva/schema. The web
 // app only imports the *types* from that package (not Effect's runtime
 // validators), so we re-declare the constraints here to give immediate,
 // inline feedback before a patch is ever sent.
@@ -31,7 +31,7 @@ export const TYPE_LABEL: Record<ValueType, string> = {
   array: "list",
 };
 
-export const valueType = (value: AttributeValue): ValueType => {
+export const valueType = (value: PropertyValue): ValueType => {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   if (typeof value === "number") return "number";
@@ -51,7 +51,7 @@ export const inferScalarType = (
 };
 
 // Turn the editing string + chosen type into a concrete scalar value.
-export const coerceScalar = (type: ScalarType, raw: string): AttributeValue => {
+export const coerceScalar = (type: ScalarType, raw: string): PropertyValue => {
   if (type === "null") return null;
   if (type === "boolean") return raw.trim() === "true";
   if (type === "number") {
@@ -62,7 +62,7 @@ export const coerceScalar = (type: ScalarType, raw: string): AttributeValue => {
 };
 
 // The string a scalar should seed its input with when you start editing it.
-export const scalarToInput = (value: AttributeValue): string => {
+export const scalarToInput = (value: PropertyValue): string => {
   if (value === null || Array.isArray(value)) return "";
   if (typeof value === "boolean") return value ? "true" : "false";
   return String(value);
@@ -100,12 +100,12 @@ const validateValue = (value: unknown): string | null => {
 };
 
 export type ParseResult =
-  | { ok: true; value: Record<string, AttributeValue> }
+  | { ok: true; value: Record<string, PropertyValue> }
   | { ok: false; error: string };
 
 // Parse the JSON-view text and validate every key/value against the schema
 // rules, returning either the typed object or a single human-readable error.
-export const parseAttributesJson = (text: string): ParseResult => {
+export const parsePropertiesJson = (text: string): ParseResult => {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -117,7 +117,7 @@ export const parseAttributesJson = (text: string): ParseResult => {
 
   const entries = Object.entries(data as Record<string, unknown>);
   if (entries.length > MAX_KEYS)
-    return { ok: false, error: `At most ${MAX_KEYS} attributes are allowed` };
+    return { ok: false, error: `At most ${MAX_KEYS} properties are allowed` };
 
   for (const [key, value] of entries) {
     const keyError = validateKey(key);
@@ -126,13 +126,13 @@ export const parseAttributesJson = (text: string): ParseResult => {
     if (valueError) return { ok: false, error: `“${key}” — ${valueError}` };
   }
 
-  const value = Object.fromEntries(entries) as Record<string, AttributeValue>;
+  const value = Object.fromEntries(entries) as Record<string, PropertyValue>;
   if (encodedBytes(value) > MAX_TOTAL_BYTES)
-    return { ok: false, error: "Attributes exceed the 64 KB limit" };
+    return { ok: false, error: "Properties exceed the 64 KB limit" };
   return { ok: true, value };
 };
 
-const valuesEqual = (a: AttributeValue, b: AttributeValue): boolean => {
+const valuesEqual = (a: PropertyValue, b: PropertyValue): boolean => {
   if (Array.isArray(a) && Array.isArray(b))
     return a.length === b.length && a.every((item, i) => item === b[i]);
   return a === b;
@@ -140,11 +140,11 @@ const valuesEqual = (a: AttributeValue, b: AttributeValue): boolean => {
 
 // The minimal patch that turns `original` into `next`: only changed/added keys
 // go in `set`, removed keys go in `unset`.
-export const diffAttributes = (
-  original: Record<string, AttributeValue>,
-  next: Record<string, AttributeValue>,
-): { set: Record<string, AttributeValue>; unset: string[] } => {
-  const set: Record<string, AttributeValue> = {};
+export const diffProperties = (
+  original: Record<string, PropertyValue>,
+  next: Record<string, PropertyValue>,
+): { set: Record<string, PropertyValue>; unset: string[] } => {
+  const set: Record<string, PropertyValue> = {};
   for (const [key, value] of Object.entries(next)) {
     if (!(key in original) || !valuesEqual(original[key]!, value))
       set[key] = value;
@@ -153,5 +153,5 @@ export const diffAttributes = (
   return { set, unset };
 };
 
-export const prettyJson = (value: Record<string, AttributeValue>): string =>
+export const prettyJson = (value: Record<string, PropertyValue>): string =>
   Object.keys(value).length === 0 ? "{}" : JSON.stringify(value, null, 2);

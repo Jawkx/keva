@@ -1,13 +1,13 @@
 import {
-  ATTRIBUTE_LIMITS,
+  PROPERTY_LIMITS,
   Conflict,
   Forbidden,
   NotFound,
   QuotaExceeded,
   ValidationError,
-  type AttributePatch,
+  type PropertyPatch,
   type InitiateUpload,
-  type KevaObject,
+  type KevaItem,
   type Principal,
   type Query,
   type Scope,
@@ -22,10 +22,10 @@ const requireScope = (principal: Principal, scope: Scope) =>
     ? Effect.void
     : Effect.fail(new Forbidden({ message: `Missing '${scope}' scope` }));
 
-const readyOrNotFound = (object: KevaObject | null) =>
-  object?.status === "ready"
-    ? Effect.succeed(object)
-    : Effect.fail(new NotFound({ message: "Object not found" }));
+const readyOrNotFound = (item: KevaItem | null) =>
+  item?.status === "ready"
+    ? Effect.succeed(item)
+    : Effect.fail(new NotFound({ message: "Item not found" }));
 
 export const makeKevaEngine = (principal: Principal) => ({
   initiate: (input: InitiateUpload) =>
@@ -40,7 +40,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       const blobs = yield* BlobStore;
       const id = crypto.randomUUID();
       const timestamp = now();
-      const object: KevaObject = {
+      const item: KevaItem = {
         id,
         tenantId: principal.tenantId,
         name: input.name,
@@ -51,20 +51,20 @@ export const makeKevaEngine = (principal: Principal) => ({
         checksum: null,
         source: input.source,
         status: "pending",
-        storageKey: `objects/${principal.tenantId}/${id}`,
+        storageKey: `items/${principal.tenantId}/${id}`,
         stagingKey: `staging/${principal.tenantId}/${id}`,
         createdAt: timestamp,
         updatedAt: timestamp,
-        attributes: input.attributes,
+        properties: input.properties,
       };
-      yield* metadata.insert(object);
+      yield* metadata.insert(item);
       const upload = yield* blobs.presignUpload(
-        object.stagingKey,
+        item.stagingKey,
         input.size,
         input.contentType,
       );
       return {
-        object,
+        item,
         uploadUrl: upload.url,
         expiresAt: upload.expiresAt,
         headers: { ...upload.headers },
@@ -76,22 +76,22 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* requireScope(principal, "write");
       const metadata = yield* MetadataStore;
       const blobs = yield* BlobStore;
-      const object = yield* metadata.get(principal.tenantId, id);
-      if (!object) return yield* new NotFound({ message: "Object not found" });
-      if (object.status === "ready") return object;
-      if (object.status !== "pending") {
+      const item = yield* metadata.get(principal.tenantId, id);
+      if (!item) return yield* new NotFound({ message: "Item not found" });
+      if (item.status === "ready") return item;
+      if (item.status !== "pending") {
         return yield* new Conflict({ message: "Upload is no longer pending" });
       }
-      const head = yield* blobs.head(object.stagingKey);
+      const head = yield* blobs.head(item.stagingKey);
       if (!head) {
         return yield* new Conflict({ message: "Staged upload does not exist" });
       }
-      if (head.size !== object.declaredSize) {
+      if (head.size !== item.declaredSize) {
         return yield* new ValidationError({
-          message: `Uploaded size ${head.size} does not match declared size ${object.declaredSize}`,
+          message: `Uploaded size ${head.size} does not match declared size ${item.declaredSize}`,
         });
       }
-      yield* blobs.copy(object.stagingKey, object.storageKey);
+      yield* blobs.copy(item.stagingKey, item.storageKey);
       const transitioned = yield* metadata.transition(
         principal.tenantId,
         id,
@@ -100,7 +100,7 @@ export const makeKevaEngine = (principal: Principal) => ({
           status: "ready",
           size: head.size,
           etag: head.etag,
-          contentType: head.contentType ?? object.contentType,
+          contentType: head.contentType ?? item.contentType,
           updatedAt: now(),
         },
       );
@@ -109,7 +109,7 @@ export const makeKevaEngine = (principal: Principal) => ({
         if (current?.status === "ready") return current;
         return yield* new Conflict({ message: "Upload expired while confirming" });
       }
-      yield* blobs.delete(object.stagingKey).pipe(Effect.ignore);
+      yield* blobs.delete(item.stagingKey).pipe(Effect.ignore);
       const confirmed = yield* metadata.get(principal.tenantId, id);
       return yield* readyOrNotFound(confirmed);
     }),
@@ -128,42 +128,42 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* requireScope(principal, "read");
       const metadata = yield* MetadataStore;
       const blobs = yield* BlobStore;
-      const object = yield* readyOrNotFound(
+      const item = yield* readyOrNotFound(
         yield* metadata.get(principal.tenantId, id),
       );
-      const request = yield* blobs.presignDownload(object.storageKey);
+      const request = yield* blobs.presignDownload(item.storageKey);
       return { url: request.url, expiresAt: request.expiresAt };
     }),
 
-  patchAttributes: (id: string, patch: AttributePatch) =>
+  patchProperties: (id: string, patch: PropertyPatch) =>
     Effect.gen(function* () {
       yield* requireScope(principal, "write");
       const metadata = yield* MetadataStore;
       const current = yield* readyOrNotFound(
         yield* metadata.get(principal.tenantId, id),
       );
-      const merged = { ...current.attributes, ...patch.set };
+      const merged = { ...current.properties, ...patch.set };
       for (const key of patch.unset) delete merged[key];
       // Re-check the *merged* result against every limit, not just the
       // incoming `set` (which Effect Schema already validated). Merging an
-      // otherwise-valid patch into existing attributes can still push the
-      // object past the per-object key count, per-value size, or total bytes.
+      // otherwise-valid patch into existing properties can still push the
+      // item past the per-item key count, per-value size, or total bytes.
       const encoder = new TextEncoder();
       const totalBytes = encoder.encode(JSON.stringify(merged)).byteLength;
       const valueExceedsLimit = (value: unknown): boolean =>
         (typeof value === "string" &&
-          encoder.encode(value).byteLength > ATTRIBUTE_LIMITS.stringBytes) ||
-        (Array.isArray(value) && value.length > ATTRIBUTE_LIMITS.arrayItems);
+          encoder.encode(value).byteLength > PROPERTY_LIMITS.stringBytes) ||
+        (Array.isArray(value) && value.length > PROPERTY_LIMITS.arrayItems);
       if (
-        Object.keys(merged).length > ATTRIBUTE_LIMITS.keys ||
-        totalBytes > ATTRIBUTE_LIMITS.totalBytes ||
+        Object.keys(merged).length > PROPERTY_LIMITS.keys ||
+        totalBytes > PROPERTY_LIMITS.totalBytes ||
         Object.values(merged).some(valueExceedsLimit)
       ) {
         return yield* new QuotaExceeded({
-          message: "Attribute limits exceeded",
+          message: "Property limits exceeded",
         });
       }
-      const updated = yield* metadata.patchAttributes(
+      const updated = yield* metadata.patchProperties(
         principal.tenantId,
         id,
         patch,
@@ -218,10 +218,10 @@ export const reapPending = (options: LifecycleJobOptions = {}) =>
       cutoff,
     );
     let reaped = 0;
-    for (const object of pending) {
+    for (const item of pending) {
       const claimed = yield* metadata.transition(
-        object.tenantId,
-        object.id,
+        item.tenantId,
+        item.id,
         ["pending"],
         { status: "deleting", updatedAt: now() },
         cutoff,
@@ -240,12 +240,12 @@ export const sweepDeleting = (options: LifecycleJobOptions = {}) =>
       options.batchSize ?? 100,
     );
     let swept = 0;
-    for (const object of deleting) {
-      yield* blobs.delete(object.storageKey);
-      yield* blobs.delete(object.stagingKey);
+    for (const item of deleting) {
+      yield* blobs.delete(item.storageKey);
+      yield* blobs.delete(item.stagingKey);
       const removed = yield* metadata.remove(
-        object.tenantId,
-        object.id,
+        item.tenantId,
+        item.id,
         "deleting",
       );
       if (removed) swept++;

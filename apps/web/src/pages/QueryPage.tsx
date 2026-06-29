@@ -8,7 +8,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import type { Operator } from "@keva/schema";
-import type { KevaObject, Query } from "@keva/sdk";
+import type { KevaItem, Query } from "@keva/sdk";
 import { CodeBlock } from "../components/CodeBlock";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatDate } from "../lib/format";
@@ -85,7 +85,7 @@ export function QueryPage() {
   const handleError = useApiError();
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const [limit, setLimit] = useState(100);
-  const [results, setResults] = useState<readonly KevaObject[] | null>(null);
+  const [results, setResults] = useState<readonly KevaItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showApi, setShowApi] = useState(false);
@@ -126,7 +126,7 @@ const keva = new KevaClient({
   token: process.env.KEVA_TOKEN,
 });
 
-const { objects } = await keva.query(${body});`;
+const { items } = await keva.query(${body});`;
     return { curl, sdk };
   }, [where, limit]);
 
@@ -135,7 +135,7 @@ const { objects } = await keva.query(${body});`;
     setError(null);
     try {
       const result = await keva.query({ where, limit });
-      setResults(result.objects);
+      setResults(result.items);
     } catch (err) {
       setError(handleError(err));
     } finally {
@@ -147,11 +147,11 @@ const { objects } = await keva.query(${body});`;
     <div>
       <PageHeader
         title="Query"
-        description="Filter objects by their attributes and system fields."
+        description="Filter items by their properties and system fields."
       />
 
       <p className="mb-4 text-sm text-muted-foreground">
-        Keys can be a bare attribute name, <code className="font-mono">name</code>,{" "}
+        Keys can be a bare property name, <code className="font-mono">name</code>,{" "}
         <code className="font-mono">id</code>, or{" "}
         <code className="font-mono">system.&lt;field&gt;</code> (e.g.{" "}
         <code className="font-mono">system.content_type</code>,{" "}
@@ -341,7 +341,7 @@ const { objects } = await keva.query(${body});`;
                 </EmptyMedia>
                 <EmptyTitle>No matches</EmptyTitle>
                 <EmptyDescription>
-                  No objects matched these conditions.
+                  No items matched these conditions.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -357,24 +357,24 @@ const { objects } = await keva.query(${body});`;
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.map((object) => (
-                    <TableRow key={object.id}>
+                  {results.map((item) => (
+                    <TableRow key={item.id}>
                       <TableCell className="font-medium">
                         <Link
-                          to={`/objects/${object.id}`}
+                          to={`/items/${item.id}`}
                           className="hover:underline"
                         >
-                          {object.name}
+                          {item.name}
                         </Link>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {object.contentType}
+                        {item.contentType}
                       </TableCell>
                       <TableCell className="text-muted-foreground tabular-nums">
-                        {formatBytes(object.size)}
+                        {formatBytes(item.size)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDate(object.createdAt)}
+                        {formatDate(item.createdAt)}
                       </TableCell>
                     </TableRow>
                   ))}

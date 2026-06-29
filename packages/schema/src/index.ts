@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-export const ATTRIBUTE_LIMITS = {
+export const PROPERTY_LIMITS = {
   keys: 256,
   keyLength: 128,
   stringBytes: 8 * 1024,
@@ -22,63 +22,63 @@ const systemQueryKeys = new Set([
   "system.updated_at",
 ]);
 
-export const AttributeKey = Schema.String.pipe(
+export const PropertyKey = Schema.String.pipe(
   Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
-  Schema.maxLength(ATTRIBUTE_LIMITS.keyLength),
+  Schema.maxLength(PROPERTY_LIMITS.keyLength),
   Schema.filter(
     (key) => !key.startsWith("system.") && !key.startsWith("keva."),
-    { message: () => "Attribute keys cannot use reserved namespaces" },
+    { message: () => "Property keys cannot use reserved namespaces" },
   ),
 );
-export type AttributeKey = typeof AttributeKey.Type;
+export type PropertyKey = typeof PropertyKey.Type;
 
-export const AttributeString = Schema.String.pipe(
+export const PropertyString = Schema.String.pipe(
   Schema.filter(
     (value) =>
-      new TextEncoder().encode(value).byteLength <= ATTRIBUTE_LIMITS.stringBytes,
-    { message: () => "String attributes must be at most 8 KB" },
+      new TextEncoder().encode(value).byteLength <= PROPERTY_LIMITS.stringBytes,
+    { message: () => "String properties must be at most 8 KB" },
   ),
 );
 
-const AttributeArray = <A, I, R>(item: Schema.Schema<A, I, R>) =>
-  Schema.Array(item).pipe(Schema.maxItems(ATTRIBUTE_LIMITS.arrayItems));
+const PropertyArray = <A, I, R>(item: Schema.Schema<A, I, R>) =>
+  Schema.Array(item).pipe(Schema.maxItems(PROPERTY_LIMITS.arrayItems));
 
-export const AttributeValue = Schema.Union(
-  AttributeString,
+export const PropertyValue = Schema.Union(
+  PropertyString,
   Schema.Number,
   Schema.Boolean,
   Schema.Null,
-  AttributeArray(AttributeString),
-  AttributeArray(Schema.Number),
-  AttributeArray(Schema.Boolean),
+  PropertyArray(PropertyString),
+  PropertyArray(Schema.Number),
+  PropertyArray(Schema.Boolean),
 );
-export type AttributeValue = typeof AttributeValue.Type;
+export type PropertyValue = typeof PropertyValue.Type;
 
-export const Attributes = Schema.Record({
+export const Properties = Schema.Record({
   key: Schema.String,
-  value: AttributeValue,
+  value: PropertyValue,
 }).pipe(
   Schema.filter(
-    (attributes) =>
-      Object.keys(attributes).every(
+    (properties) =>
+      Object.keys(properties).every(
         (key) =>
           queryKeyPattern.test(key) &&
-          key.length <= ATTRIBUTE_LIMITS.keyLength &&
+          key.length <= PROPERTY_LIMITS.keyLength &&
           !key.startsWith("system.") &&
           !key.startsWith("keva."),
       ),
-    { message: () => "Invalid or reserved attribute key" },
+    { message: () => "Invalid or reserved property key" },
   ),
   Schema.filter(
-    (attributes) => Object.keys(attributes).length <= ATTRIBUTE_LIMITS.keys,
-    { message: () => "An object may have at most 256 attributes" },
+    (properties) => Object.keys(properties).length <= PROPERTY_LIMITS.keys,
+    { message: () => "An item may have at most 256 properties" },
   ),
   Schema.filter(
-    (attributes) => encodedBytes(attributes) <= ATTRIBUTE_LIMITS.totalBytes,
-    { message: () => "Attributes must be at most 64 KB in total" },
+    (properties) => encodedBytes(properties) <= PROPERTY_LIMITS.totalBytes,
+    { message: () => "Properties must be at most 64 KB in total" },
   ),
 );
-export type Attributes = typeof Attributes.Type;
+export type Properties = typeof Properties.Type;
 
 export const Scope = Schema.Literal("read", "write", "delete", "admin");
 export type Scope = typeof Scope.Type;
@@ -90,10 +90,10 @@ export const Principal = Schema.Struct({
 });
 export type Principal = typeof Principal.Type;
 
-export const ObjectStatus = Schema.Literal("pending", "ready", "deleting");
-export type ObjectStatus = typeof ObjectStatus.Type;
+export const ItemStatus = Schema.Literal("pending", "ready", "deleting");
+export type ItemStatus = typeof ItemStatus.Type;
 
-export const KevaObject = Schema.Struct({
+export const KevaItem = Schema.Struct({
   id: Schema.String,
   tenantId: Schema.String,
   name: Schema.NonEmptyString,
@@ -103,14 +103,14 @@ export const KevaObject = Schema.Struct({
   etag: Schema.NullOr(Schema.String),
   checksum: Schema.NullOr(Schema.String),
   source: Schema.NonEmptyString,
-  status: ObjectStatus,
+  status: ItemStatus,
   storageKey: Schema.NonEmptyString,
   stagingKey: Schema.NonEmptyString,
   createdAt: Schema.String,
   updatedAt: Schema.String,
-  attributes: Attributes,
+  properties: Properties,
 });
-export type KevaObject = typeof KevaObject.Type;
+export type KevaItem = typeof KevaItem.Type;
 
 export const Operator = Schema.Literal(
   "eq",
@@ -125,7 +125,7 @@ export const Operator = Schema.Literal(
 export type Operator = typeof Operator.Type;
 
 export const QueryKey = Schema.String.pipe(
-  Schema.maxLength(ATTRIBUTE_LIMITS.keyLength),
+  Schema.maxLength(PROPERTY_LIMITS.keyLength),
   Schema.filter(
     (key) =>
       key === "id" ||
@@ -140,7 +140,7 @@ export const QueryKey = Schema.String.pipe(
 export const QueryCondition = Schema.Struct({
   key: QueryKey,
   op: Operator,
-  value: Schema.optional(AttributeValue),
+  value: Schema.optional(PropertyValue),
 }).pipe(
   Schema.filter(
     ({ op, value }) => {
@@ -172,7 +172,7 @@ export const Query = Schema.Struct({
 export type Query = typeof Query.Type;
 
 export const QueryResult = Schema.Struct({
-  objects: Schema.Array(KevaObject),
+  items: Schema.Array(KevaItem),
   nextCursor: Schema.optional(Schema.String),
 });
 export type QueryResult = typeof QueryResult.Type;
@@ -200,23 +200,23 @@ export const InitiateUpload = Schema.Struct({
   source: Schema.optionalWith(Schema.NonEmptyString, {
     default: () => "upload",
   }),
-  attributes: Schema.optionalWith(Attributes, { default: () => ({}) }),
+  properties: Schema.optionalWith(Properties, { default: () => ({}) }),
 });
 export type InitiateUpload = typeof InitiateUpload.Type;
 
 export const InitiateUploadResult = Schema.Struct({
-  object: KevaObject,
+  item: KevaItem,
   uploadUrl: Schema.String,
   expiresAt: Schema.String,
   headers: Schema.Record({ key: Schema.String, value: Schema.String }),
 });
 export type InitiateUploadResult = typeof InitiateUploadResult.Type;
 
-export const AttributePatch = Schema.Struct({
-  set: Schema.optionalWith(Attributes, { default: () => ({}) }),
-  unset: Schema.optionalWith(Schema.Array(AttributeKey), { default: () => [] }),
+export const PropertyPatch = Schema.Struct({
+  set: Schema.optionalWith(Properties, { default: () => ({}) }),
+  unset: Schema.optionalWith(Schema.Array(PropertyKey), { default: () => [] }),
 });
-export type AttributePatch = typeof AttributePatch.Type;
+export type PropertyPatch = typeof PropertyPatch.Type;
 
 export const DownloadResult = Schema.Struct({
   url: Schema.String,

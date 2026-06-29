@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { KevaClient, KevaProtocolError } from "./index.js";
 
 describe("KevaClient", () => {
-  const object = {
+  const item = {
     id: "11111111-1111-4111-8111-111111111111",
     tenantId: "tenant",
     name: "hello.txt",
@@ -13,11 +13,11 @@ describe("KevaClient", () => {
     checksum: null,
     source: "upload",
     status: "ready" as const,
-    storageKey: "objects/tenant/id",
+    storageKey: "items/tenant/id",
     stagingKey: "staging/tenant/id",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    attributes: {},
+    properties: {},
   };
 
   it("throws the shared typed error contract", async () => {
@@ -26,14 +26,14 @@ describe("KevaClient", () => {
       token: "test",
       fetch: async () =>
         Response.json(
-          { _tag: "NotFound", message: "Object not found" },
+          { _tag: "NotFound", message: "Item not found" },
           { status: 404 },
         ),
     });
 
     await expect(client.get("missing")).rejects.toMatchObject({
       _tag: "NotFound",
-      message: "Object not found",
+      message: "Item not found",
     });
 
     const unauthorized = new KevaClient({
@@ -68,9 +68,9 @@ describe("KevaClient", () => {
       token: "test",
       fetch: async (input, init) => {
         const url = String(input);
-        if (url.endsWith("/objects")) {
+        if (url.endsWith("/items")) {
           return Response.json({
-            object,
+            item,
             uploadUrl: "https://blob.invalid/upload",
             expiresAt: "2026-01-01T00:15:00.000Z",
             headers: { "content-type": "text/plain" },
@@ -80,8 +80,8 @@ describe("KevaClient", () => {
           uploadBodies.push(init?.body);
           return new Response(null, { status: 200 });
         }
-        if (url.endsWith(`/objects/${object.id}/confirm`)) {
-          return Response.json(object);
+        if (url.endsWith(`/items/${item.id}/confirm`)) {
+          return Response.json(item);
         }
         throw new Error(`unexpected fetch ${url}`);
       },
@@ -93,9 +93,9 @@ describe("KevaClient", () => {
         contentType: "text/plain",
         size: 5,
         source: "upload",
-        attributes: {},
+        properties: {},
       }, body),
-    ).resolves.toMatchObject({ id: object.id });
+    ).resolves.toMatchObject({ id: item.id });
     expect(uploadBodies).toEqual([body]);
   });
 
@@ -113,12 +113,12 @@ describe("KevaClient", () => {
       },
     });
 
-    await expect(client.getDownloadUrl(object.id)).resolves.toEqual({
+    await expect(client.getDownloadUrl(item.id)).resolves.toEqual({
       url: "https://blob.invalid/download",
       expiresAt: "2026-01-01T00:15:00.000Z",
     });
     expect(calls).toEqual([
-      `https://keva.invalid/api/objects/${object.id}/content`,
+      `https://keva.invalid/api/items/${item.id}/content`,
     ]);
   });
 
@@ -130,7 +130,7 @@ describe("KevaClient", () => {
       fetch: async (input) => {
         const url = String(input);
         calls.push(url);
-        if (url.endsWith(`/objects/${object.id}/content`)) {
+        if (url.endsWith(`/items/${item.id}/content`)) {
           return Response.json({
             url: "https://blob.invalid/download",
             expiresAt: "2026-01-01T00:15:00.000Z",
@@ -140,11 +140,11 @@ describe("KevaClient", () => {
       },
     });
 
-    await expect(client.downloadBytes(object.id)).resolves.toEqual(
+    await expect(client.downloadBytes(item.id)).resolves.toEqual(
       new TextEncoder().encode("hello"),
     );
     expect(calls).toEqual([
-      `https://keva.invalid/api/objects/${object.id}/content`,
+      `https://keva.invalid/api/items/${item.id}/content`,
       "https://blob.invalid/download",
     ]);
   });

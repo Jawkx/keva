@@ -314,7 +314,7 @@ export function TokensPage() {
               <CopyButton value={apiBase} label="Copy base URL" />
             </div>
           </div>
-          <CodeBlock label="Example: query objects" code={exampleCurl} />
+          <CodeBlock label="Example: query items" code={exampleCurl} />
         </CardContent>
       </Card>
     </div>

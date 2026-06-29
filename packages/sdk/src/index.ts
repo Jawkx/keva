@@ -1,31 +1,31 @@
 import {
-  AttributePatch,
+  PropertyPatch,
   BatchDelete,
   BatchDeleteResult,
   DownloadResult,
   InitiateUpload,
   InitiateUploadResult,
   KevaError,
-  KevaObject,
+  KevaItem,
   Query,
   QueryResult,
-  type AttributePatch as AttributePatchType,
+  type PropertyPatch as PropertyPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
   type DownloadResult as DownloadResultType,
   type InitiateUpload as InitiateUploadType,
   type KevaError as KevaErrorType,
-  type KevaObject as KevaObjectType,
+  type KevaItem as KevaItemType,
   type Query as QueryType,
   type QueryResult as QueryResultType,
 } from "@keva/schema";
 import { Schema } from "effect";
 
 export type {
-  AttributePatchType as AttributePatch,
+  PropertyPatchType as PropertyPatch,
   BatchDeleteResultType as BatchDeleteResult,
   InitiateUploadType as InitiateUpload,
   KevaErrorType as KevaError,
-  KevaObjectType as KevaObject,
+  KevaItemType as KevaItem,
   QueryType as Query,
   QueryResultType as QueryResult,
   DownloadResultType as DownloadResult,
@@ -116,13 +116,13 @@ export class KevaClient {
 
   async initiate(input: InitiateUploadType) {
     const body = decode(InitiateUpload, input);
-    return this.#request("POST", "/objects", InitiateUploadResult, body);
+    return this.#request("POST", "/items", InitiateUploadResult, body);
   }
 
   async uploadBody(
     input: InitiateUploadType,
     body: UploadBody,
-  ): Promise<KevaObjectType> {
+  ): Promise<KevaItemType> {
     const initiated = await this.initiate(input);
     const response = await this.#fetch(initiated.uploadUrl, {
       method: "PUT",
@@ -132,44 +132,44 @@ export class KevaClient {
     if (!response.ok) {
       throw new KevaProtocolError(`Blob upload failed with ${response.status}`);
     }
-    return this.confirm(initiated.object.id);
+    return this.confirm(initiated.item.id);
   }
 
   uploadFile(
     file: File,
     options: {
-      readonly attributes?: InitiateUploadType["attributes"];
+      readonly properties?: InitiateUploadType["properties"];
       readonly source?: string;
     } = {},
-  ): Promise<KevaObjectType> {
+  ): Promise<KevaItemType> {
     return this.uploadBody(
       {
         name: file.name,
         contentType: file.type || "application/octet-stream",
         size: file.size,
         source: options.source ?? "upload",
-        attributes: options.attributes ?? {},
+        properties: options.properties ?? {},
       },
       file,
     );
   }
 
-  upload(input: InitiateUploadType, body: UploadBody): Promise<KevaObjectType> {
+  upload(input: InitiateUploadType, body: UploadBody): Promise<KevaItemType> {
     return this.uploadBody(input, body);
   }
 
-  confirm(id: string): Promise<KevaObjectType> {
-    return this.#request("POST", `/objects/${encodeURIComponent(id)}/confirm`, KevaObject);
+  confirm(id: string): Promise<KevaItemType> {
+    return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, KevaItem);
   }
 
-  get(id: string): Promise<KevaObjectType> {
-    return this.#request("GET", `/objects/${encodeURIComponent(id)}`, KevaObject);
+  get(id: string): Promise<KevaItemType> {
+    return this.#request("GET", `/items/${encodeURIComponent(id)}`, KevaItem);
   }
 
   getDownloadUrl(id: string): Promise<DownloadResultType> {
     return this.#request(
       "GET",
-      `/objects/${encodeURIComponent(id)}/content`,
+      `/items/${encodeURIComponent(id)}/content`,
       DownloadResult,
     );
   }
@@ -192,15 +192,15 @@ export class KevaClient {
     return this.downloadBytes(id);
   }
 
-  patchAttributes(
+  patchProperties(
     id: string,
-    patch: AttributePatchType,
-  ): Promise<KevaObjectType> {
+    patch: PropertyPatchType,
+  ): Promise<KevaItemType> {
     return this.#request(
       "PATCH",
-      `/objects/${encodeURIComponent(id)}/attributes`,
-      KevaObject,
-      decode(AttributePatch, patch),
+      `/items/${encodeURIComponent(id)}/properties`,
+      KevaItem,
+      decode(PropertyPatch, patch),
     );
   }
 
@@ -211,7 +211,7 @@ export class KevaClient {
   async delete(id: string): Promise<void> {
     await this.#request(
       "DELETE",
-      `/objects/${encodeURIComponent(id)}`,
+      `/items/${encodeURIComponent(id)}`,
       Schema.Struct({ ok: Schema.Boolean }),
     );
   }
@@ -219,7 +219,7 @@ export class KevaClient {
   deleteMany(ids: readonly string[]): Promise<BatchDeleteResultType> {
     return this.#request(
       "POST",
-      "/objects/delete",
+      "/items/delete",
       BatchDeleteResult,
       decode(BatchDelete, { ids }),
     );

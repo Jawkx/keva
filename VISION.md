@@ -12,7 +12,7 @@ The file system we all still use was designed for a human sitting at a desk, cli
 
 That assumption is breaking. Software can now read, watch, and understand the contents of a file. But the file itself is still a blob in a tree — the system knows its name, its size, and where it sits in a hierarchy, and almost nothing else. It doesn't know what's *in* the file, what it's *for*, or how it relates to everything around it. We've taught machines to understand our files, then handed them a storage model that hides everything worth understanding.
 
-keva starts from a different primitive. A file is not a blob to be buried in a folder. It is an **object with open-ended, structured meaning** — a set of key-value attributes that anything can read, write, query, and act on. Some of that meaning is automatic (type, size, source). Most of it is yours to define. And increasingly, some of it is written by the agents working on your behalf.
+keva starts from a different primitive. A file is not a blob to be buried in a folder. It is an **item with open-ended, structured meaning** — a set of key-value properties that anything can read, write, query, and act on. Some of that meaning is automatic (type, size, source). Most of it is yours to define. And increasingly, some of it is written by the agents working on your behalf.
 
 Storage stops being a place you put things and forgets about them. It becomes a substrate that knows what it holds.
 
@@ -20,9 +20,9 @@ Storage stops being a place you put things and forgets about them. It becomes a 
 
 For the person who just wants their scattered files in one trustworthy place, keva is dead simple: drop files in, they're safe, they're yours, they're easy to find. No new habits to learn, no walls to climb. It's a better version of the storage you already use.
 
-Underneath that simplicity is the part that matters. Every file in keva carries metadata — structured key-value attributes, fully customizable. And every one of those attributes is reachable through a clean, first-class API. You can read and write it. Your apps can. And an AI agent, connected over the API or through MCP, can query your files by meaning, enrich them with what it learns, and organize them on your behalf.
+Underneath that simplicity is the part that matters. Every file in keva carries metadata — structured key-value properties, fully customizable. And every one of those properties is reachable through a clean, first-class API. You can read and write it. Your apps can. And an AI agent, connected over the API or through MCP, can query your files by meaning, enrich them with what it learns, and organize them on your behalf.
 
-So you can ask your agent to go find what's inside all your diving videos, tag them by location and who's in them, and pull up the three best clips — and it can actually *do* that, because the files aren't opaque. They're objects it can reason about.
+So you can ask your agent to go find what's inside all your diving videos, tag them by location and who's in them, and pull up the three best clips — and it can actually *do* that, because the files aren't opaque. They're items it can reason about.
 
 ## Who it's for
 
@@ -36,7 +36,7 @@ keva is built so the same system serves both, and so the first person grows natu
 
 ## What we believe
 
-**Files are objects, not blobs.** Meaning should live with the file, in structure the system understands — not trapped inside the bytes or scattered across folder names.
+**Files are items, not blobs.** Meaning should live with the file, in structure the system understands — not trapped inside the bytes or scattered across folder names.
 
 **Your schema is yours.** Beyond a few sensible defaults, the metadata is open-ended. keva doesn't decide how your world is organized. You do — or your agent does, with your permission.
 

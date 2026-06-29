@@ -1,4 +1,4 @@
-# Object lifecycle
+# Item lifecycle
 
 keva stores meaning in Postgres and bytes in S3-compatible storage — two systems
 with **no shared transaction**. The trust guarantees ("your files are safe, and
@@ -11,10 +11,10 @@ this is the full model.
 | State | Meaning | Bytes |
 |---|---|---|
 | `pending` | record created; a presigned PUT to the **staging** key has been issued; awaiting upload + confirm | none, or in staging |
-| `ready` | bytes copied to the **immutable final** key; system attributes reflect the real object | at final key |
+| `ready` | bytes copied to the **immutable final** key; system properties reflect the real item | at final key |
 | `deleting` | deletion intent recorded; no longer served; blobs being removed | being removed |
 
-Reads (`GET`, `query`) only ever return `ready` objects. `pending` and
+Reads (`GET`, `query`) only ever return `ready` items. `pending` and
 `deleting` are invisible to clients (treated as `NotFound`).
 
 ```
@@ -43,33 +43,33 @@ does not stop a same-sized replacement (documented S3 behavior). So:
 
 - The presigned PUT targets a **staging key** only: `staging/<tenantId>/<id>`.
 - Confirm performs a **server-side `CopyObject`** to the **final key**
-  `objects/<tenantId>/<id>`, then deletes staging.
-- **No presigned PUT is ever issued for the final key**, so a `ready` object's
+  `items/<tenantId>/<id>`, then deletes staging.
+- **No presigned PUT is ever issued for the final key**, so a `ready` item's
   bytes cannot be overwritten by a client. Replaying the staging URL only rewrites
   staging, which is already copied and slated for deletion.
 
 `CopyObject` is server-side (S3-internal; the server issues one signed REST call,
-no bytes transit it) and covers single objects up to 5 GB — matching the
+no bytes transit it) and covers single items up to 5 GB — matching the
 single-PUT cap. Multipart copy is deferred with multipart upload.
 
 ## Confirm: idempotent and retry-safe
 
-`POST /objects/:id/confirm` is safe to call repeatedly:
+`POST /items/:id/confirm` is safe to call repeatedly:
 
 1. If the row is already `ready` → return it (no-op success).
 2. If `pending`:
-   a. `HEAD` the staging object; if absent → `Conflict` (nothing uploaded).
+   a. `HEAD` the staging item; if absent → `Conflict` (nothing uploaded).
    b. Validate declared vs. actual `size`/`etag`; mismatch → `ValidationError`.
    c. `CopyObject` staging → final (idempotent; identical bytes, same final key).
    d. Atomically claim the transition:
-      `UPDATE objects SET status='ready', size=…, etag=…, updated_at=now()
+      `UPDATE items SET status='ready', size=…, etag=…, updated_at=now()
        WHERE id=:id AND tenant_id=:t AND status='pending'`.
       If it affects 0 rows, someone else won (or it was reaped) → re-read and
       return the current state (or `Conflict` if now `deleting`).
    e. Best-effort delete staging; failure is non-fatal — the reaper mops staging.
 
 Ordering matters: **copy before the DB flip.** If the process dies after copy but
-before the flip, a retry re-copies (idempotent) and flips; the final object
+before the flip, a retry re-copies (idempotent) and flips; the final item
 already exists. If it dies before copy, the row stays `pending` and is retried or
 reaped. There is never a `ready` row without final bytes.
 
@@ -78,9 +78,9 @@ reaped. There is never a `ready` row without final bytes.
 Deletion can't be atomic across stores, so intent is recorded first:
 
 1. Atomically record intent:
-   `UPDATE objects SET status='deleting' WHERE id=:id AND tenant_id=:t AND status IN ('ready','pending')`.
-   The object immediately stops being served.
-2. Delete blobs (final key; staging if present). Deleting an absent object is a
+   `UPDATE items SET status='deleting' WHERE id=:id AND tenant_id=:t AND status IN ('ready','pending')`.
+   The item immediately stops being served.
+2. Delete blobs (final key; staging if present). Deleting an absent item is a
    no-op success (idempotent).
 3. Remove the row.
 
@@ -110,7 +110,7 @@ remove row), identical to a normal delete.
 
 - **Never uploaded / never confirmed** → row stays `pending` → reaped after TTL.
 - **Upload fails mid-PUT** → a single S3 PUT is atomic, so staging holds either
-  the complete object or nothing; either way the reaper cleans it.
+  the complete item or nothing; either way the reaper cleans it.
 - **Copy succeeds, flip fails** → retry re-copies + flips; idempotent.
 - **Partial delete** (blob delete half-failed) → row remains `deleting`; the
   sweeper retries until storage confirms gone, then removes the row.

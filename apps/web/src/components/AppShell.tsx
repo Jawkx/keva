@@ -63,7 +63,7 @@ export function AppShell() {
   // The Files screen owns its own full-height, edge-to-edge master/detail
   // layout; every other page gets the centered, padded container.
   const fullBleed =
-    location.pathname === "/" || location.pathname.startsWith("/objects/");
+    location.pathname === "/" || location.pathname.startsWith("/items/");
 
   return (
     <SidebarProvider>

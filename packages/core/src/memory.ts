@@ -1,8 +1,8 @@
 import {
   Conflict,
   Internal,
-  type AttributeValue,
-  type KevaObject,
+  type PropertyValue,
+  type KevaItem,
   type QueryCondition,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
@@ -19,36 +19,36 @@ interface MemoryBlob {
   readonly etag: string;
 }
 
-const cloneObject = (object: KevaObject): KevaObject =>
-  structuredClone(object);
+const cloneItem = (item: KevaItem): KevaItem =>
+  structuredClone(item);
 
 const valueAt = (
-  object: KevaObject,
+  item: KevaItem,
   key: string,
-): { exists: boolean; value: AttributeValue | string | number | null } => {
-  if (key === "id") return { exists: true, value: object.id };
-  if (key === "name") return { exists: true, value: object.name };
-  const system: Record<string, AttributeValue> = {
-    "system.content_type": object.contentType,
-    "system.size": object.size,
-    "system.etag": object.etag,
-    "system.checksum": object.checksum,
-    "system.source": object.source,
-    "system.status": object.status,
-    "system.created_at": object.createdAt,
-    "system.updated_at": object.updatedAt,
+): { exists: boolean; value: PropertyValue | string | number | null } => {
+  if (key === "id") return { exists: true, value: item.id };
+  if (key === "name") return { exists: true, value: item.name };
+  const system: Record<string, PropertyValue> = {
+    "system.content_type": item.contentType,
+    "system.size": item.size,
+    "system.etag": item.etag,
+    "system.checksum": item.checksum,
+    "system.source": item.source,
+    "system.status": item.status,
+    "system.created_at": item.createdAt,
+    "system.updated_at": item.updatedAt,
   };
   if (key in system) return { exists: true, value: system[key] ?? null };
-  return Object.prototype.hasOwnProperty.call(object.attributes, key)
-    ? { exists: true, value: object.attributes[key] ?? null }
+  return Object.prototype.hasOwnProperty.call(item.properties, key)
+    ? { exists: true, value: item.properties[key] ?? null }
     : { exists: false, value: null };
 };
 
 const equals = (left: unknown, right: unknown): boolean =>
   typeof left === typeof right && Object.is(left, right);
 
-const matches = (object: KevaObject, condition: QueryCondition): boolean => {
-  const candidate = valueAt(object, condition.key);
+const matches = (item: KevaItem, condition: QueryCondition): boolean => {
+  const candidate = valueAt(item, condition.key);
   if (condition.op === "exists") return candidate.exists;
   if (!candidate.exists) return false;
   const operand = condition.value;
@@ -92,19 +92,19 @@ const matches = (object: KevaObject, condition: QueryCondition): boolean => {
 };
 
 const matchesSearch = (
-  object: KevaObject,
+  item: KevaItem,
   search: string | undefined,
 ): boolean => {
   const term = search?.trim().toLowerCase();
   if (!term) return true;
   return (
-    object.name.toLowerCase().includes(term) ||
-    object.contentType.toLowerCase().includes(term)
+    item.name.toLowerCase().includes(term) ||
+    item.contentType.toLowerCase().includes(term)
   );
 };
 
-const encodeCursor = (object: KevaObject): string =>
-  btoa(JSON.stringify([object.createdAt, object.id]));
+const encodeCursor = (item: KevaItem): string =>
+  btoa(JSON.stringify([item.createdAt, item.id]));
 
 const decodeCursor = (cursor: string): readonly [string, string] | null => {
   try {
@@ -121,59 +121,59 @@ const decodeCursor = (cursor: string): readonly [string, string] | null => {
 };
 
 export const makeMemoryMetadataStore = (): MetadataStoreService => {
-  const objects = new Map<string, KevaObject>();
+  const items = new Map<string, KevaItem>();
   const mapKey = (tenantId: string, id: string) => `${tenantId}\0${id}`;
 
   return {
-    insert: (object) =>
+    insert: (item) =>
       Effect.gen(function* () {
-        const key = mapKey(object.tenantId, object.id);
-        if (objects.has(key)) {
+        const key = mapKey(item.tenantId, item.id);
+        if (items.has(key)) {
           return yield* new Internal({ message: "Metadata write failed" });
         }
-        objects.set(key, cloneObject(object));
+        items.set(key, cloneItem(item));
       }),
     get: (tenantId, id) =>
       Effect.sync(() => {
-        const object = objects.get(mapKey(tenantId, id));
-        return object ? cloneObject(object) : null;
+        const item = items.get(mapKey(tenantId, id));
+        return item ? cloneItem(item) : null;
       }),
     transition: (tenantId, id, from, patch, olderThan) =>
       Effect.sync(() => {
         const key = mapKey(tenantId, id);
-        const object = objects.get(key);
+        const item = items.get(key);
         if (
-          !object ||
-          !from.includes(object.status) ||
-          (olderThan !== undefined && object.createdAt >= olderThan)
+          !item ||
+          !from.includes(item.status) ||
+          (olderThan !== undefined && item.createdAt >= olderThan)
         ) return false;
-        objects.set(key, cloneObject({ ...object, ...patch }));
+        items.set(key, cloneItem({ ...item, ...patch }));
         return true;
       }),
-    patchAttributes: (tenantId, id, patch, updatedAt) =>
+    patchProperties: (tenantId, id, patch, updatedAt) =>
       Effect.sync(() => {
         const key = mapKey(tenantId, id);
-        const object = objects.get(key);
-        if (!object || object.status !== "ready") return null;
-        const attributes = { ...object.attributes, ...patch.set };
-        for (const unset of patch.unset) delete attributes[unset];
-        const updated = { ...object, attributes, updatedAt };
-        objects.set(key, cloneObject(updated));
-        return cloneObject(updated);
+        const item = items.get(key);
+        if (!item || item.status !== "ready") return null;
+        const properties = { ...item.properties, ...patch.set };
+        for (const unset of patch.unset) delete properties[unset];
+        const updated = { ...item, properties, updatedAt };
+        items.set(key, cloneItem(updated));
+        return cloneItem(updated);
       }),
     remove: (tenantId, id, expectedStatus) =>
       Effect.sync(() => {
         const key = mapKey(tenantId, id);
-        if (objects.get(key)?.status !== expectedStatus) return false;
-        return objects.delete(key);
+        if (items.get(key)?.status !== expectedStatus) return false;
+        return items.delete(key);
       }),
     query: (tenantId, query) =>
       Effect.sync(() => {
         const cursor = query.cursor ? decodeCursor(query.cursor) : null;
-        let rows = [...objects.values()]
-          .filter((object) => object.tenantId === tenantId && object.status === "ready")
-          .filter((object) => matchesSearch(object, query.search))
-          .filter((object) => query.where.every((condition) => matches(object, condition)))
+        let rows = [...items.values()]
+          .filter((item) => item.tenantId === tenantId && item.status === "ready")
+          .filter((item) => matchesSearch(item, query.search))
+          .filter((item) => query.where.every((condition) => matches(item, condition)))
           .sort((a, b) =>
             a.createdAt === b.createdAt
               ? a.id.localeCompare(b.id)
@@ -181,16 +181,16 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           );
         if (cursor) {
           rows = rows.filter(
-            (object) =>
-              object.createdAt > cursor[0] ||
-              (object.createdAt === cursor[0] && object.id > cursor[1]),
+            (item) =>
+              item.createdAt > cursor[0] ||
+              (item.createdAt === cursor[0] && item.id > cursor[1]),
           );
         }
         const page = rows.slice(0, query.limit + 1);
         const hasMore = page.length > query.limit;
-        const result = page.slice(0, query.limit).map(cloneObject);
+        const result = page.slice(0, query.limit).map(cloneItem);
         return {
-          objects: result,
+          items: result,
           ...(hasMore && result.at(-1)
             ? { nextCursor: encodeCursor(result.at(-1)!) }
             : {}),
@@ -198,15 +198,15 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
       }),
     listByStatus: (status, limit, olderThan) =>
       Effect.sync(() =>
-        [...objects.values()]
+        [...items.values()]
           .filter(
-            (object) =>
-              object.status === status &&
-              (olderThan === undefined || object.createdAt < olderThan),
+            (item) =>
+              item.status === status &&
+              (olderThan === undefined || item.createdAt < olderThan),
           )
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
           .slice(0, limit)
-          .map(cloneObject)
+          .map(cloneItem)
       ),
   };
 };

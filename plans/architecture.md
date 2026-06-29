@@ -12,7 +12,7 @@
 | Blob storage | **S3-compatible API** | Portability: R2 / S3 / B2 / Wasabi / MinIO behind one adapter. R2 is the default backend, reached over its S3 endpoint. Enables direct presigned uploads. |
 | Storage client | **Plain HTTP** (`fetch`) — no storage SDK | The adapter hits the S3 REST API directly. SigV4 signing via **aws4fetch** (~6KB) or hand-rolled. No provider SDK, no unified-storage lib. |
 | Uploads | **Direct-to-storage presigned PUT → staging → server-side copy → immutable final key** | Bytes never pass through the server; final key is never client-writable (replay-safe). Full state machine in [`lifecycle.md`](./lifecycle.md). |
-| Metadata store | **Postgres** (Neon / Supabase) | Standard, portable Postgres. JSONB attribute queries; pgvector path open for later. |
+| Metadata store | **Postgres** (Neon / Supabase) | Standard, portable Postgres. JSONB property queries; pgvector path open for later. |
 | DB driver | **Drizzle + `postgres.js`** | Works on Workers (via Hyperdrive) and Node (plain connection string). Avoid Prisma on Workers (driver-adapter/bundle friction). |
 | Human auth | **Better Auth, server-side sessions** | OSS, self-hostable, TS-native, Drizzle + Workers compatible. **No JWT.** See [`auth.md`](./auth.md). |
 | Machine auth | **Opaque API tokens** (`keva_sk_…`, hashed) | Revocable, scoped. Generated from the web dashboard. Not JWTs. |
@@ -52,7 +52,7 @@
   │ → R2/S3/…   │   │ → Postgres (Neon/…)  │
   └─────────────┘   └──────────────────────┘
 
-  @keva/schema — object model, query model, error taxonomy, Principal (shared by ALL)
+  @keva/schema — item model, query model, error taxonomy, Principal (shared by ALL)
 
   Boundary: the edge AUTHENTICATES (credential → Principal); the core AUTHORIZES
   (Principal → allowed/denied). Auth strategies live in apps/server, not the core.
@@ -63,7 +63,7 @@ Three properties this buys us:
 - **The core is the asset; the edge is disposable glue (~a few hundred lines).**
   Swapping Hono → HttpApi, S3 → another backend, or Workers → Node never reaches
   the core.
-- **Rules live in exactly one place.** Tenancy, validation, and the object
+- **Rules live in exactly one place.** Tenancy, validation, and the item
   lifecycle are enforced in `@keva/core`, so no edge bug or new route can bypass
   them.
 - **The same core serves both audiences.** The web app and an agent are just two
@@ -73,7 +73,7 @@ Three properties this buys us:
 
 - `BlobStore` owns **bytes** → presigned URLs to S3-compatible storage; the
   server never streams file content.
-- `MetadataStore` owns **meaning** → the object records, their attributes, and
+- `MetadataStore` owns **meaning** → the item records, their properties, and
   the query engine.
 
 "Query by meaning" lives entirely in the metadata store. The two scale and
@@ -94,7 +94,7 @@ keva/
 │   ├── web/                    # consumer dashboard + Better Auth (control plane)
 │   └── mcp/                    # MCP server — agent client (later phase)
 ├── packages/
-│   ├── schema/                 # Effect Schema: object, query, errors, Principal. Source of truth.
+│   ├── schema/                 # Effect Schema: item, query, errors, Principal. Source of truth.
 │   ├── core/                   # Effect: KevaEngine + BlobStore/MetadataStore services & layers (authorizes from Principal)
 │   └── sdk/                    # public client. Plain Promises. Decodes shared error schema.
 ├── tooling/
@@ -131,7 +131,7 @@ working, and keep all runtime-specifics (Hyperdrive, bindings, `env`,
   path. The S3 API already covers the backends that matter. *Possible future use
   only* as an optional Node-path adapter and as the engine for import/sync
   connectors (pulling files in from Dropbox/Drive/Box).
-- **Cloudflare D1** for metadata — SQLite, weaker for rich JSONB/attribute
+- **Cloudflare D1** for metadata — SQLite, weaker for rich JSONB/property
   queries and no pgvector path. Postgres chosen instead.
 - **JWT for sessions** — non-revocable before expiry; the wrong default for a
   consumer app. Server-side sessions chosen (see [`auth.md`](./auth.md)).

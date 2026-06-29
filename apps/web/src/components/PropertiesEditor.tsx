@@ -13,13 +13,13 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import type { AttributeValue, Attributes } from "@keva/schema";
-import { formatAttributeValue } from "../lib/format";
+import type { PropertyValue, Properties } from "@keva/schema";
+import { formatPropertyValue } from "../lib/format";
 import {
   coerceScalar,
-  diffAttributes,
+  diffProperties,
   inferScalarType,
-  parseAttributesJson,
+  parsePropertiesJson,
   prettyJson,
   scalarToInput,
   SCALAR_TYPES,
@@ -28,7 +28,7 @@ import {
   valueType,
   type ScalarType,
   type ValueType,
-} from "../lib/attributes";
+} from "../lib/properties";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,29 +45,29 @@ import { cn } from "@/lib/utils";
 
 type Mode = "form" | "json";
 
-interface AttributesEditorProps {
-  attributes: Attributes;
+interface PropertiesEditorProps {
+  properties: Properties;
   onPatch: (
-    set: Record<string, AttributeValue>,
+    set: Record<string, PropertyValue>,
     unset: string[],
   ) => Promise<void>;
 }
 
-// Two views over the same attributes: a Form view that commits each change
-// immediately, and a JSON view that batches a hand-edited object into one
-// patch. They share nothing but the `attributes` prop, so flipping between
+// Two views over the same properties: a Form view that commits each change
+// immediately, and a JSON view that batches a hand-edited item into one
+// patch. They share nothing but the `properties` prop, so flipping between
 // them is always lossless.
-export function AttributesEditor({
-  attributes,
+export function PropertiesEditor({
+  properties,
   onPatch,
-}: AttributesEditorProps) {
+}: PropertiesEditorProps) {
   const [mode, setMode] = useState<Mode>("form");
   const [busy, setBusy] = useState(false);
 
-  const entries = Object.entries(attributes);
+  const entries = Object.entries(properties);
 
   const commit = async (
-    set: Record<string, AttributeValue>,
+    set: Record<string, PropertyValue>,
     unset: string[],
   ) => {
     setBusy(true);
@@ -82,7 +82,7 @@ export function AttributesEditor({
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs tabular-nums text-muted-foreground">
-          {entries.length} {entries.length === 1 ? "attribute" : "attributes"}
+          {entries.length} {entries.length === 1 ? "property" : "properties"}
         </span>
         <ToggleGroup
           variant="outline"
@@ -107,13 +107,13 @@ export function AttributesEditor({
 
       {mode === "form" ? (
         <FormView
-          attributes={attributes}
+          properties={properties}
           busy={busy}
           onSet={(key, value) => commit({ [key]: value }, [])}
           onUnset={(key) => commit({}, [key])}
         />
       ) : (
-        <JsonView attributes={attributes} busy={busy} commit={commit} />
+        <JsonView properties={properties} busy={busy} commit={commit} />
       )}
     </div>
   );
@@ -122,28 +122,28 @@ export function AttributesEditor({
 /* ------------------------------- Form view ------------------------------- */
 
 function FormView({
-  attributes,
+  properties,
   busy,
   onSet,
   onUnset,
 }: {
-  attributes: Attributes;
+  properties: Properties;
   busy: boolean;
-  onSet: (key: string, value: AttributeValue) => Promise<void>;
+  onSet: (key: string, value: PropertyValue) => Promise<void>;
   onUnset: (key: string) => Promise<void>;
 }) {
-  const entries = Object.entries(attributes);
+  const entries = Object.entries(properties);
 
   return (
     <div className="flex flex-col gap-1">
       {entries.length === 0 ? (
         <p className="px-1 py-1 text-sm text-muted-foreground">
-          No attributes yet — add one below.
+          No properties yet — add one below.
         </p>
       ) : (
         <ul className="flex flex-col">
           {entries.map(([key, value]) => (
-            <AttributeRow
+            <PropertyRow
               key={key}
               attrKey={key}
               value={value}
@@ -163,7 +163,7 @@ function FormView({
   );
 }
 
-function AttributeRow({
+function PropertyRow({
   attrKey,
   value,
   busy,
@@ -171,9 +171,9 @@ function AttributeRow({
   onUnset,
 }: {
   attrKey: string;
-  value: AttributeValue;
+  value: PropertyValue;
   busy: boolean;
-  onSave: (next: AttributeValue) => Promise<void>;
+  onSave: (next: PropertyValue) => Promise<void>;
   onUnset: () => Promise<void>;
 }) {
   const type = valueType(value);
@@ -248,21 +248,21 @@ function AttributeRow({
           type="button"
           onClick={beginEdit}
           disabled={busy}
-          title={formatAttributeValue(value)}
+          title={formatPropertyValue(value)}
           className="-mx-1 min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {value === null ? (
             <span className="text-muted-foreground italic">null</span>
           ) : (
-            formatAttributeValue(value)
+            formatPropertyValue(value)
           )}
         </button>
       ) : (
         <span
           className="min-w-0 flex-1 truncate text-sm text-muted-foreground"
-          title={formatAttributeValue(value)}
+          title={formatPropertyValue(value)}
         >
-          {formatAttributeValue(value)}
+          {formatPropertyValue(value)}
         </span>
       )}
       <Button
@@ -286,7 +286,7 @@ function AddRow({
 }: {
   busy: boolean;
   existingKeys: string[];
-  onAdd: (key: string, value: AttributeValue) => Promise<void>;
+  onAdd: (key: string, value: PropertyValue) => Promise<void>;
 }) {
   const [key, setKey] = useState("");
   const [type, setType] = useState<ScalarType>("string");
@@ -300,7 +300,7 @@ function AddRow({
     const formatError = validateKey(trimmedKey);
     if (formatError) return formatError;
     if (existingKeys.includes(trimmedKey))
-      return "An attribute with this key already exists";
+      return "An property with this key already exists";
     return null;
   }, [trimmedKey, existingKeys]);
 
@@ -372,26 +372,26 @@ function AddRow({
 /* ------------------------------- JSON view ------------------------------- */
 
 function JsonView({
-  attributes,
+  properties,
   busy,
   commit,
 }: {
-  attributes: Attributes;
+  properties: Properties;
   busy: boolean;
   commit: (
-    set: Record<string, AttributeValue>,
+    set: Record<string, PropertyValue>,
     unset: string[],
   ) => Promise<void>;
 }) {
-  const baseline = prettyJson(attributes);
+  const baseline = prettyJson(properties);
   // Seeded once on mount; the view remounts whenever the mode switches back to
-  // JSON, so it always opens in sync with the latest attributes.
+  // JSON, so it always opens in sync with the latest properties.
   const [text, setText] = useState(baseline);
 
-  const parsed = useMemo(() => parseAttributesJson(text), [text]);
+  const parsed = useMemo(() => parsePropertiesJson(text), [text]);
   const diff = useMemo(
-    () => (parsed.ok ? diffAttributes(attributes, parsed.value) : null),
-    [parsed, attributes],
+    () => (parsed.ok ? diffProperties(properties, parsed.value) : null),
+    [parsed, properties],
   );
   const changeCount = diff
     ? Object.keys(diff.set).length + diff.unset.length
@@ -401,7 +401,7 @@ function JsonView({
   const save = async () => {
     if (!parsed.ok || !diff || changeCount === 0) return;
     await commit(diff.set, diff.unset);
-    // Normalize to the saved object so dirty state clears once the prop catches
+    // Normalize to the saved item so dirty state clears once the prop catches
     // up — no effect needed.
     setText(prettyJson(parsed.value));
   };

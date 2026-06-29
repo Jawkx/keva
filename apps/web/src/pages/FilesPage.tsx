@@ -24,12 +24,12 @@ import {
   IconUpload,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import type { KevaObject } from "@keva/sdk";
+import type { KevaItem } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { UploadModal } from "../components/UploadModal";
 import {
-  formatAttributeValue,
+  formatPropertyValue,
   formatBytes,
   formatContentType,
   formatRelative,
@@ -90,9 +90,9 @@ declare module "@tanstack/react-table" {
 
 const PAGE_SIZE = 50;
 
-const plural = (n: number) => (n === 1 ? "object" : "objects");
+const plural = (n: number) => (n === 1 ? "item" : "items");
 
-const columnHelper = createColumnHelper<KevaObject>();
+const columnHelper = createColumnHelper<KevaItem>();
 
 // Selection column stays out of the way until a row is hovered or selection
 // mode is active (anything selected); the table meta carries that flag.
@@ -166,17 +166,17 @@ const columns = [
     ),
   }),
   columnHelper.display({
-    id: "attributes",
-    header: "Attributes",
+    id: "properties",
+    header: "Properties",
     cell: (ctx) => {
-      const keys = Object.keys(ctx.row.original.attributes).slice(0, 2);
+      const keys = Object.keys(ctx.row.original.properties).slice(0, 2);
       if (keys.length === 0)
         return <span className="text-muted-foreground">—</span>;
       return (
         <div className="flex flex-wrap gap-1">
           {keys.map((key) => (
             <Badge key={key} variant="secondary">
-              {key}={formatAttributeValue(ctx.row.original.attributes[key]!)}
+              {key}={formatPropertyValue(ctx.row.original.properties[key]!)}
             </Badge>
           ))}
         </div>
@@ -192,7 +192,7 @@ export function FilesPage() {
   // Split layout only makes sense once there's room for two panes side by side.
   const isWide = useMediaQuery("(min-width: 1024px)");
 
-  const [objects, setObjects] = useState<readonly KevaObject[]>([]);
+  const [items, setItems] = useState<readonly KevaItem[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -227,8 +227,8 @@ export function FilesPage() {
           limit: PAGE_SIZE,
           ...(reset ? {} : cursor ? { cursor } : {}),
         });
-        setObjects((prev) =>
-          reset ? result.objects : [...prev, ...result.objects],
+        setItems((prev) =>
+          reset ? result.items : [...prev, ...result.items],
         );
         setCursor(result.nextCursor);
       } catch (err) {
@@ -251,13 +251,13 @@ export function FilesPage() {
   const columnVisibility: VisibilityState = {
     contentType: !splitOpen,
     createdAt: !splitOpen,
-    attributes: !splitOpen,
+    properties: !splitOpen,
   };
 
   const selectMode = Object.values(rowSelection).some(Boolean);
 
   const table = useReactTable({
-    data: objects as KevaObject[],
+    data: items as KevaItem[],
     columns,
     state: { sorting, columnVisibility, rowSelection },
     getRowId: (row) => row.id,
@@ -337,7 +337,7 @@ export function FilesPage() {
           ...(next ? { search: next } : {}),
           limit: PAGE_SIZE,
         });
-        setObjects(result.objects);
+        setItems(result.items);
         setCursor(result.nextCursor);
       } catch (err) {
         setError(handleError(err));
@@ -396,7 +396,7 @@ export function FilesPage() {
               navigate(
                 row.original.id === selectedId
                   ? "/"
-                  : `/objects/${row.original.id}`,
+                  : `/items/${row.original.id}`,
               )
             }
           >
@@ -432,7 +432,7 @@ export function FilesPage() {
     </div>
   );
 
-  const hasObjects = objects.length > 0;
+  const hasItems = items.length > 0;
 
   // Left pane: its own toolbar (filter + upload) above the scrollable table.
   // Used full-width when no detail is open, and as the left side of the split.
@@ -470,7 +470,7 @@ export function FilesPage() {
                   </AlertDialogTitle>
                   <AlertDialogDescription>
                     This permanently removes the selected{" "}
-                    {plural(selectedCount)} and their attributes. This cannot be
+                    {plural(selectedCount)} and their properties. This cannot be
                     undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -524,7 +524,7 @@ export function FilesPage() {
               </EmptyMedia>
               <EmptyTitle>No matches</EmptyTitle>
               <EmptyDescription>
-                No objects match “{activeSearch}”.
+                No items match “{activeSearch}”.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -573,14 +573,14 @@ export function FilesPage() {
         </div>
       )}
 
-      {!loading && !hasObjects ? (
+      {!loading && !hasItems ? (
         <div className="flex flex-1 items-center justify-center p-6">
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <IconFiles />
               </EmptyMedia>
-              <EmptyTitle>No objects yet</EmptyTitle>
+              <EmptyTitle>No items yet</EmptyTitle>
               <EmptyDescription>
                 Upload your first file, or drop one anywhere on this page.
               </EmptyDescription>
@@ -603,7 +603,7 @@ export function FilesPage() {
           <ResizablePanel defaultSize={42} minSize={28} className="min-w-0">
             <FileDetail
               key={selectedId}
-              objectId={selectedId!}
+              itemId={selectedId!}
               onClose={closeDetail}
               onDeleted={onDeleted}
             />
@@ -627,7 +627,7 @@ export function FilesPage() {
           {selectedId && (
             <FileDetail
               key={selectedId}
-              objectId={selectedId}
+              itemId={selectedId}
               onClose={closeDetail}
               onDeleted={onDeleted}
             />
@@ -650,7 +650,7 @@ function SortButton({
   column,
   label,
 }: {
-  column: Column<KevaObject, unknown>;
+  column: Column<KevaItem, unknown>;
   label: string;
 }) {
   const sorted = column.getIsSorted();

@@ -1,14 +1,14 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { Attributes, Query } from "./index.js";
+import { Properties, Query } from "./index.js";
 
 describe("schema", () => {
   it("rejects mixed arrays and reserved keys", () => {
     expect(() =>
-      Schema.decodeUnknownSync(Attributes)({ tags: ["a", 1] }),
+      Schema.decodeUnknownSync(Properties)({ tags: ["a", 1] }),
     ).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(Attributes)({ "system.owner": "me" }),
+      Schema.decodeUnknownSync(Properties)({ "system.owner": "me" }),
     ).toThrow();
   });
 

@@ -1,8 +1,8 @@
 import type {
-  AttributePatch,
+  PropertyPatch,
   KevaError,
-  KevaObject,
-  ObjectStatus,
+  KevaItem,
+  ItemStatus,
   Query,
   QueryResult,
 } from "@keva/schema";
@@ -54,8 +54,8 @@ export class BlobStore extends Context.Tag("@keva/core/BlobStore")<
   BlobStoreService
 >() {}
 
-export interface ObjectTransition {
-  readonly status?: ObjectStatus;
+export interface ItemTransition {
+  readonly status?: ItemStatus;
   readonly size?: number | null;
   readonly etag?: string | null;
   readonly contentType?: string;
@@ -63,38 +63,38 @@ export interface ObjectTransition {
 }
 
 export interface MetadataStoreService {
-  readonly insert: (object: KevaObject) => Effect.Effect<void, KevaError>;
+  readonly insert: (item: KevaItem) => Effect.Effect<void, KevaError>;
   readonly get: (
     tenantId: string,
     id: string,
-  ) => Effect.Effect<KevaObject | null, KevaError>;
+  ) => Effect.Effect<KevaItem | null, KevaError>;
   readonly transition: (
     tenantId: string,
     id: string,
-    from: ReadonlyArray<ObjectStatus>,
-    patch: ObjectTransition,
+    from: ReadonlyArray<ItemStatus>,
+    patch: ItemTransition,
     olderThan?: string,
   ) => Effect.Effect<boolean, KevaError>;
-  readonly patchAttributes: (
+  readonly patchProperties: (
     tenantId: string,
     id: string,
-    patch: AttributePatch,
+    patch: PropertyPatch,
     updatedAt: string,
-  ) => Effect.Effect<KevaObject | null, KevaError>;
+  ) => Effect.Effect<KevaItem | null, KevaError>;
   readonly remove: (
     tenantId: string,
     id: string,
-    expectedStatus: ObjectStatus,
+    expectedStatus: ItemStatus,
   ) => Effect.Effect<boolean, KevaError>;
   readonly query: (
     tenantId: string,
     query: Query,
   ) => Effect.Effect<QueryResult, KevaError>;
   readonly listByStatus: (
-    status: ObjectStatus,
+    status: ItemStatus,
     limit: number,
     olderThan?: string,
-  ) => Effect.Effect<ReadonlyArray<KevaObject>, KevaError>;
+  ) => Effect.Effect<ReadonlyArray<KevaItem>, KevaError>;
 }
 
 export class MetadataStore extends Context.Tag("@keva/core/MetadataStore")<

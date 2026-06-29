@@ -88,8 +88,8 @@ Performed in `@keva/core` from the `Principal`:
 stores:
 
 - **Metadata:** every query and mutation carries `WHERE tenant_id = principal.tenantId`.
-- **Blobs:** storage keys are derived deterministically — final objects live at
-  `objects/<tenantId>/<id>`, uploads stage at `staging/<tenantId>/<id>`.
+- **Blobs:** storage keys are derived deterministically — final items live at
+  `items/<tenantId>/<id>`, uploads stage at `staging/<tenantId>/<id>`.
   Presigned URLs are minted *only* for keys under the caller's derived prefix.
 
 A token belongs to a tenant and **cannot select a tenant or a sub-prefix** — it

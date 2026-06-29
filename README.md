@@ -26,7 +26,7 @@ const keva = new KevaClient({
   token: "dev-secret",
 });
 
-const object = await keva.upload(
+const item = await keva.upload(
   { name: "hello.txt", contentType: "text/plain", size: 5 },
   new TextEncoder().encode("hello"),
 );

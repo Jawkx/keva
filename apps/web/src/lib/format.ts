@@ -1,4 +1,4 @@
-import type { AttributeValue } from "@keva/schema";
+import type { PropertyValue } from "@keva/schema";
 
 export const formatBytes = (size: number | null): string => {
   if (size === null) return "—";
@@ -66,7 +66,7 @@ export const formatContentType = (contentType: string): string => {
   return CONTENT_TYPE_LABELS[clean] ?? clean.toUpperCase();
 };
 
-export const formatAttributeValue = (value: AttributeValue): string => {
+export const formatPropertyValue = (value: PropertyValue): string => {
   if (value === null) return "null";
   if (Array.isArray(value)) return value.join(", ");
   return String(value);

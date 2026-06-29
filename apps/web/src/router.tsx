@@ -20,7 +20,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: "/", element: <FilesPage /> },
-      { path: "/objects/:id", element: <FilesPage /> },
+      { path: "/items/:id", element: <FilesPage /> },
       { path: "/query", element: <QueryPage /> },
       { path: "/tokens", element: <TokensPage /> },
       { path: "/settings", element: <SettingsPage /> },

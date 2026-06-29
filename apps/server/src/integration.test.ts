@@ -15,7 +15,7 @@ import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
  *
  * Bytes are PUT to the presigned upload URL and GET from the presigned
  * download URL, both of which loop back into the same app's `/__dev/blobs`
- * routes — the server itself never streams object bytes.
+ * routes — the server itself never streams item bytes.
  */
 
 const TOKEN = "secret-token";
@@ -48,7 +48,7 @@ describe("server integration — HTTP roundtrip", () => {
     const app = makeApp();
     const bytes = new TextEncoder().encode("the quick brown fox");
 
-    const initiatedResponse = await app.request("/api/objects", {
+    const initiatedResponse = await app.request("/api/items", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -59,7 +59,7 @@ describe("server integration — HTTP roundtrip", () => {
     });
     expect(initiatedResponse.status).toBe(200);
     const initiated = (await initiatedResponse.json()) as {
-      object: { id: string };
+      item: { id: string };
       uploadUrl: string;
       headers: Record<string, string>;
     };
@@ -73,19 +73,19 @@ describe("server integration — HTTP roundtrip", () => {
     expect(uploaded.status).toBe(200);
 
     const confirmed = await app.request(
-      `/api/objects/${initiated.object.id}/confirm`,
+      `/api/items/${initiated.item.id}/confirm`,
       { method: "POST", headers: auth },
     );
     expect(confirmed.status).toBe(200);
     expect(await confirmed.json()).toMatchObject({
-      id: initiated.object.id,
+      id: initiated.item.id,
       status: "ready",
       size: bytes.byteLength,
     });
 
-    // write attributes, then query by one of them
+    // write properties, then query by one of them
     const patched = await app.request(
-      `/api/objects/${initiated.object.id}/attributes`,
+      `/api/items/${initiated.item.id}/properties`,
       {
         method: "PATCH",
         headers: { ...auth, "content-type": "application/json" },
@@ -102,12 +102,12 @@ describe("server integration — HTTP roundtrip", () => {
       }),
     });
     expect(queried.status).toBe(200);
-    const queryBody = (await queried.json()) as { objects: { id: string }[] };
-    expect(queryBody.objects.map((o) => o.id)).toContain(initiated.object.id);
+    const queryBody = (await queried.json()) as { items: { id: string }[] };
+    expect(queryBody.items.map((o) => o.id)).toContain(initiated.item.id);
 
     // download: presigned GET → loopback → exact bytes
     const contentResponse = await app.request(
-      `/api/objects/${initiated.object.id}/content`,
+      `/api/items/${initiated.item.id}/content`,
       { method: "GET", headers: auth },
     );
     expect(contentResponse.status).toBe(200);
@@ -119,13 +119,13 @@ describe("server integration — HTTP roundtrip", () => {
     );
 
     // delete, then a get is a typed NotFound
-    const deleted = await app.request(`/api/objects/${initiated.object.id}`, {
+    const deleted = await app.request(`/api/items/${initiated.item.id}`, {
       method: "DELETE",
       headers: auth,
     });
     expect(deleted.status).toBe(200);
 
-    const gone = await app.request(`/api/objects/${initiated.object.id}`, {
+    const gone = await app.request(`/api/items/${initiated.item.id}`, {
       method: "GET",
       headers: auth,
     });
@@ -133,13 +133,13 @@ describe("server integration — HTTP roundtrip", () => {
     expect(await gone.json()).toMatchObject({ _tag: "NotFound" });
   });
 
-  // Create a ready object via the full initiate → upload → confirm flow.
-  const makeReadyObject = async (
+  // Create a ready item via the full initiate → upload → confirm flow.
+  const makeReadyItem = async (
     app: ReturnType<typeof makeApp>,
     name: string,
   ) => {
     const bytes = new TextEncoder().encode(name);
-    const initiatedResponse = await app.request("/api/objects", {
+    const initiatedResponse = await app.request("/api/items", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
@@ -149,7 +149,7 @@ describe("server integration — HTTP roundtrip", () => {
       }),
     });
     const initiated = (await initiatedResponse.json()) as {
-      object: { id: string };
+      item: { id: string };
       uploadUrl: string;
       headers: Record<string, string>;
     };
@@ -158,26 +158,26 @@ describe("server integration — HTTP roundtrip", () => {
       headers: initiated.headers,
       body: bytes,
     });
-    await app.request(`/api/objects/${initiated.object.id}/confirm`, {
+    await app.request(`/api/items/${initiated.item.id}/confirm`, {
       method: "POST",
       headers: auth,
     });
-    return initiated.object.id;
+    return initiated.item.id;
   };
 
   it("batch delete removes every valid id and is idempotent for unknown ones", async () => {
     const app = makeApp();
-    const a = await makeReadyObject(app, "a.txt");
-    const b = await makeReadyObject(app, "b.txt");
+    const a = await makeReadyItem(app, "a.txt");
+    const b = await makeReadyItem(app, "b.txt");
     const unknown = "00000000-0000-0000-0000-000000000000";
 
-    const response = await app.request("/api/objects/delete", {
+    const response = await app.request("/api/items/delete", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({ ids: [a, b, unknown] }),
     });
     expect(response.status).toBe(200);
-    // A missing object is a no-op delete, so it lands in `deleted`, not `failed`.
+    // A missing item is a no-op delete, so it lands in `deleted`, not `failed`.
     const body = (await response.json()) as {
       deleted: string[];
       failed: { id: string }[];
@@ -185,9 +185,9 @@ describe("server integration — HTTP roundtrip", () => {
     expect(body.deleted.sort()).toEqual([a, b, unknown].sort());
     expect(body.failed).toEqual([]);
 
-    // Both real objects are actually gone.
+    // Both real items are actually gone.
     for (const id of [a, b]) {
-      const gone = await app.request(`/api/objects/${id}`, {
+      const gone = await app.request(`/api/items/${id}`, {
         method: "GET",
         headers: auth,
       });
@@ -197,7 +197,7 @@ describe("server integration — HTTP roundtrip", () => {
 
   it("rejects an empty batch delete with a typed ValidationError (400)", async () => {
     const app = makeApp();
-    const response = await app.request("/api/objects/delete", {
+    const response = await app.request("/api/items/delete", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({ ids: [] }),
@@ -209,7 +209,7 @@ describe("server integration — HTTP roundtrip", () => {
   it("returns a typed NotFound (404) for an unknown id", async () => {
     const app = makeApp();
     const response = await app.request(
-      "/api/objects/00000000-0000-0000-0000-000000000000",
+      "/api/items/00000000-0000-0000-0000-000000000000",
       { method: "GET", headers: auth },
     );
     expect(response.status).toBe(404);

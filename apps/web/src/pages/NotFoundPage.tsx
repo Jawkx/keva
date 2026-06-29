@@ -18,7 +18,7 @@ export function NotFoundPage() {
         </EmptyMedia>
         <EmptyTitle>Page not found</EmptyTitle>
         <EmptyDescription>
-          That page doesn't exist, or the object may have been deleted.
+          That page doesn't exist, or the item may have been deleted.
         </EmptyDescription>
       </EmptyHeader>
       <Button render={<Link to="/" />}>Back to Files</Button>
