@@ -13,9 +13,9 @@ when done.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 01 | Fix the API token parser (tokens fail to authenticate) | P1 | S | — | TODO |
-| 02 | Make in-memory & Postgres stores return identical query results | P2 | M | — | TODO |
-| 03 | Remove the unused PDF thumbnail/document caches (latent leak) | P3 | S | — | TODO |
+| 01 | Fix the API token parser (tokens fail to authenticate) | P1 | S | — | DONE |
+| 02 | Make in-memory & Postgres stores return identical query results | P2 | M | — | DONE |
+| 03 | Remove the unused PDF thumbnail/document caches (latent leak) | P3 | S | — | DONE |
 | 05 | Boolean value coercion is correct and defined once | P3 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)

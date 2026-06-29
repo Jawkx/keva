@@ -125,7 +125,11 @@ const compileCondition = (
   if (column) {
     if (condition.op === "exists") return sql`true`;
     const expected = column.type === "number" ? "number" : "string";
-    if (value !== null && typeof value !== expected) return sql`false`;
+    const typeMismatch = value !== null && typeof value !== expected;
+    // Type-strict values of different types are necessarily unequal, but cannot
+    // match equality, ordering, or contains comparisons.
+    if (condition.op === "neq" && typeMismatch) return sql`true`;
+    if (typeMismatch) return sql`false`;
     if (condition.op === "eq") {
       return value === null
         ? sql`${column.fragment} is null`

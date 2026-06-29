@@ -119,11 +119,18 @@ export class ApiTokenStore extends Context.Tag("@keva/server/ApiTokenStore")<
   ApiTokenStoreService
 >() {}
 
-const randomTokenPart = (bytes: number): string => {
+export const randomTokenPart = (bytes: number): string => {
   const value = crypto.getRandomValues(new Uint8Array(bytes));
-  let binary = "";
-  for (const byte of value) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  return [...value].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
+const TOKEN_PATTERN = /^keva_sk_([^_]+)_([^_]+)$/;
+
+export const parseTokenParts = (
+  token: string,
+): { id: string; secret: string } | null => {
+  const match = TOKEN_PATTERN.exec(token);
+  return match ? { id: match[1]!, secret: match[2]! } : null;
 };
 
 const hashSecret = async (secret: string): Promise<string> => {
@@ -184,17 +191,16 @@ export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
   resolve: (token) =>
     Effect.tryPromise({
       try: async () => {
-        const match = /^keva_sk_([a-zA-Z0-9_-]+)_([a-zA-Z0-9_-]+)$/.exec(token);
-        if (!match) return null;
-        const [, id, secret] = match;
+        const parsed = parseTokenParts(token);
+        if (!parsed) return null;
         const rows = await sql<TokenRow[]>`
-          select * from api_tokens where id = ${id!} limit 1
+          select * from api_tokens where id = ${parsed.id} limit 1
         `;
         const row = rows[0];
         if (!row || (row.expires_at && new Date(row.expires_at) <= new Date())) {
           return null;
         }
-        const candidate = await hashSecret(secret!);
+        const candidate = await hashSecret(parsed.secret);
         if (!secureEqual(candidate, row.secret_hash)) return null;
         await sql`
           update api_tokens
