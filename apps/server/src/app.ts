@@ -6,6 +6,7 @@ import {
 } from "@keva/core";
 import {
   AttributePatch,
+  BatchDelete,
   InitiateUpload,
   Internal,
   KevaError,
@@ -197,6 +198,36 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         yield* makeKevaEngine(principal).delete(context.req.param("id"));
         return { ok: true };
+      }),
+      runtime,
+    ));
+
+  // Batch delete: fan out over the idempotent per-id delete, isolating each so
+  // one failure (missing blob, transient store error) doesn't sink the rest.
+  app.post("/api/objects/delete", (context) =>
+    execute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const { ids } = yield* decode(BatchDelete, yield* jsonBody(context));
+        const engine = makeKevaEngine(principal);
+        const results = yield* Effect.forEach(
+          ids,
+          (id) =>
+            engine.delete(id).pipe(
+              Effect.as({ id, error: undefined as string | undefined }),
+              Effect.catchAll((error) =>
+                Effect.succeed({ id, error: error.message }),
+              ),
+            ),
+          { concurrency: 8 },
+        );
+        return {
+          deleted: results.filter((r) => !r.error).map((r) => r.id),
+          failed: results
+            .filter((r) => r.error)
+            .map((r) => ({ id: r.id, error: r.error! })),
+        };
       }),
       runtime,
     ));

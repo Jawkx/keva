@@ -177,6 +177,22 @@ export const QueryResult = Schema.Struct({
 });
 export type QueryResult = typeof QueryResult.Type;
 
+export const BatchDelete = Schema.Struct({
+  ids: Schema.Array(Schema.String).pipe(
+    Schema.minItems(1),
+    Schema.maxItems(1000),
+  ),
+});
+export type BatchDelete = typeof BatchDelete.Type;
+
+export const BatchDeleteResult = Schema.Struct({
+  deleted: Schema.Array(Schema.String),
+  failed: Schema.Array(
+    Schema.Struct({ id: Schema.String, error: Schema.String }),
+  ),
+});
+export type BatchDeleteResult = typeof BatchDeleteResult.Type;
+
 export const InitiateUpload = Schema.Struct({
   name: Schema.NonEmptyString,
   contentType: Schema.NonEmptyString,

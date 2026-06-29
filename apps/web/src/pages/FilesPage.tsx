@@ -7,6 +7,8 @@ import {
   getSortedRowModel,
   useReactTable,
   type Column,
+  type RowData,
+  type RowSelectionState,
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
@@ -18,8 +20,10 @@ import {
   IconCloudUpload,
   IconFiles,
   IconSearch,
+  IconTrash,
   IconUpload,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import type { KevaObject } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
@@ -34,9 +38,21 @@ import { keva } from "../lib/keva";
 import { useApiError } from "../lib/useApiError";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useMountEffect } from "../lib/useMountEffect";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Empty,
   EmptyDescription,
@@ -66,11 +82,54 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
+declare module "@tanstack/react-table" {
+  interface TableMeta<TData extends RowData> {
+    selectMode: boolean;
+  }
+}
+
 const PAGE_SIZE = 50;
+
+const plural = (n: number) => (n === 1 ? "object" : "objects");
 
 const columnHelper = createColumnHelper<KevaObject>();
 
+// Selection column stays out of the way until a row is hovered or selection
+// mode is active (anything selected); the table meta carries that flag.
+const selectModeOf = (meta: unknown) =>
+  Boolean((meta as { selectMode?: boolean } | undefined)?.selectMode);
+
 const columns = [
+  columnHelper.display({
+    id: "select",
+    header: ({ table }) => (
+      <Checkbox
+        aria-label="Select all on this page"
+        checked={table.getIsAllRowsSelected()}
+        indeterminate={table.getIsSomeRowsSelected()}
+        onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
+        className={cn(
+          "transition-opacity",
+          selectModeOf(table.options.meta)
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100",
+        )}
+      />
+    ),
+    cell: ({ row, table }) => (
+      <Checkbox
+        aria-label="Select row"
+        checked={row.getIsSelected()}
+        onCheckedChange={(checked) => row.toggleSelected(checked)}
+        className={cn(
+          "transition-opacity",
+          row.getIsSelected() || selectModeOf(table.options.meta)
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100",
+        )}
+      />
+    ),
+  }),
   columnHelper.accessor("name", {
     header: ({ column }) => <SortButton column={column} label="Name" />,
     cell: (ctx) => (
@@ -145,6 +204,10 @@ export function FilesPage() {
     { id: "createdAt", desc: true },
   ]);
 
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadKey, setUploadKey] = useState(0);
@@ -191,16 +254,26 @@ export function FilesPage() {
     attributes: !splitOpen,
   };
 
+  const selectMode = Object.values(rowSelection).some(Boolean);
+
   const table = useReactTable({
     data: objects as KevaObject[],
     columns,
-    state: { sorting, columnVisibility },
+    state: { sorting, columnVisibility, rowSelection },
+    getRowId: (row) => row.id,
+    enableRowSelection: true,
     onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    meta: { selectMode },
   });
 
   const rows = table.getRowModel().rows;
+  // Intersect selection with currently loaded rows so a stale id (e.g. after a
+  // search narrows the list) never counts toward the action bar.
+  const selectedRows = table.getSelectedRowModel().rows;
+  const selectedCount = selectedRows.length;
 
   const openUpload = (files: File[]) => {
     setPendingFiles(files);
@@ -222,11 +295,39 @@ export function FilesPage() {
     void load(true);
   };
 
+  const onBulkDelete = async () => {
+    const ids = table.getSelectedRowModel().rows.map((r) => r.original.id);
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const result = await keva.deleteMany(ids);
+      if (result.deleted.length > 0) {
+        toast.success(
+          `Deleted ${result.deleted.length} ${plural(result.deleted.length)}`,
+        );
+      }
+      if (result.failed.length > 0) {
+        toast.error(
+          `Failed to delete ${result.failed.length} ${plural(result.failed.length)}`,
+        );
+      }
+      setRowSelection({});
+      // The open detail may have been one of the deleted rows.
+      if (selectedId && ids.includes(selectedId)) navigate("/");
+      await load(true);
+    } catch (err) {
+      toast.error(handleError(err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const runSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const next = search.trim();
     setActiveSearch(next);
     setCursor(undefined);
+    setRowSelection({});
     setLoading(true);
     setError(null);
     void (async () => {
@@ -251,9 +352,12 @@ export function FilesPage() {
     <Table className="[&_td]:px-3 [&_th]:px-3">
       <TableHeader>
         {table.getHeaderGroups().map((group) => (
-          <TableRow key={group.id}>
+          <TableRow key={group.id} className="group">
             {group.headers.map((header) => (
-              <TableHead key={header.id}>
+              <TableHead
+                key={header.id}
+                className={header.column.id === "select" ? "w-10" : undefined}
+              >
                 {header.isPlaceholder
                   ? null
                   : flexRender(
@@ -266,11 +370,28 @@ export function FilesPage() {
         ))}
       </TableHeader>
       <TableBody>
-        {rows.map((row) => (
+        {loading
+          ? Array.from({ length: 8 }).map((_, i) => (
+              <TableRow key={`skeleton-${i}`}>
+                {table.getVisibleLeafColumns().map((col) => (
+                  <TableCell
+                    key={col.id}
+                    className={col.id === "select" ? "w-10" : undefined}
+                  >
+                    {col.id !== "select" && <Skeleton className="h-5 w-full" />}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          : rows.map((row) => (
           <TableRow
             key={row.id}
-            data-state={row.original.id === selectedId ? "selected" : undefined}
-            className="cursor-pointer"
+            data-state={
+              row.getIsSelected() || row.original.id === selectedId
+                ? "selected"
+                : undefined
+            }
+            className="group cursor-pointer"
             onClick={() =>
               navigate(
                 row.original.id === selectedId
@@ -280,7 +401,16 @@ export function FilesPage() {
             }
           >
             {row.getVisibleCells().map((cell) => (
-              <TableCell key={cell.id}>
+              <TableCell
+                key={cell.id}
+                className={cell.column.id === "select" ? "w-10" : undefined}
+                // The checkbox cell toggles selection; don't also open detail.
+                onClick={
+                  cell.column.id === "select"
+                    ? (e) => e.stopPropagation()
+                    : undefined
+                }
+              >
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </TableCell>
             ))}
@@ -309,30 +439,84 @@ export function FilesPage() {
   const leftPane = (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-3 p-3">
-        <form
-          className="flex w-full items-center gap-2 sm:w-72"
-          onSubmit={runSearch}
-        >
-          <div className="relative min-w-0 flex-1">
-            <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search by name or type…"
-              className="pl-8"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <Button type="submit" variant="outline">
-            Search
-          </Button>
-        </form>
-        <Button className="sm:ml-auto" onClick={() => openUpload([])}>
-          <IconUpload data-icon="inline-start" />
-          Upload
-        </Button>
+        {selectMode ? (
+          <>
+            <span className="text-sm font-medium">
+              {selectedCount} selected
+            </span>
+            <Button variant="ghost" onClick={() => setRowSelection({})}>
+              Clear
+            </Button>
+            <AlertDialog
+              open={bulkConfirmOpen}
+              onOpenChange={setBulkConfirmOpen}
+            >
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    className="ml-auto"
+                    disabled={bulkBusy}
+                  />
+                }
+              >
+                <IconTrash data-icon="inline-start" />
+                Delete
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Delete {selectedCount} {plural(selectedCount)}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently removes the selected{" "}
+                    {plural(selectedCount)} and their attributes. This cannot be
+                    undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => {
+                      setBulkConfirmOpen(false);
+                      void onBulkDelete();
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        ) : (
+          <>
+            <form
+              className="flex w-full items-center gap-2 sm:w-72"
+              onSubmit={runSearch}
+            >
+              <div className="relative min-w-0 flex-1">
+                <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name or type…"
+                  className="pl-8"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <Button type="submit" variant="outline">
+                Search
+              </Button>
+            </form>
+            <Button className="sm:ml-auto" onClick={() => openUpload([])}>
+              <IconUpload data-icon="inline-start" />
+              Upload
+            </Button>
+          </>
+        )}
       </div>
       <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto">
-        {rows.length === 0 ? (
+        {!loading && rows.length === 0 ? (
           <Empty className="py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -389,13 +573,7 @@ export function FilesPage() {
         </div>
       )}
 
-      {loading ? (
-        <div className="flex flex-1 flex-col gap-2 p-4 md:p-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : !hasObjects ? (
+      {!loading && !hasObjects ? (
         <div className="flex flex-1 items-center justify-center p-6">
           <Empty>
             <EmptyHeader>

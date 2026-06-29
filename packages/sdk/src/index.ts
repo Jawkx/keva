@@ -1,5 +1,7 @@
 import {
   AttributePatch,
+  BatchDelete,
+  BatchDeleteResult,
   DownloadResult,
   InitiateUpload,
   InitiateUploadResult,
@@ -8,6 +10,7 @@ import {
   Query,
   QueryResult,
   type AttributePatch as AttributePatchType,
+  type BatchDeleteResult as BatchDeleteResultType,
   type DownloadResult as DownloadResultType,
   type InitiateUpload as InitiateUploadType,
   type KevaError as KevaErrorType,
@@ -19,6 +22,7 @@ import { Schema } from "effect";
 
 export type {
   AttributePatchType as AttributePatch,
+  BatchDeleteResultType as BatchDeleteResult,
   InitiateUploadType as InitiateUpload,
   KevaErrorType as KevaError,
   KevaObjectType as KevaObject,
@@ -209,6 +213,15 @@ export class KevaClient {
       "DELETE",
       `/objects/${encodeURIComponent(id)}`,
       Schema.Struct({ ok: Schema.Boolean }),
+    );
+  }
+
+  deleteMany(ids: readonly string[]): Promise<BatchDeleteResultType> {
+    return this.#request(
+      "POST",
+      "/objects/delete",
+      BatchDeleteResult,
+      decode(BatchDelete, { ids }),
     );
   }
 }

@@ -133,6 +133,79 @@ describe("server integration — HTTP roundtrip", () => {
     expect(await gone.json()).toMatchObject({ _tag: "NotFound" });
   });
 
+  // Create a ready object via the full initiate → upload → confirm flow.
+  const makeReadyObject = async (
+    app: ReturnType<typeof makeApp>,
+    name: string,
+  ) => {
+    const bytes = new TextEncoder().encode(name);
+    const initiatedResponse = await app.request("/api/objects", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        name,
+        contentType: "text/plain",
+        size: bytes.byteLength,
+      }),
+    });
+    const initiated = (await initiatedResponse.json()) as {
+      object: { id: string };
+      uploadUrl: string;
+      headers: Record<string, string>;
+    };
+    await loopback(app, initiated.uploadUrl, {
+      method: "PUT",
+      headers: initiated.headers,
+      body: bytes,
+    });
+    await app.request(`/api/objects/${initiated.object.id}/confirm`, {
+      method: "POST",
+      headers: auth,
+    });
+    return initiated.object.id;
+  };
+
+  it("batch delete removes every valid id and is idempotent for unknown ones", async () => {
+    const app = makeApp();
+    const a = await makeReadyObject(app, "a.txt");
+    const b = await makeReadyObject(app, "b.txt");
+    const unknown = "00000000-0000-0000-0000-000000000000";
+
+    const response = await app.request("/api/objects/delete", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ids: [a, b, unknown] }),
+    });
+    expect(response.status).toBe(200);
+    // A missing object is a no-op delete, so it lands in `deleted`, not `failed`.
+    const body = (await response.json()) as {
+      deleted: string[];
+      failed: { id: string }[];
+    };
+    expect(body.deleted.sort()).toEqual([a, b, unknown].sort());
+    expect(body.failed).toEqual([]);
+
+    // Both real objects are actually gone.
+    for (const id of [a, b]) {
+      const gone = await app.request(`/api/objects/${id}`, {
+        method: "GET",
+        headers: auth,
+      });
+      expect(gone.status).toBe(404);
+    }
+  });
+
+  it("rejects an empty batch delete with a typed ValidationError (400)", async () => {
+    const app = makeApp();
+    const response = await app.request("/api/objects/delete", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ids: [] }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
+  });
+
   it("returns a typed NotFound (404) for an unknown id", async () => {
     const app = makeApp();
     const response = await app.request(
