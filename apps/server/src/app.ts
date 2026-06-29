@@ -7,6 +7,7 @@ import {
 import {
   PropertyPatch,
   BatchDelete,
+  ItemId,
   InitiateUpload,
   Internal,
   KevaError,
@@ -46,6 +47,9 @@ const jsonBody = (context: Context) =>
     try: () => context.req.json() as Promise<unknown>,
     catch: () => new ValidationError({ message: "Request body must be JSON" }),
   });
+
+const itemIdParam = (context: Context) =>
+  decode(ItemId, context.req.param("id"));
 
 // Every route's failure channel is a typed KevaError, so a tracked failure maps
 // straight to its tagged error. Only an untracked defect (Effect.die, a thrown
@@ -152,7 +156,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        return yield* makeKevaEngine(principal).confirm(context.req.param("id"));
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(principal).confirm(id);
       }),
       runtime,
     ));
@@ -162,7 +167,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        return yield* makeKevaEngine(principal).get(context.req.param("id"));
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(principal).get(id);
       }),
       runtime,
     ));
@@ -172,7 +178,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        return yield* makeKevaEngine(principal).download(context.req.param("id"));
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(principal).download(id);
       }),
       runtime,
     ));
@@ -182,9 +189,10 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
         const body = yield* decode(PropertyPatch, yield* jsonBody(context));
         return yield* makeKevaEngine(principal).patchProperties(
-          context.req.param("id"),
+          id,
           body,
         );
       }),
@@ -196,7 +204,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* makeKevaEngine(principal).delete(context.req.param("id"));
+        const id = yield* itemIdParam(context);
+        yield* makeKevaEngine(principal).delete(id);
         return { ok: true };
       }),
       runtime,

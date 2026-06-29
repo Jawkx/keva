@@ -11,6 +11,8 @@ export const PROPERTY_LIMITS = {
 const encodedBytes = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
 const queryKeyPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+export const ITEM_ID_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const systemQueryKeys = new Set([
   "system.content_type",
   "system.size",
@@ -93,8 +95,11 @@ export type Principal = typeof Principal.Type;
 export const ItemStatus = Schema.Literal("pending", "ready", "deleting");
 export type ItemStatus = typeof ItemStatus.Type;
 
+export const ItemId = Schema.String.pipe(Schema.pattern(ITEM_ID_PATTERN));
+export type ItemId = typeof ItemId.Type;
+
 export const KevaItem = Schema.Struct({
-  id: Schema.String,
+  id: ItemId,
   tenantId: Schema.String,
   name: Schema.NonEmptyString,
   contentType: Schema.NonEmptyString,
@@ -178,7 +183,7 @@ export const QueryResult = Schema.Struct({
 export type QueryResult = typeof QueryResult.Type;
 
 export const BatchDelete = Schema.Struct({
-  ids: Schema.Array(Schema.String).pipe(
+  ids: Schema.Array(ItemId).pipe(
     Schema.minItems(1),
     Schema.maxItems(1000),
   ),

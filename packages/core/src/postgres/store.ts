@@ -1,4 +1,5 @@
 import {
+  ITEM_ID_PATTERN,
   Internal,
   ValidationError,
   type PropertyValue,
@@ -79,7 +80,9 @@ const decodeCursor = (
         !Array.isArray(value) ||
         value.length !== 2 ||
         typeof value[0] !== "string" ||
-        typeof value[1] !== "string"
+        typeof value[1] !== "string" ||
+        !Number.isFinite(Date.parse(value[0])) ||
+        !ITEM_ID_PATTERN.test(value[1])
       ) throw new Error("invalid cursor");
       return [value[0], value[1]] as const;
     },

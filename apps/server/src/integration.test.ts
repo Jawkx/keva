@@ -206,6 +206,27 @@ describe("server integration — HTTP roundtrip", () => {
     expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
   });
 
+  it("rejects malformed item ids with a typed ValidationError (400)", async () => {
+    const app = makeApp();
+    const response = await app.request("/api/items/not-a-uuid", {
+      method: "GET",
+      headers: auth,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
+  });
+
+  it("rejects malformed batch delete ids with a typed ValidationError (400)", async () => {
+    const app = makeApp();
+    const response = await app.request("/api/items/delete", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ids: ["not-a-uuid"] }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
+  });
+
   it("returns a typed NotFound (404) for an unknown id", async () => {
     const app = makeApp();
     const response = await app.request(
