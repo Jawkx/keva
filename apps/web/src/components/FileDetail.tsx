@@ -103,6 +103,7 @@ interface FileDetailProps {
 export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -215,6 +216,16 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const onPatch = async (set: Record<string, PropertyValue>, unset: string[]) => {
     await patchMutation.mutateAsync({ set, unset });
   };
+
+  const onImageLoad = useCallback(
+    (event: React.SyntheticEvent<HTMLImageElement>) => {
+      const image = event.currentTarget;
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        setImageAspectRatio(image.naturalWidth / image.naturalHeight);
+      }
+    },
+    [],
+  );
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
@@ -347,20 +358,26 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
         ) : activePanel === "preview" ? (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {previewLoading ? (
-              // Mirror the shape of the content that will replace it: images
-              // render capped at max-h-96 (they don't fill the panel), while
-              // pdf/csv/text viewers stretch to flex-1.
+              // Mirror the shape of the content that will replace it: image
+              // previews use a ratio-stable frame, while pdf/csv/text viewers
+              // stretch to flex-1.
               isImage(item) ? (
-                <Skeleton className="h-96 w-full max-w-full" />
+                <Skeleton className="aspect-video w-full max-w-full rounded-md" />
               ) : (
                 <Skeleton className="min-h-0 w-full flex-1" />
               )
             ) : preview?.kind === "image" ? (
-              <img
-                src={preview.url}
-                alt={item.name}
-                className="max-h-96 max-w-full rounded-md"
-              />
+              <div
+                className="w-full max-w-full overflow-hidden rounded-md bg-muted/30"
+                style={{ aspectRatio: imageAspectRatio ?? 16 / 9 }}
+              >
+                <img
+                  src={preview.url}
+                  alt={item.name}
+                  className="h-full w-full object-contain"
+                  onLoad={onImageLoad}
+                />
+              </div>
             ) : preview?.kind === "pdf" ? (
               <PDFViewer
                 src={preview.url}
