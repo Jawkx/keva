@@ -13,7 +13,8 @@
     "dev:web": "pnpm --filter @keva/web dev",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "lint": "turbo lint",
+    "lint": "turbo lint && pnpm lint:no-direct-use-effect",
+    "lint:no-direct-use-effect": "node scripts/check-no-direct-use-effect.mjs",
     "db:generate": "pnpm --filter @keva/core db:generate",
     "db:migrate": "pnpm --filter @keva/core db:migrate"
   },
