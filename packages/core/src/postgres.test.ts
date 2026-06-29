@@ -1,6 +1,6 @@
 import type { Principal } from "@keva/schema";
 import { Effect, Layer } from "effect";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres, { type Sql } from "postgres";
@@ -36,18 +36,24 @@ const principal = (tenantId: string): Principal => ({
   via: "token",
 });
 
-const migrationPath = resolve(
+const migrationDir = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../drizzle/0000_wandering_spiral.sql",
+  "../drizzle",
 );
 
-const applyMigration = async (sql: Sql): Promise<void> => {
-  const migration = await readFile(migrationPath, "utf8");
-  for (const statement of migration
-    .split("--> statement-breakpoint")
-    .map((part) => part.trim())
-    .filter(Boolean)) {
-    await sql.unsafe(statement);
+const applyMigrations = async (sql: Sql): Promise<void> => {
+  const files = (await readdir(migrationDir))
+    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
+    .sort();
+
+  for (const file of files) {
+    const migration = await readFile(resolve(migrationDir, file), "utf8");
+    for (const statement of migration
+      .split("--> statement-breakpoint")
+      .map((part) => part.trim())
+      .filter(Boolean)) {
+      await sql.unsafe(statement);
+    }
   }
 };
 
@@ -64,7 +70,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
 
   beforeAll(async () => {
     sql = postgres(DATABASE_URL!, { max: 4 });
-    await applyMigration(sql);
+    await applyMigrations(sql);
     layer = provide(makePostgresMetadataStore(sql));
   });
 
