@@ -26,4 +26,17 @@ describe("worker entry", () => {
     expect(query.status).toBe(200);
     expect(await query.json()).toMatchObject({ items: [] });
   });
+
+  it("fails closed when required Worker secrets are missing", async () => {
+    await expect(
+      worker.fetch(
+        new Request("http://worker.test/api/query", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ where: [] }),
+        }),
+        { KEVA_BASE_URL: "http://worker.test" },
+      ),
+    ).rejects.toThrow("KEVA_STATIC_TOKEN is required");
+  });
 });

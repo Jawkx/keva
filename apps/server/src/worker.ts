@@ -10,9 +10,9 @@ import { trustedOriginsFor } from "./origins.js";
 import { makeRuntimeLayer } from "./runtime.js";
 
 interface Env {
-  readonly KEVA_STATIC_TOKEN: string;
+  readonly KEVA_STATIC_TOKEN?: string;
   readonly KEVA_TENANT_ID?: string;
-  readonly KEVA_BASE_URL: string;
+  readonly KEVA_BASE_URL?: string;
   readonly BETTER_AUTH_SECRET?: string;
   readonly BETTER_AUTH_URL?: string;
   readonly KEVA_TRUSTED_ORIGINS?: string;
@@ -27,8 +27,15 @@ interface Env {
 
 let app: ReturnType<typeof createApp> | undefined;
 
+const required = (value: string | undefined, name: string): string => {
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+};
+
 export default {
-  fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
+    const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
     if (!app) {
       const s3 = env.S3_ENDPOINT &&
           env.S3_ACCESS_KEY_ID &&
@@ -50,17 +57,17 @@ export default {
               schema: authSchema,
             }),
             secret: env.BETTER_AUTH_SECRET,
-            baseURL: env.BETTER_AUTH_URL ?? env.KEVA_BASE_URL,
+            baseURL: env.BETTER_AUTH_URL ?? baseUrl,
             trustedOrigins: trustedOriginsFor(
-              env.KEVA_BASE_URL,
+              baseUrl,
               env.KEVA_TRUSTED_ORIGINS,
             ),
           })
         : undefined;
       const layer = makeRuntimeLayer({
-        staticToken: env.KEVA_STATIC_TOKEN,
+        staticToken,
         tenantId: env.KEVA_TENANT_ID ?? "local",
-        baseUrl: env.KEVA_BASE_URL,
+        baseUrl,
         ...(databaseUrl ? { databaseUrl } : {}),
         ...(auth ? { sessionResolver: betterAuthSessionResolver(auth) } : {}),
         ...(s3 ? { s3 } : {}),
@@ -70,6 +77,6 @@ export default {
         ...(auth ? { authHandler: auth.handler } : {}),
       });
     }
-    return Promise.resolve(app.fetch(request));
+    return app.fetch(request);
   },
 };
