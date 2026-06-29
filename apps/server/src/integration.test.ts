@@ -83,16 +83,19 @@ describe("server integration — HTTP roundtrip", () => {
       size: bytes.byteLength,
     });
 
-    // write properties, then query by one of them
+    // write properties (and rename via the same patch), then query by one
     const patched = await app.request(
-      `/api/items/${initiated.item.id}/properties`,
+      `/api/items/${initiated.item.id}`,
       {
         method: "PATCH",
         headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({ set: { animal: "fox", tags: ["quick", "brown"] } }),
+        body: JSON.stringify({
+          set: { name: "renamed.txt", animal: "fox", tags: ["quick", "brown"] },
+        }),
       },
     );
     expect(patched.status).toBe(200);
+    expect(await patched.json()).toMatchObject({ name: "renamed.txt" });
 
     const queried = await app.request("/api/query", {
       method: "POST",

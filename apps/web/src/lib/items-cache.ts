@@ -21,6 +21,21 @@ export function removeItemsFromPages(
   };
 }
 
+export function replaceItemInPages(
+  data: ItemsCache,
+  item: KevaItem,
+): ItemsCache {
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      items: page.items.map((existing) =>
+        existing.id === item.id ? item : existing,
+      ),
+    })),
+  };
+}
+
 export function prependItemToPages(
   data: ItemsCache,
   item: KevaItem,

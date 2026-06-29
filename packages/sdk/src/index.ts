@@ -1,5 +1,5 @@
 import {
-  PropertyPatch,
+  ItemPatch,
   BatchDelete,
   BatchDeleteResult,
   DownloadResult,
@@ -9,7 +9,7 @@ import {
   KevaItem,
   Query,
   QueryResult,
-  type PropertyPatch as PropertyPatchType,
+  type ItemPatch as ItemPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
   type DownloadResult as DownloadResultType,
   type InitiateUpload as InitiateUploadType,
@@ -21,7 +21,7 @@ import {
 import { Schema } from "effect";
 
 export type {
-  PropertyPatchType as PropertyPatch,
+  ItemPatchType as ItemPatch,
   BatchDeleteResultType as BatchDeleteResult,
   InitiateUploadType as InitiateUpload,
   KevaErrorType as KevaError,
@@ -192,15 +192,12 @@ export class KevaClient {
     return this.downloadBytes(id);
   }
 
-  patchProperties(
-    id: string,
-    patch: PropertyPatchType,
-  ): Promise<KevaItemType> {
+  patch(id: string, patch: ItemPatchType): Promise<KevaItemType> {
     return this.#request(
       "PATCH",
-      `/items/${encodeURIComponent(id)}/properties`,
+      `/items/${encodeURIComponent(id)}`,
       KevaItem,
-      decode(PropertyPatch, patch),
+      decode(ItemPatch, patch),
     );
   }
 

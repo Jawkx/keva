@@ -163,7 +163,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(p);
         const created = yield* createReady(p, "persist.txt", "durable bytes");
-        yield* engine.patchProperties(created, {
+        yield* engine.patch(created, {
           set: { project: "keva", rating: 9 },
           unset: [],
         });
@@ -194,7 +194,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(principal(tenantA));
         const a = yield* createReady(principal(tenantA), "a.txt", "a");
-        yield* engine.patchProperties(a, {
+        yield* engine.patch(a, {
           set: { kind: "doc", tags: ["x", "y"], rating: 5 },
           unset: [],
         });

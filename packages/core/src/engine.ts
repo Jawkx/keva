@@ -5,7 +5,8 @@ import {
   NotFound,
   QuotaExceeded,
   ValidationError,
-  type PropertyPatch,
+  routePatch,
+  type ItemPatch,
   type InitiateUpload,
   type KevaItem,
   type Principal,
@@ -135,15 +136,23 @@ export const makeKevaEngine = (principal: Principal) => ({
       return { url: request.url, expiresAt: request.expiresAt };
     }),
 
-  patchProperties: (id: string, patch: PropertyPatch) =>
+  patch: (id: string, patch: ItemPatch) =>
     Effect.gen(function* () {
       yield* requireScope(principal, "write");
       const metadata = yield* MetadataStore;
       const current = yield* readyOrNotFound(
         yield* metadata.get(principal.tenantId, id),
       );
-      const merged = { ...current.properties, ...patch.set };
-      for (const key of patch.unset) delete merged[key];
+      // Route each key to its column (user-writable fields like `name`) or the
+      // property blob, rejecting writes to system-owned or reserved keys.
+      const routed = routePatch(patch.set, patch.unset);
+      if (!routed.ok) {
+        return yield* new ValidationError({
+          message: `Cannot patch '${routed.error.key}': ${routed.error.reason}`,
+        });
+      }
+      const merged = { ...current.properties, ...routed.routed.set };
+      for (const key of routed.routed.unset) delete merged[key];
       // Re-check the *merged* result against every limit, not just the
       // incoming `set` (which Effect Schema already validated). Merging an
       // otherwise-valid patch into existing properties can still push the
@@ -163,10 +172,10 @@ export const makeKevaEngine = (principal: Principal) => ({
           message: "Property limits exceeded",
         });
       }
-      const updated = yield* metadata.patchProperties(
+      const updated = yield* metadata.patch(
         principal.tenantId,
         id,
-        patch,
+        routed.routed,
         now(),
       );
       return yield* readyOrNotFound(updated);

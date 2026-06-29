@@ -1,8 +1,8 @@
 import {
+  FIELD_BY_KEY,
   ITEM_ID_PATTERN,
   Internal,
   ValidationError,
-  type PropertyValue,
   type KevaError,
   type KevaItem,
   type QueryCondition,
@@ -91,6 +91,8 @@ const decodeCursor = (
 
 type Fragment = ReturnType<Sql["unsafe"]>;
 
+// A query key backed by a real column (declared in the schema field registry),
+// as opposed to a key that lives inside the `properties` JSONB blob.
 const systemColumn = (
   sql: Sql,
   key: string,
@@ -98,30 +100,10 @@ const systemColumn = (
   fragment: Fragment;
   type: "string" | "number" | "nullable-string" | "timestamp";
 } | null => {
-  switch (key) {
-    case "id":
-      return { fragment: sql.unsafe("id"), type: "string" };
-    case "name":
-      return { fragment: sql.unsafe("name"), type: "string" };
-    case "system.content_type":
-      return { fragment: sql.unsafe("content_type"), type: "string" };
-    case "system.size":
-      return { fragment: sql.unsafe("size"), type: "number" };
-    case "system.etag":
-      return { fragment: sql.unsafe("etag"), type: "nullable-string" };
-    case "system.checksum":
-      return { fragment: sql.unsafe("checksum"), type: "nullable-string" };
-    case "system.source":
-      return { fragment: sql.unsafe("source"), type: "string" };
-    case "system.status":
-      return { fragment: sql.unsafe("status"), type: "string" };
-    case "system.created_at":
-      return { fragment: sql.unsafe("created_at"), type: "timestamp" };
-    case "system.updated_at":
-      return { fragment: sql.unsafe("updated_at"), type: "timestamp" };
-    default:
-      return null;
-  }
+  const field = FIELD_BY_KEY.get(key);
+  return field
+    ? { fragment: sql.unsafe(field.column), type: field.queryType }
+    : null;
 };
 
 const comparison = (sql: Sql, operator: string): Fragment => {
@@ -237,7 +219,7 @@ export const makePostgresMetadataStore = (
           `;
       return rows.length === 1;
     }),
-  patchProperties: (tenantId, id, patch, updatedAt) =>
+  patch: (tenantId, id, patch, updatedAt) =>
     attempt(async () => {
       return sql.begin(async (transaction) => {
         const rows = await transaction<ItemRow[]>`
@@ -249,9 +231,16 @@ export const makePostgresMetadataStore = (
         if (!row) return null;
         const properties = { ...row.properties, ...patch.set };
         for (const key of patch.unset) delete properties[key];
+        // `updated_at` is always present, so `sql(values)` is never empty and
+        // the inline `properties` clause always has a valid leading comma.
+        const values: Record<string, unknown> = { updated_at: updatedAt };
+        for (const [key, value] of Object.entries(patch.fields)) {
+          const field = FIELD_BY_KEY.get(key);
+          if (field) values[field.column] = value;
+        }
         const updated = await transaction<ItemRow[]>`
           update items
-          set properties = ${transaction.json(properties)}, updated_at = ${updatedAt}
+          set ${transaction(values)}, properties = ${transaction.json(properties)}
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           returning *
         `;

@@ -8,6 +8,7 @@ import {
 import {
   IconAlertTriangle,
   IconDownload,
+  IconPencil,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
@@ -22,7 +23,11 @@ import { CsvViewer } from "@/components/ui/csv-viewer";
 import { PDFViewer } from "@/components/ui/pdf-viewer";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate, formatRelative } from "../lib/format";
-import { removeItemsFromPages, type ItemsCache } from "../lib/items-cache";
+import {
+  removeItemsFromPages,
+  replaceItemInPages,
+  type ItemsCache,
+} from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { objectUrlFor, revokeObjectUrl } from "../lib/object-url-cache";
 import {
@@ -87,6 +92,15 @@ const PANEL_LABELS: Record<Panel, string> = {
 const panelsFor = (o: KevaItem): Panel[] =>
   isPreviewable(o) ? ["preview", "info", "properties"] : ["info", "properties"];
 
+// Where the file extension begins, for pre-selecting just the stem when
+// renaming (so a careless keystroke replaces "report" but keeps ".pdf"). A
+// leading-dot name (".gitignore") or an extension-less name has no stem to
+// isolate, so the whole value is selected.
+const extensionStart = (name: string): number => {
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? name.length : dot;
+};
+
 interface FileDetailProps {
   itemId: string;
   // Renders a close affordance in the header when provided (used by the
@@ -104,6 +118,8 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
+  // Rename editor: null when idle, otherwise the in-progress draft name.
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -205,8 +221,14 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
 
   const patchMutation = useMutation({
     mutationFn: (vars: { set: Record<string, PropertyValue>; unset: string[] }) =>
-      keva.patchProperties(itemId, vars),
-    onSuccess: (updated) => queryClient.setQueryData(["item", itemId], updated),
+      keva.patch(itemId, vars),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["item", itemId], updated);
+      // Keep the list rows in sync (e.g. a rename) without a refetch.
+      queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
+        old ? replaceItemInPages(old, updated) : old,
+      );
+    },
     onError: (err) => toast.error(errorMessage(err)),
   });
 
@@ -215,6 +237,30 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   // PropertiesEditor awaits this and reverts its own UI if it rejects.
   const onPatch = async (set: Record<string, PropertyValue>, unset: string[]) => {
     await patchMutation.mutateAsync({ set, unset });
+  };
+
+  // Focus the rename field as it mounts and pre-select the stem. A stable
+  // callback ref (not an effect) so it fires once on mount, not every render.
+  const renameInputRef = useCallback((node: HTMLInputElement | null) => {
+    if (node) {
+      node.focus();
+      node.setSelectionRange(0, extensionStart(node.value));
+    }
+  }, []);
+
+  const commitRename = async () => {
+    const next = renameDraft?.trim() ?? "";
+    // Nothing to do on an empty or unchanged name — just leave the editor.
+    if (!item || next === "" || next === item.name) {
+      setRenameDraft(null);
+      return;
+    }
+    try {
+      await patchMutation.mutateAsync({ set: { name: next }, unset: [] });
+      setRenameDraft(null);
+    } catch {
+      // onError already surfaced a toast; stay in edit mode so they can retry.
+    }
   };
 
   const onImageLoad = useCallback(
@@ -232,14 +278,56 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
       <header className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           {item && <FileTypeIcon contentType={item.contentType} />}
-          <div className="min-w-0">
-            <h2
-              className="truncate font-heading text-base font-medium"
-              title={item?.name}
-            >
-              {item?.name ?? "…"}
-            </h2>
-            {item && (
+          <div className="min-w-0 flex-1">
+            {renameDraft !== null ? (
+              // Enter commits, Escape/blur cancels — a careless click-away never
+              // silently overwrites the name. The stem is pre-selected on focus.
+              <input
+                ref={renameInputRef}
+                value={renameDraft}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                onBlur={() => setRenameDraft(null)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void commitRename();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    setRenameDraft(null);
+                  }
+                }}
+                aria-label="Rename file"
+                className="w-full rounded-sm border border-input bg-transparent px-1.5 py-0.5 font-heading text-base font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            ) : (
+              <div className="flex min-w-0 items-center gap-1">
+                <h2
+                  className="truncate font-heading text-base font-medium"
+                  title={item?.name}
+                >
+                  {item?.name ?? "…"}
+                </h2>
+                {item && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Rename"
+                          className="shrink-0 text-muted-foreground"
+                          onClick={() => setRenameDraft(item.name)}
+                        />
+                      }
+                    >
+                      <IconPencil />
+                    </TooltipTrigger>
+                    <TooltipContent>Rename</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            )}
+            {item && renameDraft === null && (
               <p className="truncate text-sm text-muted-foreground">
                 {item.contentType} · {formatBytes(item.size)}
               </p>

@@ -1,36 +1,18 @@
 import { Schema } from "effect";
+import { isPropertyKey, isQueryKey, PROPERTY_LIMITS } from "./fields.js";
 
-export const PROPERTY_LIMITS = {
-  keys: 256,
-  keyLength: 128,
-  stringBytes: 8 * 1024,
-  arrayItems: 256,
-  totalBytes: 64 * 1024,
-} as const;
+export * from "./fields.js";
 
 const encodedBytes = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
-const queryKeyPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 export const ITEM_ID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-const systemQueryKeys = new Set([
-  "system.content_type",
-  "system.size",
-  "system.etag",
-  "system.checksum",
-  "system.source",
-  "system.status",
-  "system.created_at",
-  "system.updated_at",
-]);
 
 export const PropertyKey = Schema.String.pipe(
-  Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
   Schema.maxLength(PROPERTY_LIMITS.keyLength),
-  Schema.filter(
-    (key) => !key.startsWith("system.") && !key.startsWith("keva."),
-    { message: () => "Property keys cannot use reserved namespaces" },
-  ),
+  Schema.filter((key) => isPropertyKey(key), {
+    message: () => "Property keys must be valid and non-reserved",
+  }),
 );
 export type PropertyKey = typeof PropertyKey.Type;
 
@@ -61,14 +43,7 @@ export const Properties = Schema.Record({
   value: PropertyValue,
 }).pipe(
   Schema.filter(
-    (properties) =>
-      Object.keys(properties).every(
-        (key) =>
-          queryKeyPattern.test(key) &&
-          key.length <= PROPERTY_LIMITS.keyLength &&
-          !key.startsWith("system.") &&
-          !key.startsWith("keva."),
-      ),
+    (properties) => Object.keys(properties).every(isPropertyKey),
     { message: () => "Invalid or reserved property key" },
   ),
   Schema.filter(
@@ -131,15 +106,9 @@ export type Operator = typeof Operator.Type;
 
 export const QueryKey = Schema.String.pipe(
   Schema.maxLength(PROPERTY_LIMITS.keyLength),
-  Schema.filter(
-    (key) =>
-      key === "id" ||
-      key === "name" ||
-      systemQueryKeys.has(key) ||
-      (!key.startsWith("system.") &&
-        queryKeyPattern.test(key)),
-    { message: () => "Invalid query key" },
-  ),
+  Schema.filter((key) => isQueryKey(key), {
+    message: () => "Invalid query key",
+  }),
 );
 
 export const QueryCondition = Schema.Struct({
@@ -217,11 +186,21 @@ export const InitiateUploadResult = Schema.Struct({
 });
 export type InitiateUploadResult = typeof InitiateUploadResult.Type;
 
-export const PropertyPatch = Schema.Struct({
-  set: Schema.optionalWith(Properties, { default: () => ({}) }),
-  unset: Schema.optionalWith(Schema.Array(PropertyKey), { default: () => [] }),
+// A patch over the unified key-space: `set`/`unset` may name user-writable
+// fields (e.g. "name") or user properties interchangeably. The wire schema is
+// deliberately permissive about keys — `routePatch` (see fields.ts) is the
+// authority that routes each key to its column or the property blob and rejects
+// writes to system-owned or reserved keys.
+export const ItemPatch = Schema.Struct({
+  set: Schema.optionalWith(
+    Schema.Record({ key: Schema.String, value: PropertyValue }),
+    { default: () => ({}) },
+  ),
+  unset: Schema.optionalWith(Schema.Array(Schema.String), {
+    default: () => [],
+  }),
 });
-export type PropertyPatch = typeof PropertyPatch.Type;
+export type ItemPatch = typeof ItemPatch.Type;
 
 export const DownloadResult = Schema.Struct({
   url: Schema.String,

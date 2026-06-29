@@ -1,5 +1,5 @@
 import type {
-  PropertyPatch,
+  PropertyValue,
   KevaError,
   KevaItem,
   ItemStatus,
@@ -62,6 +62,15 @@ export interface ItemTransition {
   readonly updatedAt: string;
 }
 
+// A routed patch: `fields` holds user-writable column values keyed by canonical
+// field key (e.g. "name") — each store maps the key to its own storage via the
+// schema field registry — while `set`/`unset` carry the property-blob merge.
+export interface ItemPatchInput {
+  readonly fields: Readonly<Record<string, PropertyValue>>;
+  readonly set: Readonly<Record<string, PropertyValue>>;
+  readonly unset: readonly string[];
+}
+
 export interface MetadataStoreService {
   readonly insert: (item: KevaItem) => Effect.Effect<void, KevaError>;
   readonly get: (
@@ -75,10 +84,10 @@ export interface MetadataStoreService {
     patch: ItemTransition,
     olderThan?: string,
   ) => Effect.Effect<boolean, KevaError>;
-  readonly patchProperties: (
+  readonly patch: (
     tenantId: string,
     id: string,
-    patch: PropertyPatch,
+    patch: ItemPatchInput,
     updatedAt: string,
   ) => Effect.Effect<KevaItem | null, KevaError>;
   readonly remove: (

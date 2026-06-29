@@ -285,7 +285,7 @@ describe("KevaEngine", () => {
         "notes.txt",
         new TextEncoder().encode("hello keva"),
       );
-      yield* engine.patchProperties(item.id, {
+      yield* engine.patch(item.id, {
         set: { location: "bali", rating: 5, tags: ["diving", "summer"] },
         unset: [],
       });

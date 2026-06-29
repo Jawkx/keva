@@ -5,7 +5,7 @@ import {
   type BlobStoreService,
 } from "@keva/core";
 import {
-  PropertyPatch,
+  ItemPatch,
   BatchDelete,
   ItemId,
   InitiateUpload,
@@ -184,17 +184,14 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
       runtime,
     ));
 
-  app.patch("/api/items/:id/properties", async (context) =>
+  app.patch("/api/items/:id", async (context) =>
     execute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
-        const body = yield* decode(PropertyPatch, yield* jsonBody(context));
-        return yield* makeKevaEngine(principal).patchProperties(
-          id,
-          body,
-        );
+        const body = yield* decode(ItemPatch, yield* jsonBody(context));
+        return yield* makeKevaEngine(principal).patch(id, body);
       }),
       runtime,
     ));

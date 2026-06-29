@@ -1,5 +1,6 @@
 import {
   Conflict,
+  FIELD_BY_KEY,
   Internal,
   type PropertyValue,
   type KevaItem,
@@ -26,19 +27,17 @@ const valueAt = (
   item: KevaItem,
   key: string,
 ): { exists: boolean; value: PropertyValue | string | number | null } => {
-  if (key === "id") return { exists: true, value: item.id };
-  if (key === "name") return { exists: true, value: item.name };
-  const system: Record<string, PropertyValue> = {
-    "system.content_type": item.contentType,
-    "system.size": item.size,
-    "system.etag": item.etag,
-    "system.checksum": item.checksum,
-    "system.source": item.source,
-    "system.status": item.status,
-    "system.created_at": item.createdAt,
-    "system.updated_at": item.updatedAt,
-  };
-  if (key in system) return { exists: true, value: system[key] ?? null };
+  // Declared fields (id, name, system.*) read from their column accessor;
+  // every other key resolves against the property blob.
+  const field = FIELD_BY_KEY.get(key);
+  if (field) {
+    const value = item[field.itemField] as
+      | PropertyValue
+      | string
+      | number
+      | null;
+    return { exists: true, value: value ?? null };
+  }
   return Object.prototype.hasOwnProperty.call(item.properties, key)
     ? { exists: true, value: item.properties[key] ?? null }
     : { exists: false, value: null };
@@ -150,14 +149,22 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         items.set(key, cloneItem({ ...item, ...patch }));
         return true;
       }),
-    patchProperties: (tenantId, id, patch, updatedAt) =>
+    patch: (tenantId, id, patch, updatedAt) =>
       Effect.sync(() => {
         const key = mapKey(tenantId, id);
         const item = items.get(key);
         if (!item || item.status !== "ready") return null;
         const properties = { ...item.properties, ...patch.set };
         for (const unset of patch.unset) delete properties[unset];
-        const updated = { ...item, properties, updatedAt };
+        const updated: KevaItem = { ...item, properties, updatedAt };
+        // Map each routed field key to its in-memory accessor. Cast is needed
+        // because the registry types `itemField` as the full key union.
+        for (const [fieldKey, value] of Object.entries(patch.fields)) {
+          const field = FIELD_BY_KEY.get(fieldKey);
+          if (field) {
+            (updated as Record<string, unknown>)[field.itemField] = value;
+          }
+        }
         items.set(key, cloneItem(updated));
         return cloneItem(updated);
       }),
