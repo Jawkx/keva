@@ -2,9 +2,10 @@
 
 > Storage that you and your agent can use. See [`../VISION.md`](../VISION.md).
 
-This directory is the technical plan for keva: architecture, data model, auth,
-API, and a phased roadmap. The repo is currently empty (only markdown) — this is
-a greenfield build onto the decisions recorded here.
+This directory is the technical design reference for keva: architecture, data
+model, auth, API, lifecycle, and the remaining-work roadmap. The implementation
+now lives in `apps/`, `packages/`, and `tooling/`; do not treat these docs as a
+greenfield scaffold plan.
 
 ## How the plan is organized
 
@@ -15,7 +16,7 @@ a greenfield build onto the decisions recorded here.
 | [`auth.md`](./auth.md) | Authentication, authorization, tenancy. Better Auth sessions for people, opaque tokens for machines, one `Principal`. |
 | [`api.md`](./api.md) | The HTTP surface, the upload/download flows, and the typed error contract. |
 | [`lifecycle.md`](./lifecycle.md) | The item state machine (`pending`/`ready`/`deleting`): immutable-final-key uploads, idempotent confirm, two-phase delete, and the reaper/sweeper. |
-| [`roadmap.md`](./roadmap.md) | Phased delivery, guardrails, and open questions. |
+| [`roadmap.md`](./roadmap.md) | Remaining work and guardrails. Completed implementation phases have been removed. |
 
 ## What keva is
 

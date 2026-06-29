@@ -138,7 +138,7 @@ Layers, in resolution order:
   → `Principal{ via: "token" }`.
 - **`SessionAuthLive`** — session cookie → Better Auth → `Principal{ via: "session" }`.
 - **`StaticTokenAuthLive`** — a single env secret → fixed root principal
-  (single tenant). The zero-DB path for self-host/dev and the earliest phases.
+  (single tenant). The zero-DB path for self-host/dev.
 
 Both a web session and an API token are valid on the data-plane API (exactly like
 GitHub: the web UI rides your session, the API also takes a PAT). Both produce a
@@ -157,11 +157,3 @@ auth (runs as a local process with the user's credentials).
   machinery touches the core.
 - **Control plane** (`apps/web` dashboard) — where humans log in (Better Auth)
   and mint data-plane tokens. The complexity of human auth is isolated here.
-
-## What lands when
-
-- **Early (Phase 1):** the `Principal` type, edge `StaticTokenAuthLive`, and
-  tenancy-scoping woven through the engine — so the API is never deployed
-  unauthenticated and tenancy isn't retrofitted. See [`roadmap.md`](./roadmap.md).
-- **Later (web phase):** Better Auth sessions, the dashboard, token-generation
-  UI, and the Postgres-backed `TokenAuthLive` + organizations.

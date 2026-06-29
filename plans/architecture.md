@@ -92,7 +92,7 @@ keva/
 │   │   │   └── node.ts         # Node entry — @hono/node-server
 │   │   └── wrangler.toml
 │   ├── web/                    # consumer dashboard + Better Auth (control plane)
-│   └── mcp/                    # MCP server — agent client (later phase)
+│   └── mcp/                    # MCP server — planned agent client
 ├── packages/
 │   ├── schema/                 # Effect Schema: item, query, errors, Principal. Source of truth.
 │   ├── core/                   # Effect: KevaEngine + BlobStore/MetadataStore services & layers (authorizes from Principal)
