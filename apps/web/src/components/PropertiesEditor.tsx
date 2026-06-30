@@ -41,8 +41,21 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 
 type Mode = "form" | "json";
+
+// One row shape for the whole detail list, shared by the read-only System rows
+// and the editable Custom rows so the two sections read as a single sectioned
+// list rather than two visual styles. Rows live inside `propertyListClass` — a
+// bordered, divided container that grounds them — and the key is a fixed left
+// column so values line up in a column to its right.
+export const propertyListClass = "divide-y divide-border overflow-hidden rounded-lg border";
+export const propertyRowClass = "flex items-center gap-3 px-3 py-2";
+// Left key column. System uses it bare for its labels; Custom adds `font-mono`.
+export const propertyKeyClass = "w-28 shrink-0 truncate text-sm";
+// Value column: fills the row to the right of the key.
+export const propertyValueClass = "flex min-w-0 flex-1 items-center gap-1.5 text-sm";
 
 interface PropertiesEditorProps {
   properties: Properties;
@@ -71,9 +84,10 @@ export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps)
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {entries.length} {entries.length === 1 ? "property" : "properties"}
-        </span>
+        <h3 className="flex items-baseline gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Custom
+          <span className="font-normal tabular-nums opacity-70">{entries.length}</span>
+        </h3>
         <ToggleGroup
           variant="outline"
           size="sm"
@@ -125,13 +139,11 @@ function FormView({
   const entries = Object.entries(properties);
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-2">
       {entries.length === 0 ? (
-        <p className="px-1 py-1 text-sm text-muted-foreground">
-          No properties yet — add one below.
-        </p>
+        <p className="px-1 text-sm text-muted-foreground">No custom properties yet.</p>
       ) : (
-        <ul className="flex flex-col">
+        <ul className={propertyListClass}>
           {entries.map(([key, value]) => (
             <PropertyRow
               key={key}
@@ -183,11 +195,8 @@ function PropertyRow({
 
   if (editing) {
     return (
-      <li className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 px-2 py-2">
-        <span
-          className="max-w-[45%] flex-shrink-0 truncate font-mono text-sm font-medium"
-          title={attrKey}
-        >
+      <li className="flex flex-wrap items-center gap-2 bg-muted/40 px-3 py-2">
+        <span className={cn(propertyKeyClass, "font-mono font-medium")} title={attrKey}>
           {attrKey}
         </span>
         <TypeSelect value={draftType} onChange={setDraftType} />
@@ -216,14 +225,10 @@ function PropertyRow({
   }
 
   return (
-    <li className="group flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-muted/40">
-      <span
-        className="max-w-[45%] flex-shrink-0 truncate font-mono text-sm font-medium"
-        title={attrKey}
-      >
+    <li className={cn(propertyRowClass, "group transition-colors hover:bg-muted/40")}>
+      <span className={cn(propertyKeyClass, "font-mono font-medium")} title={attrKey}>
         {attrKey}
       </span>
-      <TypePill type={type} />
       {editable ? (
         <button
           type="button"
@@ -246,6 +251,7 @@ function PropertyRow({
           {formatPropertyValue(value)}
         </span>
       )}
+      <TypePill type={type} />
       <Button
         size="icon-sm"
         variant="ghost"
@@ -311,7 +317,7 @@ function AddRow({
   return (
     <form
       onSubmit={submit}
-      className="mt-1 flex flex-wrap items-center gap-2 rounded-md bg-muted/30 px-3 py-2.5"
+      className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 px-3 py-2.5"
     >
       <div className="min-w-0 flex-1 basis-32">
         <Input

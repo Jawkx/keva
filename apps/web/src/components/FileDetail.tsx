@@ -5,7 +5,13 @@ import { IconAlertTriangle, IconDownload, IconPencil, IconTrash, IconX } from "@
 import { toast } from "sonner";
 import type { PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
-import { PropertiesEditor } from "./PropertiesEditor";
+import {
+  PropertiesEditor,
+  propertyKeyClass,
+  propertyListClass,
+  propertyRowClass,
+  propertyValueClass,
+} from "./PropertiesEditor";
 import { CopyButton } from "./CopyButton";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
@@ -32,7 +38,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Preview =
@@ -59,20 +64,19 @@ const isPreviewable = (o: KevaItem) =>
   (isPdf(o) && (o.size ?? Infinity) <= PDF_MAX) ||
   (isText(o) && (o.size ?? Infinity) <= TEXT_MAX);
 
-type Panel = "preview" | "info" | "properties";
+type Panel = "preview" | "properties";
 
 const PANEL_LABELS: Record<Panel, string> = {
   preview: "Preview",
-  info: "Info",
   properties: "Properties",
 };
 
-// The panels available for an item, in display order. Preview is offered
-// only when the content can actually be rendered; Info and Properties always
-// exist. Determines which segmented-control buttons show and which `?panel=`
-// values are valid.
+// The panels available for an item, in display order. Preview is offered only
+// when the content can actually be rendered; Properties (system metadata plus
+// the user's own keys) always exists. With a single panel the segmented
+// control is hidden, so a non-previewable item shows Properties directly.
 const panelsFor = (o: KevaItem): Panel[] =>
-  isPreviewable(o) ? ["preview", "info", "properties"] : ["info", "properties"];
+  isPreviewable(o) ? ["preview", "properties"] : ["properties"];
 
 // Where the file extension begins, for pre-selecting just the stem when
 // renaming (so a careless keystroke replaces "report" but keeps ".pdf"). A
@@ -156,7 +160,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   // address bar until the user actually picks a tab.
   const paramPanel = searchParams.get("panel") as Panel | null;
   const activePanel: Panel =
-    paramPanel && panels.includes(paramPanel) ? paramPanel : (panels[0] ?? "info");
+    paramPanel && panels.includes(paramPanel) ? paramPanel : (panels[0] ?? "properties");
 
   const setPanel = useCallback(
     (next: Panel) => {
@@ -378,7 +382,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
         </div>
       </header>
 
-      {item && (
+      {item && panels.length > 1 && (
         <div className="shrink-0 px-4 pt-3">
           <ToggleGroup
             variant="outline"
@@ -461,29 +465,39 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
               <p className="text-sm text-muted-foreground">Preview unavailable.</p>
             )}
           </section>
-        ) : activePanel === "info" ? (
-          <section className="min-w-0">
-            {/* Content type and size live in the header above; keep this grid
-                to the metadata that isn't shown elsewhere. */}
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
-              <MetaItem label="Status">
-                <Badge variant="secondary">{item.status}</Badge>
-              </MetaItem>
-              <MetaItem label="Source">{item.source}</MetaItem>
-              <MetaItem label="Created">
-                <span title={formatDate(item.createdAt)}>{formatRelative(item.createdAt)}</span>
-              </MetaItem>
-              <MetaItem label="Updated">
-                <span title={formatDate(item.updatedAt)}>{formatRelative(item.updatedAt)}</span>
-              </MetaItem>
-              <MetaItem label="ID" className="col-span-2">
-                <span className="min-w-0 truncate font-mono text-xs">{item.id}</span>
-                <CopyButton value={item.id} label="Copy ID" />
-              </MetaItem>
-            </dl>
-          </section>
         ) : (
-          <section className="flex min-w-0 flex-col gap-2">
+          // Info and properties are one surface: an item is just a bag of
+          // key→value pairs. The system-owned keys are read-only; the user's
+          // own properties are editable below.
+          <section className="flex min-w-0 flex-col gap-6">
+            <div className="min-w-0">
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                System <span className="font-normal normal-case opacity-70">· read-only</span>
+              </h3>
+              {/* Content type and size live in the header above; this list
+                  carries the rest of the system-owned keys. Same row shape as
+                  the Custom list below so the two read as one sectioned list. */}
+              <dl className={propertyListClass}>
+                <SystemRow label="Status">
+                  <Badge variant="secondary">{item.status}</Badge>
+                </SystemRow>
+                <SystemRow label="Source">
+                  <span className="truncate" title={item.source}>
+                    {item.source}
+                  </span>
+                </SystemRow>
+                <SystemRow label="Created">
+                  <span title={formatDate(item.createdAt)}>{formatRelative(item.createdAt)}</span>
+                </SystemRow>
+                <SystemRow label="Updated">
+                  <span title={formatDate(item.updatedAt)}>{formatRelative(item.updatedAt)}</span>
+                </SystemRow>
+                <SystemRow label="ID">
+                  <span className="min-w-0 truncate font-mono text-xs">{item.id}</span>
+                  <CopyButton value={item.id} label="Copy ID" />
+                </SystemRow>
+              </dl>
+            </div>
             <PropertiesEditor properties={item.properties} onPatch={onPatch} />
           </section>
         )}
@@ -492,19 +506,17 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   );
 }
 
-function MetaItem({
-  label,
-  className,
-  children,
-}: {
-  label: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
+// A read-only system field, rendered with the same row shape as the editable
+// Custom rows (key left, value right) so the System and Custom sections read as
+// one list rather than two visual styles. The label is the friendly name; the
+// value carries no edit affordance.
+function SystemRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 items-center gap-1.5 text-sm">{children}</dd>
+    <div className={propertyRowClass}>
+      <dt className={`${propertyKeyClass} text-muted-foreground`} title={label}>
+        {label}
+      </dt>
+      <dd className={propertyValueClass}>{children}</dd>
     </div>
   );
 }
