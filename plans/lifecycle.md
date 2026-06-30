@@ -8,11 +8,11 @@ this is the full model.
 
 ## States
 
-| State | Meaning | Bytes |
-|---|---|---|
-| `pending` | record created; a presigned PUT to the **staging** key has been issued; awaiting upload + confirm | none, or in staging |
-| `ready` | bytes copied to the **immutable final** key; system properties reflect the real item | at final key |
-| `deleting` | deletion intent recorded; no longer served; blobs being removed | being removed |
+| State      | Meaning                                                                                           | Bytes               |
+| ---------- | ------------------------------------------------------------------------------------------------- | ------------------- |
+| `pending`  | record created; a presigned PUT to the **staging** key has been issued; awaiting upload + confirm | none, or in staging |
+| `ready`    | bytes copied to the **immutable final** key; system properties reflect the real item              | at final key        |
+| `deleting` | deletion intent recorded; no longer served; blobs being removed                                   | being removed       |
 
 Reads (`GET`, `query`) only ever return `ready` items. `pending` and
 `deleting` are invisible to clients (treated as `NotFound`).
@@ -38,7 +38,7 @@ Reads (`GET`, `query`) only ever return `ready` items. `pending` and
 ## Why staging → copy → final (immutability)
 
 A presigned PUT is **replayable until it expires** — the holder can overwrite the
-key repeatedly, including *after* confirmation, and an exact `Content-Length`
+key repeatedly, including _after_ confirmation, and an exact `Content-Length`
 does not stop a same-sized replacement (documented S3 behavior). So:
 
 - The presigned PUT targets a **staging key** only: `staging/<tenantId>/<id>`.
@@ -62,10 +62,10 @@ single-PUT cap. Multipart copy is deferred with multipart upload.
    b. Validate declared vs. actual `size`/`etag`; mismatch → `ValidationError`.
    c. `CopyObject` staging → final (idempotent; identical bytes, same final key).
    d. Atomically claim the transition:
-      `UPDATE items SET status='ready', size=…, etag=…, updated_at=now()
-       WHERE id=:id AND tenant_id=:t AND status='pending'`.
-      If it affects 0 rows, someone else won (or it was reaped) → re-read and
-      return the current state (or `Conflict` if now `deleting`).
+   `UPDATE items SET status='ready', size=…, etag=…, updated_at=now()
+WHERE id=:id AND tenant_id=:t AND status='pending'`.
+   If it affects 0 rows, someone else won (or it was reaped) → re-read and
+   return the current state (or `Conflict` if now `deleting`).
    e. Best-effort delete staging; failure is non-fatal — the reaper mops staging.
 
 Ordering matters: **copy before the DB flip.** If the process dies after copy but
@@ -85,7 +85,7 @@ Deletion can't be atomic across stores, so intent is recorded first:
 3. Remove the row.
 
 If the process crashes after step 1, a **sweeper** finds `deleting` rows and
-completes steps 2–3. Because intent is durable *before* any blob delete, and the
+completes steps 2–3. Because intent is durable _before_ any blob delete, and the
 sweeper finishes interrupted deletes, there are **no orphaned blobs and no
 dangling rows**.
 

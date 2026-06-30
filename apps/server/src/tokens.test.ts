@@ -1,12 +1,5 @@
-import {
-  MemoryBlobStoreLive,
-  MemoryMetadataStoreLive,
-} from "@keva/core";
-import type {
-  MintTokenResult,
-  Principal,
-  TokenRecord,
-} from "@keva/schema";
+import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
+import type { MintTokenResult, Principal, TokenRecord } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
@@ -38,10 +31,7 @@ const ADMIN_COOKIE = "keva_session=admin";
 // A minimal in-memory ApiTokenStore: mints `keva_sk_<id>_<secret>` tokens and
 // resolves them back to a principal carrying the requested scopes.
 const makeInMemoryTokenStore = (): ApiTokenStoreService => {
-  const records = new Map<
-    string,
-    { record: TokenRecord; secret: string }
-  >();
+  const records = new Map<string, { record: TokenRecord; secret: string }>();
   return {
     resolve: (token) =>
       Effect.sync(() => {
@@ -102,12 +92,7 @@ const makeApp = (resolver: SessionResolver = sessionResolver) => {
     sessionResolver: resolver,
   }).pipe(Layer.provide(tokens));
   return createApp({
-    layer: Layer.mergeAll(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
-      tokens,
-      auth,
-    ),
+    layer: Layer.mergeAll(MemoryMetadataStoreLive, MemoryBlobStoreLive(), tokens, auth),
   });
 };
 

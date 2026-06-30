@@ -30,11 +30,7 @@ const principal: Principal = {
   via: "token",
 };
 
-const putToPresigned = async (
-  url: string,
-  bytes: Uint8Array,
-  contentType: string,
-) => {
+const putToPresigned = async (url: string, bytes: Uint8Array, contentType: string) => {
   const res = await fetch(url, {
     method: "PUT",
     headers: {
@@ -52,23 +48,23 @@ const getFromPresigned = async (url: string): Promise<Uint8Array> => {
   return new Uint8Array(await res.arrayBuffer());
 };
 
-const s3Env = (
-  globalThis as { process?: { env?: Record<string, string | undefined> } }
-).process?.env;
+const s3Env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+  ?.env;
 
-const realS3Config = s3Env?.KEVA_TEST_S3_ENDPOINT &&
-    s3Env.KEVA_TEST_S3_ACCESS_KEY_ID &&
-    s3Env.KEVA_TEST_S3_SECRET_ACCESS_KEY &&
-    s3Env.KEVA_TEST_S3_BUCKET
-  ? {
-      endpoint: s3Env.KEVA_TEST_S3_ENDPOINT,
-      region: s3Env.KEVA_TEST_S3_REGION ?? "us-east-1",
-      accessKeyId: s3Env.KEVA_TEST_S3_ACCESS_KEY_ID,
-      secretAccessKey: s3Env.KEVA_TEST_S3_SECRET_ACCESS_KEY,
-      bucket: s3Env.KEVA_TEST_S3_BUCKET,
-      forcePathStyle: s3Env.KEVA_TEST_S3_FORCE_PATH_STYLE !== "false",
-    }
-  : undefined;
+const realS3Config =
+  s3Env?.KEVA_TEST_S3_ENDPOINT &&
+  s3Env.KEVA_TEST_S3_ACCESS_KEY_ID &&
+  s3Env.KEVA_TEST_S3_SECRET_ACCESS_KEY &&
+  s3Env.KEVA_TEST_S3_BUCKET
+    ? {
+        endpoint: s3Env.KEVA_TEST_S3_ENDPOINT,
+        region: s3Env.KEVA_TEST_S3_REGION ?? "us-east-1",
+        accessKeyId: s3Env.KEVA_TEST_S3_ACCESS_KEY_ID,
+        secretAccessKey: s3Env.KEVA_TEST_S3_SECRET_ACCESS_KEY,
+        bucket: s3Env.KEVA_TEST_S3_BUCKET,
+        forcePathStyle: s3Env.KEVA_TEST_S3_FORCE_PATH_STYLE !== "false",
+      }
+    : undefined;
 
 describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
   let mock: S3Mock;
@@ -114,11 +110,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     const { id } = initiated.item;
 
     expect(initiated.uploadUrl).toContain(`staging/t1/${id}`);
-    await putToPresigned(
-      initiated.uploadUrl,
-      bytes,
-      "application/octet-stream",
-    );
+    await putToPresigned(initiated.uploadUrl, bytes, "application/octet-stream");
     expect(mock.store.has(`staging/t1/${id}`)).toBe(true);
 
     const confirmed = await runtime.runPromise(engine.confirm(id));
@@ -131,9 +123,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
 
     const dl = await runtime.runPromise(engine.download(id));
     expect(dl.url).toContain(`items/t1/${id}`);
-    expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe(
-      "immutable bytes",
-    );
+    expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe("immutable bytes");
   });
 
   it("replaying a staging URL cannot alter a ready item", async () => {
@@ -160,9 +150,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     await putToPresigned(initiated.uploadUrl, tampered, "text/plain");
 
     const dl = await runtime.runPromise(engine.download(id));
-    expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe(
-      "ORIGINAL",
-    );
+    expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe("ORIGINAL");
   });
 
   it("reaps an abandoned pending upload and sweeps it to completion", async () => {
@@ -190,11 +178,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
         }),
       ),
     );
-    await putToPresigned(
-      `${mock.endpoint}/${mock.bucket}/staging/t1/${id}`,
-      bytes,
-      "text/plain",
-    );
+    await putToPresigned(`${mock.endpoint}/${mock.bucket}/staging/t1/${id}`, bytes, "text/plain");
     expect(mock.store.has(`staging/t1/${id}`)).toBe(true);
 
     const reaped = await runtime.runPromise(reapPending({ pendingTtlMs: 1 }));
@@ -203,9 +187,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     const swept = await runtime.runPromise(sweepDeleting());
     expect(swept).toBe(1);
 
-    const found = await runtime.runPromise(
-      Effect.flatMap(MetadataStore, (m) => m.get("t1", id)),
-    );
+    const found = await runtime.runPromise(Effect.flatMap(MetadataStore, (m) => m.get("t1", id)));
     expect(found).toBeNull();
     expect(mock.store.has(`staging/t1/${id}`)).toBe(false);
   });
@@ -241,64 +223,54 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     expect(swept).toBe(1);
 
     expect(mock.store.has(`items/t1/${id}`)).toBe(false);
-    const found = await runtime.runPromise(
-      Effect.flatMap(MetadataStore, (m) => m.get("t1", id)),
-    );
+    const found = await runtime.runPromise(Effect.flatMap(MetadataStore, (m) => m.get("t1", id)));
     expect(found).toBeNull();
   });
 });
 
-describe.skipIf(!realS3Config)(
-  "S3 blob store against a real S3-compatible provider",
-  () => {
-    let runtime: ManagedRuntime.ManagedRuntime<BlobStore | MetadataStore, never>;
+describe.skipIf(!realS3Config)("S3 blob store against a real S3-compatible provider", () => {
+  let runtime: ManagedRuntime.ManagedRuntime<BlobStore | MetadataStore, never>;
 
-    beforeEach(() => {
-      runtime = ManagedRuntime.make(
-        Layer.merge(
-          MemoryMetadataStoreLive,
-          S3BlobStoreLive(realS3Config!),
-        ),
-      );
+  beforeEach(() => {
+    runtime = ManagedRuntime.make(
+      Layer.merge(MemoryMetadataStoreLive, S3BlobStoreLive(realS3Config!)),
+    );
+  });
+
+  afterEach(async () => {
+    await runtime.runPromise(sweepDeleting()).catch(() => undefined);
+    await runtime.dispose();
+  });
+
+  it("uploads, confirms, downloads, and deletes via signed provider requests", async () => {
+    const bytes = new TextEncoder().encode(`real-s3-${crypto.randomUUID()}`);
+    const engine = makeKevaEngine({
+      ...principal,
+      tenantId: `test-${crypto.randomUUID()}`,
     });
 
-    afterEach(async () => {
-      await runtime.runPromise(sweepDeleting()).catch(() => undefined);
-      await runtime.dispose();
-    });
+    const initiated = await runtime.runPromise(
+      engine.initiate({
+        name: "real-provider.txt",
+        contentType: "text/plain",
+        size: bytes.byteLength,
+        source: "upload",
+        properties: {},
+      }),
+    );
+    await putToPresigned(initiated.uploadUrl, bytes, "text/plain");
 
-    it("uploads, confirms, downloads, and deletes via signed provider requests", async () => {
-      const bytes = new TextEncoder().encode(`real-s3-${crypto.randomUUID()}`);
-      const engine = makeKevaEngine({
-        ...principal,
-        tenantId: `test-${crypto.randomUUID()}`,
-      });
+    const confirmed = await runtime.runPromise(engine.confirm(initiated.item.id));
+    expect(confirmed.status).toBe("ready");
 
-      const initiated = await runtime.runPromise(
-        engine.initiate({
-          name: "real-provider.txt",
-          contentType: "text/plain",
-          size: bytes.byteLength,
-          source: "upload",
-          properties: {},
-        }),
-      );
-      await putToPresigned(initiated.uploadUrl, bytes, "text/plain");
+    const download = await runtime.runPromise(engine.download(confirmed.id));
+    expect(await getFromPresigned(download.url)).toEqual(bytes);
 
-      const confirmed = await runtime.runPromise(engine.confirm(initiated.item.id));
-      expect(confirmed.status).toBe("ready");
-
-      const download = await runtime.runPromise(engine.download(confirmed.id));
-      expect(await getFromPresigned(download.url)).toEqual(bytes);
-
-      await runtime.runPromise(engine.delete(confirmed.id));
-      await runtime.runPromise(sweepDeleting());
-      const deleted = await runtime.runPromise(
-        Effect.flatMap(MetadataStore, (metadata) =>
-          metadata.get(confirmed.tenantId, confirmed.id)
-        ),
-      );
-      expect(deleted).toBeNull();
-    });
-  },
-);
+    await runtime.runPromise(engine.delete(confirmed.id));
+    await runtime.runPromise(sweepDeleting());
+    const deleted = await runtime.runPromise(
+      Effect.flatMap(MetadataStore, (metadata) => metadata.get(confirmed.tenantId, confirmed.id)),
+    );
+    expect(deleted).toBeNull();
+  });
+});

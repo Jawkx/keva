@@ -7,9 +7,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 
-export function PasswordInput(
-  props: React.ComponentProps<typeof InputGroupInput>,
-) {
+export function PasswordInput(props: React.ComponentProps<typeof InputGroupInput>) {
   const [show, setShow] = useState(false);
   return (
     <InputGroup>

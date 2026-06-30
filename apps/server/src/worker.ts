@@ -2,10 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createApp } from "./app.js";
 import * as authSchema from "./auth-schema.js";
-import {
-  betterAuthSessionResolver,
-  createBetterAuth,
-} from "./better-auth.js";
+import { betterAuthSessionResolver, createBetterAuth } from "./better-auth.js";
 import { trustedOriginsFor } from "./origins.js";
 import { makeRuntimeLayer } from "./runtime.js";
 
@@ -37,33 +34,29 @@ export default {
     const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
     const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
     if (!app) {
-      const s3 = env.S3_ENDPOINT &&
-          env.S3_ACCESS_KEY_ID &&
-          env.S3_SECRET_ACCESS_KEY &&
-          env.S3_BUCKET
-        ? {
-            endpoint: env.S3_ENDPOINT,
-            region: env.S3_REGION ?? "us-east-1",
-            accessKeyId: env.S3_ACCESS_KEY_ID,
-            secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-            bucket: env.S3_BUCKET,
-            forcePathStyle: env.S3_FORCE_PATH_STYLE !== "false",
-          }
-        : undefined;
+      const s3 =
+        env.S3_ENDPOINT && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY && env.S3_BUCKET
+          ? {
+              endpoint: env.S3_ENDPOINT,
+              region: env.S3_REGION ?? "us-east-1",
+              accessKeyId: env.S3_ACCESS_KEY_ID,
+              secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+              bucket: env.S3_BUCKET,
+              forcePathStyle: env.S3_FORCE_PATH_STYLE !== "false",
+            }
+          : undefined;
       const databaseUrl = env.HYPERDRIVE?.connectionString;
-      const auth = databaseUrl && env.BETTER_AUTH_SECRET
-        ? createBetterAuth({
-            database: drizzle(postgres(databaseUrl), {
-              schema: authSchema,
-            }),
-            secret: env.BETTER_AUTH_SECRET,
-            baseURL: env.BETTER_AUTH_URL ?? baseUrl,
-            trustedOrigins: trustedOriginsFor(
-              baseUrl,
-              env.KEVA_TRUSTED_ORIGINS,
-            ),
-          })
-        : undefined;
+      const auth =
+        databaseUrl && env.BETTER_AUTH_SECRET
+          ? createBetterAuth({
+              database: drizzle(postgres(databaseUrl), {
+                schema: authSchema,
+              }),
+              secret: env.BETTER_AUTH_SECRET,
+              baseURL: env.BETTER_AUTH_URL ?? baseUrl,
+              trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
+            })
+          : undefined;
       const layer = makeRuntimeLayer({
         staticToken,
         tenantId: env.KEVA_TENANT_ID ?? "local",

@@ -1,8 +1,4 @@
-import {
-  BlobStore,
-  makeKevaEngine,
-  MetadataStore,
-} from "@keva/core";
+import { BlobStore, makeKevaEngine, MetadataStore } from "@keva/core";
 import {
   ItemPatch,
   BatchDelete,
@@ -16,29 +12,15 @@ import {
   ValidationError,
   statusFor,
 } from "@keva/schema";
-import {
-  Cause,
-  Effect,
-  Exit,
-  Layer,
-  ManagedRuntime,
-  Option,
-  Schema,
-} from "effect";
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { Hono, type Context } from "hono";
-import {
-  ApiTokenStore,
-  Authenticator,
-  requireAdminSession,
-} from "./auth.js";
+import { ApiTokenStore, Authenticator, requireAdminSession } from "./auth.js";
 
 type AppServices = Authenticator | BlobStore | MetadataStore | ApiTokenStore;
 
 const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
   Schema.decodeUnknown(schema)(value).pipe(
-    Effect.mapError(() =>
-      new ValidationError({ message: "Request validation failed" })
-    ),
+    Effect.mapError(() => new ValidationError({ message: "Request validation failed" })),
   );
 
 const jsonBody = (context: Context) =>
@@ -47,8 +29,7 @@ const jsonBody = (context: Context) =>
     catch: () => new ValidationError({ message: "Request body must be JSON" }),
   });
 
-const itemIdParam = (context: Context) =>
-  decode(ItemId, context.req.param("id"));
+const itemIdParam = (context: Context) => decode(ItemId, context.req.param("id"));
 
 // Every route's failure channel is a typed KevaError, so a tracked failure maps
 // straight to its tagged error. Only an untracked defect (Effect.die, a thrown
@@ -86,19 +67,16 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
   const runtime = ManagedRuntime.make(layer);
 
   if (authHandler) {
-    app.on(["GET", "POST"], "/api/auth/*", (context) =>
-      authHandler(context.req.raw));
+    app.on(["GET", "POST"], "/api/auth/*", (context) => authHandler(context.req.raw));
   }
 
-  app.get("/health", (context) =>
-    context.json({ ok: true, service: "keva" }));
+  app.get("/health", (context) => context.json({ ok: true, service: "keva" }));
 
   app.put("/__dev/blobs/*", async (context) => {
     const key = decodeURIComponent(context.req.path.slice("/__dev/blobs/".length));
     const token = context.req.query("token") ?? "";
     const bytes = new Uint8Array(await context.req.arrayBuffer());
-    const contentType =
-      context.req.header("content-type") ?? "application/octet-stream";
+    const contentType = context.req.header("content-type") ?? "application/octet-stream";
     return execute(
       context,
       Effect.gen(function* () {
@@ -148,7 +126,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* makeKevaEngine(principal).initiate(body);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.post("/api/items/:id/confirm", (context) =>
     execute(
@@ -159,7 +138,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* makeKevaEngine(principal).confirm(id);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.get("/api/items/:id", (context) =>
     execute(
@@ -170,7 +150,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* makeKevaEngine(principal).get(id);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.get("/api/items/:id/content", (context) =>
     execute(
@@ -181,7 +162,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* makeKevaEngine(principal).download(id);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.patch("/api/items/:id", async (context) =>
     execute(
@@ -193,7 +175,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* makeKevaEngine(principal).patch(id, body);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.delete("/api/items/:id", (context) =>
     execute(
@@ -205,7 +188,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return { ok: true };
       }),
       runtime,
-    ));
+    ),
+  );
 
   // Batch delete: fan out over the idempotent per-id delete, isolating each so
   // one failure (missing blob, transient store error) doesn't sink the rest.
@@ -221,21 +205,18 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
           (id) =>
             engine.delete(id).pipe(
               Effect.as({ id, error: undefined as string | undefined }),
-              Effect.catchAll((error) =>
-                Effect.succeed({ id, error: error.message }),
-              ),
+              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
             ),
           { concurrency: 8 },
         );
         return {
           deleted: results.filter((r) => !r.error).map((r) => r.id),
-          failed: results
-            .filter((r) => r.error)
-            .map((r) => ({ id: r.id, error: r.error! })),
+          failed: results.filter((r) => r.error).map((r) => ({ id: r.id, error: r.error! })),
         };
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.post("/api/query", async (context) =>
     execute(
@@ -246,7 +227,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* makeKevaEngine(principal).query(body);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.post("/api/tokens", async (context) =>
     execute(
@@ -259,7 +241,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* tokens.mint(principal.tenantId, body);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.get("/api/tokens", (context) =>
     execute(
@@ -271,7 +254,8 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         return yield* tokens.list(principal.tenantId);
       }),
       runtime,
-    ));
+    ),
+  );
 
   app.delete("/api/tokens/:id", (context) =>
     execute(
@@ -281,14 +265,12 @@ export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
         yield* requireAdminSession(principal);
         const tokens = yield* ApiTokenStore;
         return {
-          revoked: yield* tokens.revoke(
-            principal.tenantId,
-            context.req.param("id"),
-          ),
+          revoked: yield* tokens.revoke(principal.tenantId, context.req.param("id")),
         };
       }),
       runtime,
-    ));
+    ),
+  );
 
   return app;
 };

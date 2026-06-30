@@ -26,9 +26,8 @@ import { BlobStore, MetadataStore } from "./services.js";
 
 // Read the env without depending on @types/node (core has no node types):
 // vitest still injects `process` at runtime.
-const DATABASE_URL = (
-  globalThis as { process?: { env?: Record<string, string | undefined> } }
-).process?.env?.KEVA_TEST_DATABASE_URL;
+const DATABASE_URL = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+  .process?.env?.KEVA_TEST_DATABASE_URL;
 
 const principal = (tenantId: string): Principal => ({
   tenantId,
@@ -36,15 +35,10 @@ const principal = (tenantId: string): Principal => ({
   via: "token",
 });
 
-const migrationDir = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../drizzle",
-);
+const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");
 
 const applyMigrations = async (sql: Sql): Promise<void> => {
-  const files = (await readdir(migrationDir))
-    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
-    .sort();
+  const files = (await readdir(migrationDir)).filter((file) => /^\d{4}_.+\.sql$/.test(file)).sort();
 
   for (const file of files) {
     const migration = await readFile(resolve(migrationDir, file), "utf8");
@@ -95,22 +89,12 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       });
       const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
       const blobs = yield* BlobStore;
-      yield* blobs.devPut!(
-        initiated.item.stagingKey,
-        bytes,
-        "text/plain",
-        token,
-      );
+      yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
       yield* engine.confirm(initiated.item.id);
       return initiated.item.id;
     });
 
-  const createReadyWithType = (
-    p: Principal,
-    name: string,
-    contentType: string,
-    body: string,
-  ) =>
+  const createReadyWithType = (p: Principal, name: string, contentType: string, body: string) =>
     Effect.gen(function* () {
       const engine = makeKevaEngine(p);
       const bytes = new TextEncoder().encode(body);
@@ -123,21 +107,18 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       });
       const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
       const blobs = yield* BlobStore;
-      yield* blobs.devPut!(
-        initiated.item.stagingKey,
-        bytes,
-        contentType,
-        token,
-      );
+      yield* blobs.devPut!(initiated.item.stagingKey, bytes, contentType, token);
       yield* engine.confirm(initiated.item.id);
       return initiated.item.id;
     });
 
   it("applies the checked-in migration indexes", async () => {
-    const indexes = await sql<{
-      indexname: string;
-      indexdef: string;
-    }[]>`
+    const indexes = await sql<
+      {
+        indexname: string;
+        indexdef: string;
+      }[]
+    >`
       select indexname, indexdef
       from pg_indexes
       where schemaname = current_schema()
@@ -176,11 +157,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
     const fetched = await Effect.runPromise(
       makeKevaEngine(p)
         .get(id)
-        .pipe(
-          Effect.provide(
-            Layer.merge(Layer.succeed(MetadataStore, fresh), blobLayer),
-          ),
-        ),
+        .pipe(Effect.provide(Layer.merge(Layer.succeed(MetadataStore, fresh), blobLayer))),
     );
     expect(fetched.status).toBe("ready");
     expect(fetched.properties).toEqual({ project: "keva", rating: 9 });
@@ -275,11 +252,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
     const found = await run(
       Effect.gen(function* () {
         const engine = makeKevaEngine(principal(tenantA));
-        const named = yield* createReady(
-          principal(tenantA),
-          "quarterly-fox.txt",
-          "a",
-        );
+        const named = yield* createReady(principal(tenantA), "quarterly-fox.txt", "a");
         const typed = yield* createReadyWithType(
           principal(tenantA),
           "diagram.svg",
@@ -310,10 +283,9 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
     );
     expect(found.first.items).toHaveLength(1);
     expect(found.second.items).toHaveLength(1);
-    expect(new Set([
-      found.first.items[0]!.id,
-      found.second.items[0]!.id,
-    ])).toEqual(new Set([found.named, found.typed]));
+    expect(new Set([found.first.items[0]!.id, found.second.items[0]!.id])).toEqual(
+      new Set([found.named, found.typed]),
+    );
     expect(found.other.items).toHaveLength(0);
   });
 
@@ -339,19 +311,11 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         );
         const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
         const blobs = yield* BlobStore;
-        yield* blobs.devPut!(
-          initiated.item.stagingKey,
-          bytes,
-          "text/plain",
-          token,
-        );
+        yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
 
         // confirm and reaper contend for the same pending row
         const [confirmExit, reaped] = yield* Effect.all(
-          [
-            Effect.either(engine.confirm(initiated.item.id)),
-            reapPending({ pendingTtlMs: 1 }),
-          ],
+          [Effect.either(engine.confirm(initiated.item.id)), reapPending({ pendingTtlMs: 1 })],
           { concurrency: "unbounded" },
         );
 

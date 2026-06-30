@@ -8,8 +8,12 @@ function Cart({ subtotal }) {
   const [tax, setTax] = useState(0);
   const [total, setTotal] = useState(0);
 
-  useEffect(() => { setTax(subtotal * 0.1); }, [subtotal]);
-  useEffect(() => { setTotal(subtotal + tax); }, [subtotal, tax]);
+  useEffect(() => {
+    setTax(subtotal * 0.1);
+  }, [subtotal]);
+  useEffect(() => {
+    setTotal(subtotal + tax);
+  }, [subtotal, tax]);
 }
 
 // GOOD: inline computation
@@ -23,11 +27,11 @@ function Cart({ subtotal }) {
 
 ```tsx
 // BAD
-const [fullName, setFullName] = useState('');
+const [fullName, setFullName] = useState("");
 useEffect(() => {
-  setFullName(firstName + ' ' + lastName);
+  setFullName(firstName + " " + lastName);
 }, [firstName, lastName]);
 
 // GOOD
-const fullName = firstName + ' ' + lastName;
+const fullName = firstName + " " + lastName;
 ```

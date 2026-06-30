@@ -27,7 +27,9 @@ function Toggle({ isOn, onChange }) {
 
 ```tsx
 // BAD: child fetches, then notifies parent via effect
-useEffect(() => { if (data) onFetched(data); }, [onFetched, data]);
+useEffect(() => {
+  if (data) onFetched(data);
+}, [onFetched, data]);
 
 // GOOD: parent owns the fetch, passes data down
 function Parent() {

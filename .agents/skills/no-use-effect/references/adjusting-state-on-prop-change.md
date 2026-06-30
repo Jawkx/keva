@@ -8,7 +8,7 @@ When you only need to adjust some state (not reset everything):
 function List({ items }) {
   const [selectedId, setSelectedId] = useState(null);
   // If selected item no longer exists, selection clears automatically
-  const selection = items.find(item => item.id === selectedId) ?? null;
+  const selection = items.find((item) => item.id === selectedId) ?? null;
 }
 ```
 

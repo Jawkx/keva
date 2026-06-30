@@ -59,10 +59,7 @@ export const makeRuntimeLayer = (config: RuntimeConfig) => {
   const blobs = config.s3
     ? S3BlobStoreLive(config.s3)
     : MemoryBlobStoreLive({
-        baseUrl:
-          config.loopbackBaseUrl !== undefined
-            ? config.loopbackBaseUrl
-            : config.baseUrl,
+        baseUrl: config.loopbackBaseUrl !== undefined ? config.loopbackBaseUrl : config.baseUrl,
       });
   const tokens = config.databaseUrl
     ? PostgresApiTokenStoreLive(config.databaseUrl)
@@ -72,9 +69,7 @@ export const makeRuntimeLayer = (config: RuntimeConfig) => {
         TokenAndStaticAuthFromStoreLive({
           staticToken: config.staticToken,
           tenantId: config.tenantId,
-          ...(config.sessionResolver
-            ? { sessionResolver: config.sessionResolver }
-            : {}),
+          ...(config.sessionResolver ? { sessionResolver: config.sessionResolver } : {}),
         }),
         tokens,
       )

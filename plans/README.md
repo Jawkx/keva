@@ -9,14 +9,14 @@ greenfield scaffold plan.
 
 ## How the plan is organized
 
-| Doc | Covers |
-|---|---|
-| [`architecture.md`](./architecture.md) | Stack decisions, the layered architecture, monorepo layout, rejected alternatives. |
-| [`data-model.md`](./data-model.md) | The item/property model: the system-vs-properties split, the captured/derived/enriched tiers, and the exact property & query semantics. |
-| [`auth.md`](./auth.md) | Authentication, authorization, tenancy. Better Auth sessions for people, opaque tokens for machines, one `Principal`. |
-| [`api.md`](./api.md) | The HTTP surface, the upload/download flows, and the typed error contract. |
-| [`lifecycle.md`](./lifecycle.md) | The item state machine (`pending`/`ready`/`deleting`): immutable-final-key uploads, idempotent confirm, two-phase delete, and the reaper/sweeper. |
-| [`roadmap.md`](./roadmap.md) | Remaining work and guardrails. Completed implementation phases have been removed. |
+| Doc                                    | Covers                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`architecture.md`](./architecture.md) | Stack decisions, the layered architecture, monorepo layout, rejected alternatives.                                                                |
+| [`data-model.md`](./data-model.md)     | The item/property model: the system-vs-properties split, the captured/derived/enriched tiers, and the exact property & query semantics.           |
+| [`auth.md`](./auth.md)                 | Authentication, authorization, tenancy. Better Auth sessions for people, opaque tokens for machines, one `Principal`.                             |
+| [`api.md`](./api.md)                   | The HTTP surface, the upload/download flows, and the typed error contract.                                                                        |
+| [`lifecycle.md`](./lifecycle.md)       | The item state machine (`pending`/`ready`/`deleting`): immutable-final-key uploads, idempotent confirm, two-phase delete, and the reaper/sweeper. |
+| [`roadmap.md`](./roadmap.md)           | Remaining work and guardrails. Completed implementation phases have been removed.                                                                 |
 
 ## What keva is
 
@@ -43,12 +43,12 @@ framework, the blob backend, or the deploy target never touches the core.
 ## Bring Your Own Agent (a hard architecture constraint)
 
 keva does **not** run inference, enrichment, or hosted agents. It is the
-*substrate* agents plug into. An agent connects over the API/MCP, computes
+_substrate_ agents plug into. An agent connects over the API/MCP, computes
 embeddings/tags/captions itself, and **writes them back as properties**; keva
 stores, indexes, and serves. This keeps keva free of model/compute concerns —
 the metadata and (later) vector index are infrastructure, not inference. It also
 draws a clean line in the data model (see [`data-model.md`](./data-model.md)):
-keva derives only what it can know *without opening the file*; everything that
+keva derives only what it can know _without opening the file_; everything that
 requires understanding the bytes is enriched by the agent.
 
 ## Technical non-goals (for now)

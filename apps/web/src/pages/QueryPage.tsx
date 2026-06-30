@@ -1,12 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  IconAlertTriangle,
-  IconCode,
-  IconPlus,
-  IconSearch,
-  IconX,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconCode, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import type { Operator } from "@keva/schema";
 import type { KevaItem, Query } from "@keva/sdk";
 import { CodeBlock } from "../components/CodeBlock";
@@ -45,16 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const OPERATORS: Operator[] = [
-  "eq",
-  "neq",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "contains",
-  "exists",
-];
+const OPERATORS: Operator[] = ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"];
 
 type ValueType = "string" | "number" | "boolean";
 const VALUE_TYPES: ValueType[] = ["string", "number", "boolean"];
@@ -83,9 +68,7 @@ export function QueryPage() {
   const [showApi, setShowApi] = useState(false);
 
   const update = (index: number, patch: Partial<Row>) => {
-    setRows((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
-    );
+    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };
 
   const where = useMemo<Query["where"]>(
@@ -137,10 +120,7 @@ const { items } = await keva.query(${body});`;
 
   return (
     <div>
-      <PageHeader
-        title="Query"
-        description="Filter items by their properties and system fields."
-      />
+      <PageHeader title="Query" description="Filter items by their properties and system fields." />
 
       <p className="mb-4 text-sm text-muted-foreground">
         Keys can be a bare property name, <code className="font-mono">name</code>,{" "}
@@ -185,9 +165,7 @@ const { items } = await keva.query(${body});`;
                 <>
                   <Select
                     value={row.valueType}
-                    onValueChange={(next) =>
-                      update(index, { valueType: next as ValueType })
-                    }
+                    onValueChange={(next) => update(index, { valueType: next as ValueType })}
                   >
                     <SelectTrigger className="w-28">
                       <SelectValue />
@@ -205,9 +183,7 @@ const { items } = await keva.query(${body});`;
                   {row.valueType === "boolean" ? (
                     <Select
                       value={row.value || "true"}
-                      onValueChange={(next) =>
-                        update(index, { value: String(next) })
-                      }
+                      onValueChange={(next) => update(index, { value: String(next) })}
                     >
                       <SelectTrigger className="w-28">
                         <SelectValue />
@@ -237,9 +213,7 @@ const { items } = await keva.query(${body});`;
                 aria-label="Remove condition"
                 onClick={() =>
                   setRows((prev) =>
-                    prev.length === 1
-                      ? [emptyRow()]
-                      : prev.filter((_, i) => i !== index),
+                    prev.length === 1 ? [emptyRow()] : prev.filter((_, i) => i !== index),
                   )
                 }
               >
@@ -249,10 +223,7 @@ const { items } = await keva.query(${body});`;
           ))}
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
-            <Button
-              variant="outline"
-              onClick={() => setRows((prev) => [...prev, emptyRow()])}
-            >
+            <Button variant="outline" onClick={() => setRows((prev) => [...prev, emptyRow()])}>
               <IconPlus data-icon="inline-start" />
               Add condition
             </Button>
@@ -267,18 +238,10 @@ const { items } = await keva.query(${body});`;
                 max={1000}
                 className="w-24"
                 value={limit}
-                onChange={(e) =>
-                  setLimit(
-                    Math.min(1000, Math.max(1, Number(e.target.value) || 1)),
-                  )
-                }
+                onChange={(e) => setLimit(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))}
               />
             </div>
-            <Button
-              variant="ghost"
-              className="ml-auto"
-              onClick={() => setShowApi((v) => !v)}
-            >
+            <Button variant="ghost" className="ml-auto" onClick={() => setShowApi((v) => !v)}>
               <IconCode data-icon="inline-start" />
               {showApi ? "Hide API" : "Show API"}
             </Button>
@@ -332,9 +295,7 @@ const { items } = await keva.query(${body});`;
                   <IconSearch />
                 </EmptyMedia>
                 <EmptyTitle>No matches</EmptyTitle>
-                <EmptyDescription>
-                  No items matched these conditions.
-                </EmptyDescription>
+                <EmptyDescription>No items matched these conditions.</EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
@@ -352,16 +313,11 @@ const { items } = await keva.query(${body});`;
                   {results.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">
-                        <Link
-                          to={`/items/${item.id}`}
-                          className="hover:underline"
-                        >
+                        <Link to={`/items/${item.id}`} className="hover:underline">
                           {item.name}
                         </Link>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {item.contentType}
-                      </TableCell>
+                      <TableCell className="text-muted-foreground">{item.contentType}</TableCell>
                       <TableCell className="text-muted-foreground tabular-nums">
                         {formatBytes(item.size)}
                       </TableCell>

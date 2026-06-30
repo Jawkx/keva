@@ -11,11 +11,7 @@ const principal = (tenantId: string): Principal => ({
   via: "token",
 });
 
-const upload = (
-  tenantId: string,
-  name: string,
-  bytes: Uint8Array,
-) =>
+const upload = (tenantId: string, name: string, bytes: Uint8Array) =>
   Effect.gen(function* () {
     const engine = makeKevaEngine(principal(tenantId));
     const initiated = yield* engine.initiate({
@@ -38,16 +34,9 @@ const upload = (
 
 describe("KevaEngine", () => {
   it("runs an upload/query/download roundtrip with tenant isolation", async () => {
-    const layer = Layer.merge(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
-    );
+    const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
     const program = Effect.gen(function* () {
-      const item = yield* upload(
-        "tenant-a",
-        "hello.txt",
-        new TextEncoder().encode("hello"),
-      );
+      const item = yield* upload("tenant-a", "hello.txt", new TextEncoder().encode("hello"));
       const own = yield* makeKevaEngine(principal("tenant-a")).query({
         where: [{ key: "name", op: "eq", value: "hello.txt" }],
         limit: 100,
@@ -66,17 +55,10 @@ describe("KevaEngine", () => {
   });
 
   it("searches ready items by name and content type with tenant-scoped pagination", async () => {
-    const layer = Layer.merge(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
-    );
+    const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
     const program = Effect.gen(function* () {
       const tenant = makeKevaEngine(principal("tenant-a"));
-      const named = yield* upload(
-        "tenant-a",
-        "quarterly-fox.txt",
-        new TextEncoder().encode("one"),
-      );
+      const named = yield* upload("tenant-a", "quarterly-fox.txt", new TextEncoder().encode("one"));
       const typed = yield* tenant.initiate({
         name: "diagram.svg",
         contentType: "image/fox-icon",
@@ -118,20 +100,14 @@ describe("KevaEngine", () => {
     );
     expect(result.firstPage.items).toHaveLength(1);
     expect(result.secondPage.items).toHaveLength(1);
-    expect(
-      new Set([
-        result.firstPage.items[0]!.id,
-        result.secondPage.items[0]!.id,
-      ]),
-    ).toEqual(new Set([result.named.id, result.contentTypeMatch.id]));
+    expect(new Set([result.firstPage.items[0]!.id, result.secondPage.items[0]!.id])).toEqual(
+      new Set([result.named.id, result.contentTypeMatch.id]),
+    );
     expect(result.otherTenant.items).toHaveLength(0);
   });
 
   it("does not overwrite final bytes when a staging grant is replayed", async () => {
-    const layer = Layer.merge(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
-    );
+    const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
     const program = Effect.gen(function* () {
       const engine = makeKevaEngine(principal("tenant-a"));
       const first = new TextEncoder().encode("first");
@@ -144,12 +120,7 @@ describe("KevaEngine", () => {
       });
       const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
       const blobs = yield* BlobStore;
-      yield* blobs.devPut!(
-        initiated.item.stagingKey,
-        first,
-        "text/plain",
-        token,
-      );
+      yield* blobs.devPut!(initiated.item.stagingKey, first, "text/plain", token);
       yield* engine.confirm(initiated.item.id);
       yield* blobs.devPut!(
         initiated.item.stagingKey,
@@ -168,10 +139,7 @@ describe("KevaEngine", () => {
   });
 
   it("reaps pending records and sweeps deleting records", async () => {
-    const layer = Layer.merge(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
-    );
+    const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
     const program = Effect.gen(function* () {
       const metadata = yield* MetadataStore;
       const timestamp = new Date(Date.now() - 10_000).toISOString();
@@ -239,12 +207,7 @@ describe("KevaEngine", () => {
       });
       const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
       const blobs = yield* BlobStore;
-      yield* blobs.devPut!(
-        initiated.item.stagingKey,
-        bytes,
-        "text/plain",
-        token,
-      );
+      yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
       const first = yield* engine.confirm(initiated.item.id);
       const second = yield* engine.confirm(initiated.item.id);
       return { first, second };
@@ -258,14 +221,8 @@ describe("KevaEngine", () => {
   it("is tenant-scoped: another tenant cannot get the item (NotFound)", async () => {
     const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
     const program = Effect.gen(function* () {
-      const owner = yield* upload(
-        "owner",
-        "secret.bin",
-        new TextEncoder().encode("secret"),
-      );
-      const intruderGet = yield* Effect.either(
-        makeKevaEngine(principal("intruder")).get(owner.id),
-      );
+      const owner = yield* upload("owner", "secret.bin", new TextEncoder().encode("secret"));
+      const intruderGet = yield* Effect.either(makeKevaEngine(principal("intruder")).get(owner.id));
       return { intruderGet };
     }).pipe(Effect.provide(layer));
 
@@ -280,11 +237,7 @@ describe("KevaEngine", () => {
     const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
     const program = Effect.gen(function* () {
       const engine = makeKevaEngine(principal("tenant-a"));
-      const item = yield* upload(
-        "tenant-a",
-        "notes.txt",
-        new TextEncoder().encode("hello keva"),
-      );
+      const item = yield* upload("tenant-a", "notes.txt", new TextEncoder().encode("hello keva"));
       yield* engine.patch(item.id, {
         set: { location: "bali", rating: 5, tags: ["diving", "summer"] },
         unset: [],

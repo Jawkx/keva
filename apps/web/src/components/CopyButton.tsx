@@ -31,12 +31,7 @@ export function CopyButton({
   };
 
   return (
-    <Button
-      size={size}
-      variant={variant}
-      onClick={onCopy}
-      aria-label={label}
-    >
+    <Button size={size} variant={variant} onClick={onCopy} aria-label={label}>
       {copied ? (
         <IconCheck data-icon={iconOnly ? undefined : "inline-start"} />
       ) : (

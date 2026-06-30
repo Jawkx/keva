@@ -1,10 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
@@ -35,17 +31,8 @@ import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { UploadModal } from "../components/UploadModal";
 import { errorMessage } from "../lib/errors";
-import {
-  formatPropertyValue,
-  formatBytes,
-  formatContentType,
-  formatRelative,
-} from "../lib/format";
-import {
-  prependItemToPages,
-  removeItemsFromPages,
-  type ItemsCache,
-} from "../lib/items-cache";
+import { formatPropertyValue, formatBytes, formatContentType, formatRelative } from "../lib/format";
+import { prependItemToPages, removeItemsFromPages, type ItemsCache } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import {
@@ -71,16 +58,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -154,9 +133,7 @@ const columns = [
         onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
         className={cn(
           "transition-opacity",
-          selectModeOf(table.options.meta)
-            ? "opacity-100"
-            : "opacity-0 group-hover:opacity-100",
+          selectModeOf(table.options.meta) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
       />
     ),
@@ -176,9 +153,7 @@ const columns = [
             type="button"
             aria-label={`Upload failed: ${upload.error ?? "unknown error"}. Click to retry`}
             title={`${upload.error ?? "Upload failed"} — click to retry`}
-            onClick={() =>
-              table.options.meta?.onRetryUpload(row.original.id, upload.file)
-            }
+            onClick={() => table.options.meta?.onRetryUpload(row.original.id, upload.file)}
             className="flex size-5 items-center justify-center rounded text-destructive hover:bg-destructive/10"
           >
             <IconAlertTriangle className="size-4" />
@@ -230,9 +205,7 @@ const columns = [
     id: "createdAt",
     header: ({ column }) => <SortButton column={column} label="Created" />,
     cell: (ctx) => (
-      <span className="text-muted-foreground">
-        {formatRelative(ctx.row.original.createdAt)}
-      </span>
+      <span className="text-muted-foreground">{formatRelative(ctx.row.original.createdAt)}</span>
     ),
   }),
   columnHelper.display({
@@ -240,8 +213,7 @@ const columns = [
     header: "Properties",
     cell: (ctx) => {
       const keys = Object.keys(ctx.row.original.properties).slice(0, 2);
-      if (keys.length === 0)
-        return <span className="text-muted-foreground">—</span>;
+      if (keys.length === 0) return <span className="text-muted-foreground">—</span>;
       return (
         <div className="flex flex-wrap gap-1">
           {keys.map((key) => (
@@ -264,9 +236,7 @@ export function FilesPage() {
 
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: "createdAt", desc: true },
-  ]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
@@ -304,10 +274,7 @@ export function FilesPage() {
   );
   // Upload rows sit on top of the server list; memoized so react-table doesn't
   // rebuild its row model every render.
-  const tableData = useMemo<FileRow[]>(
-    () => [...uploads, ...serverItems],
-    [uploads, serverItems],
-  );
+  const tableData = useMemo<FileRow[]>(() => [...uploads, ...serverItems], [uploads, serverItems]);
 
   // Detail open in the side panel; collapse secondary columns so the list
   // stays readable in the narrower remaining space.
@@ -336,18 +303,15 @@ export function FilesPage() {
         if (activeSearch.trim()) {
           void queryClient.invalidateQueries({ queryKey: ["items"] });
         } else {
-          queryClient.setQueryData<ItemsCache>(
-            ["items", { search: activeSearch }],
-            (old) => (old ? prependItemToPages(old, item) : old),
+          queryClient.setQueryData<ItemsCache>(["items", { search: activeSearch }], (old) =>
+            old ? prependItemToPages(old, item) : old,
           );
         }
         setUploads((prev) => prev.filter((r) => r.id !== id));
       } catch (err) {
         const error = errorMessage(err);
         setUploads((prev) =>
-          prev.map((r) =>
-            r.id === id ? { ...r, upload: { status: "error", file, error } } : r,
-          ),
+          prev.map((r) => (r.id === id ? { ...r, upload: { status: "error", file, error } } : r)),
         );
       }
     },
@@ -360,10 +324,7 @@ export function FilesPage() {
         id: `upload:${crypto.randomUUID()}`,
         file,
       }));
-      setUploads((prev) => [
-        ...entries.map((e) => optimisticRow(e.id, e.file)),
-        ...prev,
-      ]);
+      setUploads((prev) => [...entries.map((e) => optimisticRow(e.id, e.file)), ...prev]);
       for (const { id, file } of entries) void uploadOne(id, file);
     },
     [uploadOne],
@@ -372,9 +333,7 @@ export function FilesPage() {
   const retryUpload = useCallback(
     (id: string, file: File) => {
       setUploads((prev) =>
-        prev.map((r) =>
-          r.id === id ? { ...r, upload: { status: "uploading", file } } : r,
-        ),
+        prev.map((r) => (r.id === id ? { ...r, upload: { status: "uploading", file } } : r)),
       );
       void uploadOne(id, file);
     },
@@ -425,14 +384,10 @@ export function FilesPage() {
     mutationFn: (ids: string[]) => keva.deleteMany(ids),
     onSuccess: (result, ids) => {
       if (result.deleted.length > 0) {
-        toast.success(
-          `Deleted ${result.deleted.length} ${plural(result.deleted.length)}`,
-        );
+        toast.success(`Deleted ${result.deleted.length} ${plural(result.deleted.length)}`);
       }
       if (result.failed.length > 0) {
-        toast.error(
-          `Failed to delete ${result.failed.length} ${plural(result.failed.length)}`,
-        );
+        toast.error(`Failed to delete ${result.failed.length} ${plural(result.failed.length)}`);
       }
       // Remove only the ids that actually deleted, from every cached list, with
       // no refetch (keeps loaded pages and scroll).
@@ -471,10 +426,7 @@ export function FilesPage() {
               >
                 {header.isPlaceholder
                   ? null
-                  : flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
-                    )}
+                  : flexRender(header.column.columnDef.header, header.getContext())}
               </TableHead>
             ))}
           </TableRow>
@@ -485,50 +437,37 @@ export function FilesPage() {
           ? Array.from({ length: 8 }).map((_, i) => (
               <TableRow key={`skeleton-${i}`}>
                 {table.getVisibleLeafColumns().map((col) => (
-                  <TableCell
-                    key={col.id}
-                    className={col.id === "select" ? "w-10" : undefined}
-                  >
+                  <TableCell key={col.id} className={col.id === "select" ? "w-10" : undefined}>
                     {col.id !== "select" && <Skeleton className="h-5 w-full" />}
                   </TableCell>
                 ))}
               </TableRow>
             ))
           : rows.map((row) => (
-          <TableRow
-            key={row.id}
-            data-state={
-              row.getIsSelected() || row.original.id === selectedId
-                ? "selected"
-                : undefined
-            }
-            className={cn("group", !row.original.upload && "cursor-pointer")}
-            onClick={() => {
-              // Uploading / failed rows aren't real items — nothing to open.
-              if (row.original.upload) return;
-              navigate(
-                row.original.id === selectedId
-                  ? "/"
-                  : `/items/${row.original.id}`,
-              );
-            }}
-          >
-            {row.getVisibleCells().map((cell) => (
-              <TableCell
-                key={cell.id}
-                className={cell.column.id === "select" ? "w-10" : undefined}
-                // The checkbox cell toggles selection; don't also open detail.
-                onClick={
-                  cell.column.id === "select"
-                    ? (e) => e.stopPropagation()
-                    : undefined
+              <TableRow
+                key={row.id}
+                data-state={
+                  row.getIsSelected() || row.original.id === selectedId ? "selected" : undefined
                 }
+                className={cn("group", !row.original.upload && "cursor-pointer")}
+                onClick={() => {
+                  // Uploading / failed rows aren't real items — nothing to open.
+                  if (row.original.upload) return;
+                  navigate(row.original.id === selectedId ? "/" : `/items/${row.original.id}`);
+                }}
               >
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </TableCell>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell
+                    key={cell.id}
+                    className={cell.column.id === "select" ? "w-10" : undefined}
+                    // The checkbox cell toggles selection; don't also open detail.
+                    onClick={cell.column.id === "select" ? (e) => e.stopPropagation() : undefined}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
             ))}
-          </TableRow>
-        ))}
       </TableBody>
     </Table>
   );
@@ -554,16 +493,11 @@ export function FilesPage() {
       <div className="flex shrink-0 flex-wrap items-center gap-3 p-3">
         {selectMode ? (
           <>
-            <span className="text-sm font-medium">
-              {selectedCount} selected
-            </span>
+            <span className="text-sm font-medium">{selectedCount} selected</span>
             <Button variant="ghost" onClick={() => setRowSelection({})}>
               Clear
             </Button>
-            <AlertDialog
-              open={bulkConfirmOpen}
-              onOpenChange={setBulkConfirmOpen}
-            >
+            <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
               <AlertDialogTrigger
                 render={
                   <Button
@@ -582,9 +516,8 @@ export function FilesPage() {
                     Delete {selectedCount} {plural(selectedCount)}?
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently removes the selected{" "}
-                    {plural(selectedCount)} and their properties. This cannot be
-                    undone.
+                    This permanently removes the selected {plural(selectedCount)} and their
+                    properties. This cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -604,10 +537,7 @@ export function FilesPage() {
           </>
         ) : (
           <>
-            <form
-              className="flex w-full items-center gap-2 sm:w-72"
-              onSubmit={runSearch}
-            >
+            <form className="flex w-full items-center gap-2 sm:w-72" onSubmit={runSearch}>
               <div className="relative min-w-0 flex-1">
                 <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -636,9 +566,7 @@ export function FilesPage() {
                 <IconSearch />
               </EmptyMedia>
               <EmptyTitle>No matches</EmptyTitle>
-              <EmptyDescription>
-                No items match “{activeSearch}”.
-              </EmptyDescription>
+              <EmptyDescription>No items match “{activeSearch}”.</EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -705,10 +633,7 @@ export function FilesPage() {
           </Empty>
         </div>
       ) : splitOpen ? (
-        <ResizablePanelGroup
-          orientation="horizontal"
-          className="min-h-0 w-full min-w-0 flex-1"
-        >
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 w-full min-w-0 flex-1">
           <ResizablePanel defaultSize={58} minSize={35} className="min-w-0">
             {leftPane}
           </ResizablePanel>
@@ -723,9 +648,7 @@ export function FilesPage() {
           </ResizablePanel>
         </ResizablePanelGroup>
       ) : (
-        <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-          {leftPane}
-        </div>
+        <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">{leftPane}</div>
       )}
 
       {/* Narrow screens: detail opens as a bottom sheet over the list. */}
@@ -759,13 +682,7 @@ export function FilesPage() {
   );
 }
 
-function SortButton({
-  column,
-  label,
-}: {
-  column: Column<FileRow, unknown>;
-  label: string;
-}) {
+function SortButton({ column, label }: { column: Column<FileRow, unknown>; label: string }) {
   const sorted = column.getIsSorted();
   return (
     <button

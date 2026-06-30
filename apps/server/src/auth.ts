@@ -26,9 +26,7 @@ export class Authenticator extends Context.Tag("@keva/server/Authenticator")<
   AuthenticatorService
 >() {}
 
-type AuthStrategy = (
-  request: AuthRequest,
-) => Effect.Effect<Principal | null, StorageUnavailable>;
+type AuthStrategy = (request: AuthRequest) => Effect.Effect<Principal | null, StorageUnavailable>;
 
 const secureEqual = (left: string, right: string): boolean => {
   const leftBytes = new TextEncoder().encode(left);
@@ -49,9 +47,7 @@ export const StaticTokenAuthLive = (config: {
   Layer.succeed(Authenticator, {
     authenticate: ({ headers }) => {
       const authorization = headers.get("authorization");
-      const candidate = authorization?.startsWith("Bearer ")
-        ? authorization.slice(7)
-        : "";
+      const candidate = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
       return secureEqual(candidate, config.token)
         ? Effect.succeed({
             tenantId: config.tenantId,
@@ -76,16 +72,15 @@ export const CompositeAuthLive = (
       }),
   });
 
-export const staticTokenStrategy = (config: {
-  readonly token: string;
-  readonly tenantId: string;
-  readonly scopes?: ReadonlyArray<Scope>;
-}): AuthStrategy =>
+export const staticTokenStrategy =
+  (config: {
+    readonly token: string;
+    readonly tenantId: string;
+    readonly scopes?: ReadonlyArray<Scope>;
+  }): AuthStrategy =>
   ({ headers }) => {
     const authorization = headers.get("authorization");
-    const candidate = authorization?.startsWith("Bearer ")
-      ? authorization.slice(7)
-      : "";
+    const candidate = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
     return Effect.succeed(
       secureEqual(candidate, config.token)
         ? {
@@ -98,9 +93,7 @@ export const staticTokenStrategy = (config: {
   };
 
 export interface ApiTokenStoreService {
-  readonly resolve: (
-    token: string,
-  ) => Effect.Effect<Principal | null, StorageUnavailable>;
+  readonly resolve: (token: string) => Effect.Effect<Principal | null, StorageUnavailable>;
   readonly mint: (
     tenantId: string,
     input: MintToken,
@@ -108,10 +101,7 @@ export interface ApiTokenStoreService {
   readonly list: (
     tenantId: string,
   ) => Effect.Effect<ReadonlyArray<TokenRecord>, StorageUnavailable>;
-  readonly revoke: (
-    tenantId: string,
-    id: string,
-  ) => Effect.Effect<boolean, StorageUnavailable>;
+  readonly revoke: (tenantId: string, id: string) => Effect.Effect<boolean, StorageUnavailable>;
 }
 
 export class ApiTokenStore extends Context.Tag("@keva/server/ApiTokenStore")<
@@ -126,22 +116,15 @@ export const randomTokenPart = (bytes: number): string => {
 
 const TOKEN_PATTERN = /^keva_sk_([^_]+)_([^_]+)$/;
 
-export const parseTokenParts = (
-  token: string,
-): { id: string; secret: string } | null => {
+export const parseTokenParts = (token: string): { id: string; secret: string } | null => {
   const match = TOKEN_PATTERN.exec(token);
   return match ? { id: match[1]!, secret: match[2]! } : null;
 };
 
 const hashSecret = async (secret: string): Promise<string> => {
   const bytes = new TextEncoder().encode(secret);
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    bytes.slice().buffer as ArrayBuffer,
-  );
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
 interface TokenRow {
@@ -159,8 +142,8 @@ const iso = (value: Date | string | null): string | null =>
   value === null
     ? null
     : value instanceof Date
-    ? value.toISOString()
-    : new Date(value).toISOString();
+      ? value.toISOString()
+      : new Date(value).toISOString();
 
 const tokenRecord = (row: TokenRow): TokenRecord => ({
   id: row.id,
@@ -180,10 +163,7 @@ const storageError = (): StorageUnavailable =>
 
 export const LAST_USED_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 
-export const shouldRefreshLastUsed = (
-  lastUsedAt: Date | string | null,
-  now: Date,
-): boolean =>
+export const shouldRefreshLastUsed = (lastUsedAt: Date | string | null, now: Date): boolean =>
   lastUsedAt === null ||
   now.getTime() - new Date(lastUsedAt).getTime() >= LAST_USED_UPDATE_INTERVAL_MS;
 
@@ -265,9 +245,7 @@ export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
     }),
 });
 
-export const PostgresApiTokenStoreLive = (
-  url: string,
-): Layer.Layer<ApiTokenStore> =>
+export const PostgresApiTokenStoreLive = (url: string): Layer.Layer<ApiTokenStore> =>
   Layer.scoped(
     ApiTokenStore,
     Effect.acquireRelease(
@@ -276,9 +254,8 @@ export const PostgresApiTokenStoreLive = (
     ).pipe(Effect.map(makePostgresApiTokenStore)),
   );
 
-export const tokenStrategy = (
-  store: ApiTokenStoreService,
-): AuthStrategy =>
+export const tokenStrategy =
+  (store: ApiTokenStoreService): AuthStrategy =>
   ({ headers }) => {
     const authorization = headers.get("authorization");
     if (!authorization?.startsWith("Bearer keva_sk_")) {
@@ -313,9 +290,7 @@ export const TokenAndStaticAuthFromStoreLive = (config: {
       const store = yield* ApiTokenStore;
       const strategies = [
         tokenStrategy(store),
-        ...(config.sessionResolver
-          ? [sessionStrategy(config.sessionResolver)]
-          : []),
+        ...(config.sessionResolver ? [sessionStrategy(config.sessionResolver)] : []),
         staticTokenStrategy({
           token: config.staticToken,
           tenantId: config.tenantId,
@@ -334,22 +309,18 @@ export const TokenAndStaticAuthFromStoreLive = (config: {
     }),
   );
 
-export type SessionResolver = (
-  headers: Headers,
-) => Promise<{
+export type SessionResolver = (headers: Headers) => Promise<{
   readonly tenantId: string;
   readonly scopes?: ReadonlyArray<Scope>;
 } | null>;
 
-export const sessionStrategy = (
-  resolve: SessionResolver,
-): AuthStrategy =>
+export const sessionStrategy =
+  (resolve: SessionResolver): AuthStrategy =>
   ({ headers }) => {
     if (!headers.get("cookie")) return Effect.succeed(null);
     return Effect.tryPromise({
       try: () => resolve(headers),
-      catch: () =>
-        new StorageUnavailable({ message: "Session storage unavailable" }),
+      catch: () => new StorageUnavailable({ message: "Session storage unavailable" }),
     }).pipe(
       Effect.map((session) =>
         session
@@ -358,16 +329,12 @@ export const sessionStrategy = (
               scopes: [...(session.scopes ?? ["read", "write", "delete", "admin"])],
               via: "session" as const,
             }
-          : null
+          : null,
       ),
     );
   };
 
-export const requireAdminSession = (
-  principal: Principal,
-): Effect.Effect<void, Forbidden> =>
+export const requireAdminSession = (principal: Principal): Effect.Effect<void, Forbidden> =>
   principal.via === "session" && principal.scopes.includes("admin")
     ? Effect.void
-    : Effect.fail(
-        new Forbidden({ message: "Token management requires an admin session" }),
-      );
+    : Effect.fail(new Forbidden({ message: "Token management requires an admin session" }));

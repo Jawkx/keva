@@ -13,9 +13,7 @@ describe("migrations", () => {
     const migration = await readFile(migrationPath, "utf8");
 
     expect(migration).toContain('ALTER TABLE "objects" RENAME TO "items"');
-    expect(migration).toContain(
-      'ALTER TABLE "items" RENAME COLUMN "attributes" TO "properties"',
-    );
+    expect(migration).toContain('ALTER TABLE "items" RENAME COLUMN "attributes" TO "properties"');
     expect(migration).not.toMatch(/drop\s+table\s+"objects"/i);
     expect(migration).not.toContain('CREATE TABLE "items"');
   });

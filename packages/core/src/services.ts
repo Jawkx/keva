@@ -26,16 +26,9 @@ export interface BlobStoreService {
     size: number,
     contentType: string,
   ) => Effect.Effect<PresignedRequest, KevaError>;
-  readonly presignDownload: (
-    key: string,
-  ) => Effect.Effect<PresignedRequest, KevaError>;
-  readonly head: (
-    key: string,
-  ) => Effect.Effect<BlobHead | null, KevaError>;
-  readonly copy: (
-    sourceKey: string,
-    destinationKey: string,
-  ) => Effect.Effect<void, KevaError>;
+  readonly presignDownload: (key: string) => Effect.Effect<PresignedRequest, KevaError>;
+  readonly head: (key: string) => Effect.Effect<BlobHead | null, KevaError>;
+  readonly copy: (sourceKey: string, destinationKey: string) => Effect.Effect<void, KevaError>;
   readonly delete: (key: string) => Effect.Effect<void, KevaError>;
   readonly devPut?: (
     key: string,
@@ -49,10 +42,7 @@ export interface BlobStoreService {
   ) => Effect.Effect<{ bytes: Uint8Array; contentType: string } | null, KevaError>;
 }
 
-export class BlobStore extends Context.Tag("@keva/core/BlobStore")<
-  BlobStore,
-  BlobStoreService
->() {}
+export class BlobStore extends Context.Tag("@keva/core/BlobStore")<BlobStore, BlobStoreService>() {}
 
 export interface ItemTransition {
   readonly status?: ItemStatus;
@@ -73,10 +63,7 @@ export interface ItemPatchInput {
 
 export interface MetadataStoreService {
   readonly insert: (item: KevaItem) => Effect.Effect<void, KevaError>;
-  readonly get: (
-    tenantId: string,
-    id: string,
-  ) => Effect.Effect<KevaItem | null, KevaError>;
+  readonly get: (tenantId: string, id: string) => Effect.Effect<KevaItem | null, KevaError>;
   readonly transition: (
     tenantId: string,
     id: string,
@@ -95,10 +82,7 @@ export interface MetadataStoreService {
     id: string,
     expectedStatus: ItemStatus,
   ) => Effect.Effect<boolean, KevaError>;
-  readonly query: (
-    tenantId: string,
-    query: Query,
-  ) => Effect.Effect<QueryResult, KevaError>;
+  readonly query: (tenantId: string, query: Query) => Effect.Effect<QueryResult, KevaError>;
   readonly listByStatus: (
     status: ItemStatus,
     limit: number,

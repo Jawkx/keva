@@ -23,12 +23,7 @@ interface UploadModalProps {
   initialFiles?: File[];
 }
 
-export function UploadModal({
-  open,
-  onOpenChange,
-  onUpload,
-  initialFiles = [],
-}: UploadModalProps) {
+export function UploadModal({ open, onOpenChange, onUpload, initialFiles = [] }: UploadModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>(initialFiles);
   const [dragging, setDragging] = useState(false);
@@ -50,8 +45,7 @@ export function UploadModal({
         <DialogHeader>
           <DialogTitle>Upload items</DialogTitle>
           <DialogDescription>
-            Add one or more files to keva. You can edit their properties
-            afterwards.
+            Add one or more files to keva. You can edit their properties afterwards.
           </DialogDescription>
         </DialogHeader>
 
@@ -74,9 +68,7 @@ export function UploadModal({
           )}
         >
           <IconCloudUpload className="size-6 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
-            Drag files here, or click to choose
-          </span>
+          <span className="text-sm text-muted-foreground">Drag files here, or click to choose</span>
           <input
             ref={inputRef}
             type="file"
@@ -102,9 +94,7 @@ export function UploadModal({
                   size="icon-xs"
                   variant="ghost"
                   aria-label={`Remove ${file.name}`}
-                  onClick={() =>
-                    setFiles((prev) => prev.filter((_, idx) => idx !== i))
-                  }
+                  onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
                 >
                   <IconX />
                 </Button>

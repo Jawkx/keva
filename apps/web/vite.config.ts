@@ -26,10 +26,7 @@ export default defineConfig({
   },
   server: {
     proxy: Object.fromEntries(
-      proxyPaths.map((path) => [
-        path,
-        { target: API_TARGET, changeOrigin: true },
-      ]),
+      proxyPaths.map((path) => [path, { target: API_TARGET, changeOrigin: true }]),
     ),
   },
 });

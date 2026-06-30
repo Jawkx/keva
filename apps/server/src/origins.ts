@@ -5,6 +5,9 @@ export const trustedOriginsFor = (
 ): string[] => [
   baseUrl,
   ...(configured
-    ? configured.split(",").map((origin) => origin.trim()).filter(Boolean)
+    ? configured
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean)
     : defaults),
 ];

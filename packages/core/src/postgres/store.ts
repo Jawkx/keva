@@ -9,10 +9,7 @@ import {
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
-import {
-  MetadataStore,
-  type MetadataStoreService,
-} from "../services.js";
+import { MetadataStore, type MetadataStoreService } from "../services.js";
 
 export interface PostgresConfig {
   readonly url: string;
@@ -60,18 +57,14 @@ const mapRow = (row: ItemRow): KevaItem => ({
   properties: row.properties,
 });
 
-const dbFailure = (): Internal =>
-  new Internal({ message: "Metadata store unavailable" });
+const dbFailure = (): Internal => new Internal({ message: "Metadata store unavailable" });
 
 const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, KevaError> =>
   Effect.tryPromise({ try: operation, catch: dbFailure });
 
-const encodeCursor = (item: KevaItem): string =>
-  btoa(JSON.stringify([item.createdAt, item.id]));
+const encodeCursor = (item: KevaItem): string => btoa(JSON.stringify([item.createdAt, item.id]));
 
-const decodeCursor = (
-  cursor: string,
-): Effect.Effect<readonly [string, string], ValidationError> =>
+const decodeCursor = (cursor: string): Effect.Effect<readonly [string, string], ValidationError> =>
   Effect.try({
     try: () => {
       const value = JSON.parse(atob(cursor)) as unknown;
@@ -82,7 +75,8 @@ const decodeCursor = (
         typeof value[1] !== "string" ||
         !Number.isFinite(Date.parse(value[0])) ||
         !ITEM_ID_PATTERN.test(value[1])
-      ) throw new Error("invalid cursor");
+      )
+        throw new Error("invalid cursor");
       return [value[0], value[1]] as const;
     },
     catch: () => new ValidationError({ message: "Invalid query cursor" }),
@@ -100,9 +94,7 @@ const systemColumn = (
   type: "string" | "number" | "nullable-string" | "timestamp";
 } | null => {
   const field = FIELD_BY_KEY.get(key);
-  return field
-    ? { fragment: sql.unsafe(field.column), type: field.queryType }
-    : null;
+  return field ? { fragment: sql.unsafe(field.column), type: field.queryType } : null;
 };
 
 const comparison = (sql: Sql, operator: string): Fragment => {
@@ -115,10 +107,7 @@ const comparison = (sql: Sql, operator: string): Fragment => {
   return sql.unsafe(allowed[operator] ?? "=");
 };
 
-const compileCondition = (
-  sql: Sql,
-  condition: QueryCondition,
-): Fragment => {
+const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
   const column = systemColumn(sql, condition.key);
   const value = condition.value;
   if (column) {
@@ -157,8 +146,7 @@ const compileCondition = (
   }
   if (condition.op === "contains") {
     const member = value as string | number | boolean;
-    const arrayMatch =
-      sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${sql.json([member])})`;
+    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${sql.json([member])})`;
     return typeof value === "string"
       ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${value} in properties ->> ${key}) > 0))`
       : arrayMatch;
@@ -172,9 +160,7 @@ const compileCondition = (
 const escapeLikePattern = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
-export const makePostgresMetadataStore = (
-  sql: Sql,
-): MetadataStoreService => ({
+export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   insert: (item) =>
     attempt(async () => {
       await sql`
@@ -207,14 +193,15 @@ export const makePostgresMetadataStore = (
       if (patch.size !== undefined) values.size = patch.size;
       if (patch.etag !== undefined) values.etag = patch.etag;
       if (patch.contentType !== undefined) values.content_type = patch.contentType;
-      const rows = olderThan === undefined
-        ? await sql`
+      const rows =
+        olderThan === undefined
+          ? await sql`
             update items set ${sql(values)}
             where tenant_id = ${tenantId} and id = ${id}
               and status in ${sql(from)}
             returning id
           `
-        : await sql`
+          : await sql`
             update items set ${sql(values)}
             where tenant_id = ${tenantId} and id = ${id}
               and status in ${sql(from)} and created_at < ${olderThan}
@@ -275,18 +262,17 @@ export const makePostgresMetadataStore = (
       }
       if (query.cursor) {
         const cursor = yield* decodeCursor(query.cursor);
-        predicates.push(
-          sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
-        );
+        predicates.push(sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`);
       }
       const where = predicates.reduce((left, right) => sql`${left} and ${right}`);
-      const rows = yield* attempt(() =>
-        sql<ItemRow[]>`
+      const rows = yield* attempt(
+        () =>
+          sql<ItemRow[]>`
           select * from items
           where ${where}
           order by created_at asc, id asc
           limit ${query.limit + 1}
-        `
+        `,
       );
       const items = rows.slice(0, query.limit).map(mapRow);
       return {
@@ -298,12 +284,13 @@ export const makePostgresMetadataStore = (
     }),
   listByStatus: (status, limit, olderThan) =>
     attempt(async () => {
-      const rows = olderThan === undefined
-        ? await sql<ItemRow[]>`
+      const rows =
+        olderThan === undefined
+          ? await sql<ItemRow[]>`
             select * from items where status = ${status}
             order by created_at asc limit ${limit}
           `
-        : await sql<ItemRow[]>`
+          : await sql<ItemRow[]>`
             select * from items
             where status = ${status} and created_at < ${olderThan}
             order by created_at asc limit ${limit}
@@ -312,9 +299,7 @@ export const makePostgresMetadataStore = (
     }),
 });
 
-export const PostgresMetadataStoreLive = (
-  config: PostgresConfig,
-): Layer.Layer<MetadataStore> =>
+export const PostgresMetadataStoreLive = (config: PostgresConfig): Layer.Layer<MetadataStore> =>
   Layer.scoped(
     MetadataStore,
     Effect.acquireRelease(
@@ -323,7 +308,7 @@ export const PostgresMetadataStoreLive = (
           max: config.maxConnections ?? 10,
           idle_timeout: config.idleTimeoutSeconds ?? 20,
           connect_timeout: config.connectTimeoutSeconds ?? 10,
-        })
+        }),
       ),
       (sql) => Effect.promise(() => sql.end({ timeout: 5 })),
     ).pipe(Effect.map(makePostgresMetadataStore)),

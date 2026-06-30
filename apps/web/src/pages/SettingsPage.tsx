@@ -4,13 +4,7 @@ import { authClient } from "../lib/auth";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordInput } from "../components/PasswordInput";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -60,9 +54,7 @@ export function SettingsPage() {
       setCurrentPassword("");
       setNewPassword("");
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Could not change password.",
-      );
+      toast.error(err instanceof Error ? err.message : "Could not change password.");
     } finally {
       setSavingPassword(false);
     }
@@ -94,11 +86,7 @@ export function SettingsPage() {
                   <FieldLabel htmlFor="email">Email</FieldLabel>
                   <Input id="email" value={email} disabled readOnly />
                 </Field>
-                <Button
-                  type="submit"
-                  className="w-fit"
-                  disabled={savingName || !name.trim()}
-                >
+                <Button type="submit" className="w-fit" disabled={savingName || !name.trim()}>
                   {savingName && <Spinner data-icon="inline-start" />}
                   Save
                 </Button>
@@ -118,9 +106,7 @@ export function SettingsPage() {
             <form onSubmit={onChangePassword}>
               <FieldGroup>
                 <Field className="max-w-sm">
-                  <FieldLabel htmlFor="current-password">
-                    Current password
-                  </FieldLabel>
+                  <FieldLabel htmlFor="current-password">Current password</FieldLabel>
                   <PasswordInput
                     id="current-password"
                     value={currentPassword}
@@ -142,9 +128,7 @@ export function SettingsPage() {
                 <Button
                   type="submit"
                   className="w-fit"
-                  disabled={
-                    savingPassword || !currentPassword || !newPassword
-                  }
+                  disabled={savingPassword || !currentPassword || !newPassword}
                 >
                   {savingPassword && <Spinner data-icon="inline-start" />}
                   Update password

@@ -1,17 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import {
-  IconAlertTriangle,
-  IconDownload,
-  IconPencil,
-  IconTrash,
-  IconX,
-} from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IconAlertTriangle, IconDownload, IconPencil, IconTrash, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import type { PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
@@ -23,11 +13,7 @@ import { CsvViewer } from "@/components/ui/csv-viewer";
 import { PDFViewer } from "@/components/ui/pdf-viewer";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate, formatRelative } from "../lib/format";
-import {
-  removeItemsFromPages,
-  replaceItemInPages,
-  type ItemsCache,
-} from "../lib/items-cache";
+import { removeItemsFromPages, replaceItemInPages, type ItemsCache } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { objectUrlFor, revokeObjectUrl } from "../lib/object-url-cache";
 import {
@@ -47,11 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Preview =
   | { kind: "image"; url: string }
@@ -165,7 +147,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     return { kind: "text", text: new TextDecoder().decode(bytes).slice(0, 5000) };
   }, [item, contentQuery.data, itemId]);
 
-
   // Which panels this item exposes (Preview is dropped for non-previewable
   // files). The first entry is the default — Preview when available, else Info.
   const panels = useMemo(() => (item ? panelsFor(item) : []), [item]);
@@ -263,15 +244,12 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     }
   };
 
-  const onImageLoad = useCallback(
-    (event: React.SyntheticEvent<HTMLImageElement>) => {
-      const image = event.currentTarget;
-      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-        setImageAspectRatio(image.naturalWidth / image.naturalHeight);
-      }
-    },
-    [],
-  );
+  const onImageLoad = useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+      setImageAspectRatio(image.naturalWidth / image.naturalHeight);
+    }
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
@@ -301,10 +279,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
               />
             ) : (
               <div className="flex min-w-0 items-center gap-1">
-                <h2
-                  className="truncate font-heading text-base font-medium"
-                  title={item?.name}
-                >
+                <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
                   {item?.name ?? "…"}
                 </h2>
                 {item && (
@@ -377,8 +352,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete “{item?.name}”?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This permanently removes the item and its properties. This
-                  cannot be undone.
+                  This permanently removes the item and its properties. This cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -397,12 +371,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
           </AlertDialog>
 
           {onClose && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Close"
-              onClick={onClose}
-            >
+            <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
               <IconX />
             </Button>
           )}
@@ -489,9 +458,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Preview unavailable.
-              </p>
+              <p className="text-sm text-muted-foreground">Preview unavailable.</p>
             )}
           </section>
         ) : activePanel === "info" ? (
@@ -504,19 +471,13 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
               </MetaItem>
               <MetaItem label="Source">{item.source}</MetaItem>
               <MetaItem label="Created">
-                <span title={formatDate(item.createdAt)}>
-                  {formatRelative(item.createdAt)}
-                </span>
+                <span title={formatDate(item.createdAt)}>{formatRelative(item.createdAt)}</span>
               </MetaItem>
               <MetaItem label="Updated">
-                <span title={formatDate(item.updatedAt)}>
-                  {formatRelative(item.updatedAt)}
-                </span>
+                <span title={formatDate(item.updatedAt)}>{formatRelative(item.updatedAt)}</span>
               </MetaItem>
               <MetaItem label="ID" className="col-span-2">
-                <span className="min-w-0 truncate font-mono text-xs">
-                  {item.id}
-                </span>
+                <span className="min-w-0 truncate font-mono text-xs">{item.id}</span>
                 <CopyButton value={item.id} label="Copy ID" />
               </MetaItem>
             </dl>

@@ -11,13 +11,13 @@ These are split cleanly across the core boundary:
 
 - **Authentication happens at the edge** (`apps/server`). The server adapter
   turns a request's credential (session cookie or bearer token) into a
-  `Principal`. This is the *only* place credentials, Better Auth, and the token
+  `Principal`. This is the _only_ place credentials, Better Auth, and the token
   table are touched.
 - **Authorization happens in the core** (`@keva/core`). `KevaEngine` receives a
   `Principal` — never a raw credential — and enforces scopes and tenancy on every
   operation.
 
-So the core never knows *how* you authenticated, only *who you are*.
+So the core never knows _how_ you authenticated, only _who you are_.
 
 ## One Principal, two front doors
 
@@ -34,14 +34,14 @@ So the core never knows *how* you authenticated, only *who you are*.
 type Scope = "read" | "write" | "delete" | "admin";
 
 interface Principal {
-  tenantId: string;     // the isolation boundary (a Better Auth organization)
-  scopes: Scope[];      // what this caller may do
+  tenantId: string; // the isolation boundary (a Better Auth organization)
+  scopes: Scope[]; // what this caller may do
   via: "session" | "token";
 }
 ```
 
 There is **no separate prefix field**. Tenancy is solely `tenantId`; the storage
-key prefix is *derived* from it (see [Tenancy](#tenancy)). The web app and an
+key prefix is _derived_ from it (see [Tenancy](#tenancy)). The web app and an
 agent are two clients of one core; this type is where that equivalence is made
 real.
 
@@ -75,7 +75,7 @@ real.
 
 Performed in `@keva/core` from the `Principal`:
 
-- **Tenancy** — every operation is scoped by `tenantId` in *both* stores
+- **Tenancy** — every operation is scoped by `tenantId` in _both_ stores
   (see below). Enforced in the engine, never only at the edge, so no route or
   edge bug can cross tenants.
 - **Scopes** gate operations: `read` (GET/query), `write` (initiate/confirm/
@@ -90,7 +90,7 @@ stores:
 - **Metadata:** every query and mutation carries `WHERE tenant_id = principal.tenantId`.
 - **Blobs:** storage keys are derived deterministically — final items live at
   `items/<tenantId>/<id>`, uploads stage at `staging/<tenantId>/<id>`.
-  Presigned URLs are minted *only* for keys under the caller's derived prefix.
+  Presigned URLs are minted _only_ for keys under the caller's derived prefix.
 
 A token belongs to a tenant and **cannot select a tenant or a sub-prefix** — it
 inherits the tenant of the session that created it. `tenantId` maps to a Better
@@ -153,7 +153,7 @@ auth (runs as a local process with the user's credentials).
 
 ## Two planes, kept apart
 
-- **Data plane** (the keva API + MCP) — sees *only* a `Principal`. No human-login
+- **Data plane** (the keva API + MCP) — sees _only_ a `Principal`. No human-login
   machinery touches the core.
 - **Control plane** (`apps/web` dashboard) — where humans log in (Better Auth)
   and mint data-plane tokens. The complexity of human auth is isolated here.

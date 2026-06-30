@@ -3,10 +3,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createApp } from "./app.js";
 import * as authSchema from "./auth-schema.js";
-import {
-  betterAuthSessionResolver,
-  createBetterAuth,
-} from "./better-auth.js";
+import { betterAuthSessionResolver, createBetterAuth } from "./better-auth.js";
 import { trustedOriginsFor } from "./origins.js";
 import { makeRuntimeLayer } from "./runtime.js";
 
@@ -21,11 +18,10 @@ const baseUrl = process.env.KEVA_BASE_URL ?? `http://127.0.0.1:${port}`;
 // Origins Better Auth will accept (CSRF). The browser hits the web app's origin
 // (proxied to this API), so it must be trusted. Defaults cover the Vite dev
 // server; set KEVA_TRUSTED_ORIGINS (comma-separated) in production.
-const trustedOrigins = trustedOriginsFor(
-  baseUrl,
-  process.env.KEVA_TRUSTED_ORIGINS,
-  ["http://localhost:5173", "http://127.0.0.1:5173"],
-);
+const trustedOrigins = trustedOriginsFor(baseUrl, process.env.KEVA_TRUSTED_ORIGINS, [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]);
 const s3 = process.env.S3_ENDPOINT
   ? {
       endpoint: process.env.S3_ENDPOINT,
@@ -36,16 +32,17 @@ const s3 = process.env.S3_ENDPOINT
       forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== "false",
     }
   : undefined;
-const auth = process.env.DATABASE_URL && process.env.BETTER_AUTH_SECRET
-  ? createBetterAuth({
-      database: drizzle(postgres(process.env.DATABASE_URL), {
-        schema: authSchema,
-      }),
-      secret: process.env.BETTER_AUTH_SECRET,
-      baseURL: process.env.BETTER_AUTH_URL ?? baseUrl,
-      trustedOrigins,
-    })
-  : undefined;
+const auth =
+  process.env.DATABASE_URL && process.env.BETTER_AUTH_SECRET
+    ? createBetterAuth({
+        database: drizzle(postgres(process.env.DATABASE_URL), {
+          schema: authSchema,
+        }),
+        secret: process.env.BETTER_AUTH_SECRET,
+        baseURL: process.env.BETTER_AUTH_URL ?? baseUrl,
+        trustedOrigins,
+      })
+    : undefined;
 
 const layer = makeRuntimeLayer({
   staticToken: required("KEVA_STATIC_TOKEN"),
@@ -61,12 +58,15 @@ const layer = makeRuntimeLayer({
   ...(s3 ? { s3 } : {}),
 });
 
-serve({
-  fetch: createApp({
-    layer,
-    ...(auth ? { authHandler: auth.handler } : {}),
-  }).fetch,
-  port,
-}, (info) => {
-  console.log(`keva listening on http://127.0.0.1:${info.port}`);
-});
+serve(
+  {
+    fetch: createApp({
+      layer,
+      ...(auth ? { authHandler: auth.handler } : {}),
+    }).fetch,
+    port,
+  },
+  (info) => {
+    console.log(`keva listening on http://127.0.0.1:${info.port}`);
+  },
+);

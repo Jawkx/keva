@@ -1,7 +1,4 @@
-import {
-  MemoryBlobStoreLive,
-  MemoryMetadataStoreLive,
-} from "@keva/core";
+import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
@@ -72,10 +69,10 @@ describe("server integration — HTTP roundtrip", () => {
     });
     expect(uploaded.status).toBe(200);
 
-    const confirmed = await app.request(
-      `/api/items/${initiated.item.id}/confirm`,
-      { method: "POST", headers: auth },
-    );
+    const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {
+      method: "POST",
+      headers: auth,
+    });
     expect(confirmed.status).toBe(200);
     expect(await confirmed.json()).toMatchObject({
       id: initiated.item.id,
@@ -84,16 +81,13 @@ describe("server integration — HTTP roundtrip", () => {
     });
 
     // write properties (and rename via the same patch), then query by one
-    const patched = await app.request(
-      `/api/items/${initiated.item.id}`,
-      {
-        method: "PATCH",
-        headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({
-          set: { name: "renamed.txt", animal: "fox", tags: ["quick", "brown"] },
-        }),
-      },
-    );
+    const patched = await app.request(`/api/items/${initiated.item.id}`, {
+      method: "PATCH",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        set: { name: "renamed.txt", animal: "fox", tags: ["quick", "brown"] },
+      }),
+    });
     expect(patched.status).toBe(200);
     expect(await patched.json()).toMatchObject({ name: "renamed.txt" });
 
@@ -109,17 +103,15 @@ describe("server integration — HTTP roundtrip", () => {
     expect(queryBody.items.map((o) => o.id)).toContain(initiated.item.id);
 
     // download: presigned GET → loopback → exact bytes
-    const contentResponse = await app.request(
-      `/api/items/${initiated.item.id}/content`,
-      { method: "GET", headers: auth },
-    );
+    const contentResponse = await app.request(`/api/items/${initiated.item.id}/content`, {
+      method: "GET",
+      headers: auth,
+    });
     expect(contentResponse.status).toBe(200);
     const { url } = (await contentResponse.json()) as { url: string };
     const downloaded = await loopback(app, url);
     expect(downloaded.status).toBe(200);
-    expect(new TextDecoder().decode(await downloaded.arrayBuffer())).toBe(
-      "the quick brown fox",
-    );
+    expect(new TextDecoder().decode(await downloaded.arrayBuffer())).toBe("the quick brown fox");
 
     // delete, then a get is a typed NotFound
     const deleted = await app.request(`/api/items/${initiated.item.id}`, {
@@ -137,10 +129,7 @@ describe("server integration — HTTP roundtrip", () => {
   });
 
   // Create a ready item via the full initiate → upload → confirm flow.
-  const makeReadyItem = async (
-    app: ReturnType<typeof makeApp>,
-    name: string,
-  ) => {
+  const makeReadyItem = async (app: ReturnType<typeof makeApp>, name: string) => {
     const bytes = new TextEncoder().encode(name);
     const initiatedResponse = await app.request("/api/items", {
       method: "POST",
@@ -232,10 +221,10 @@ describe("server integration — HTTP roundtrip", () => {
 
   it("returns a typed NotFound (404) for an unknown id", async () => {
     const app = makeApp();
-    const response = await app.request(
-      "/api/items/00000000-0000-0000-0000-000000000000",
-      { method: "GET", headers: auth },
-    );
+    const response = await app.request("/api/items/00000000-0000-0000-0000-000000000000", {
+      method: "GET",
+      headers: auth,
+    });
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ _tag: "NotFound" });
   });

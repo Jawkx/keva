@@ -59,11 +59,7 @@ export const makeKevaEngine = (principal: Principal) => ({
         properties: input.properties,
       };
       yield* metadata.insert(item);
-      const upload = yield* blobs.presignUpload(
-        item.stagingKey,
-        input.size,
-        input.contentType,
-      );
+      const upload = yield* blobs.presignUpload(item.stagingKey, input.size, input.contentType);
       return {
         item,
         uploadUrl: upload.url,
@@ -93,18 +89,13 @@ export const makeKevaEngine = (principal: Principal) => ({
         });
       }
       yield* blobs.copy(item.stagingKey, item.storageKey);
-      const transitioned = yield* metadata.transition(
-        principal.tenantId,
-        id,
-        ["pending"],
-        {
-          status: "ready",
-          size: head.size,
-          etag: head.etag,
-          contentType: head.contentType ?? item.contentType,
-          updatedAt: now(),
-        },
-      );
+      const transitioned = yield* metadata.transition(principal.tenantId, id, ["pending"], {
+        status: "ready",
+        size: head.size,
+        etag: head.etag,
+        contentType: head.contentType ?? item.contentType,
+        updatedAt: now(),
+      });
       if (!transitioned) {
         const current = yield* metadata.get(principal.tenantId, id);
         if (current?.status === "ready") return current;
@@ -119,9 +110,7 @@ export const makeKevaEngine = (principal: Principal) => ({
     Effect.gen(function* () {
       yield* requireScope(principal, "read");
       const metadata = yield* MetadataStore;
-      return yield* readyOrNotFound(
-        yield* metadata.get(principal.tenantId, id),
-      );
+      return yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id));
     }),
 
   download: (id: string) =>
@@ -129,9 +118,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* requireScope(principal, "read");
       const metadata = yield* MetadataStore;
       const blobs = yield* BlobStore;
-      const item = yield* readyOrNotFound(
-        yield* metadata.get(principal.tenantId, id),
-      );
+      const item = yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id));
       const request = yield* blobs.presignDownload(item.storageKey);
       return { url: request.url, expiresAt: request.expiresAt };
     }),
@@ -140,9 +127,7 @@ export const makeKevaEngine = (principal: Principal) => ({
     Effect.gen(function* () {
       yield* requireScope(principal, "write");
       const metadata = yield* MetadataStore;
-      const current = yield* readyOrNotFound(
-        yield* metadata.get(principal.tenantId, id),
-      );
+      const current = yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id));
       // Route each key to its column (user-writable fields like `name`) or the
       // property blob, rejecting writes to system-owned or reserved keys.
       const routed = routePatch(patch.set, patch.unset);
@@ -172,12 +157,7 @@ export const makeKevaEngine = (principal: Principal) => ({
           message: "Property limits exceeded",
         });
       }
-      const updated = yield* metadata.patch(
-        principal.tenantId,
-        id,
-        routed.routed,
-        now(),
-      );
+      const updated = yield* metadata.patch(principal.tenantId, id, routed.routed, now());
       return yield* readyOrNotFound(updated);
     }),
 
@@ -196,12 +176,10 @@ export const makeKevaEngine = (principal: Principal) => ({
       const current = yield* metadata.get(principal.tenantId, id);
       if (!current) return;
       if (current.status !== "deleting") {
-        const claimed = yield* metadata.transition(
-          principal.tenantId,
-          id,
-          ["ready", "pending"],
-          { status: "deleting", updatedAt: now() },
-        );
+        const claimed = yield* metadata.transition(principal.tenantId, id, ["ready", "pending"], {
+          status: "deleting",
+          updatedAt: now(),
+        });
         if (!claimed) return;
       }
       yield* blobs.delete(current.storageKey);
@@ -218,14 +196,8 @@ export interface LifecycleJobOptions {
 export const reapPending = (options: LifecycleJobOptions = {}) =>
   Effect.gen(function* () {
     const metadata = yield* MetadataStore;
-    const cutoff = new Date(
-      Date.now() - (options.pendingTtlMs ?? 60 * 60 * 1000),
-    ).toISOString();
-    const pending = yield* metadata.listByStatus(
-      "pending",
-      options.batchSize ?? 100,
-      cutoff,
-    );
+    const cutoff = new Date(Date.now() - (options.pendingTtlMs ?? 60 * 60 * 1000)).toISOString();
+    const pending = yield* metadata.listByStatus("pending", options.batchSize ?? 100, cutoff);
     let reaped = 0;
     for (const item of pending) {
       const claimed = yield* metadata.transition(
@@ -244,19 +216,12 @@ export const sweepDeleting = (options: LifecycleJobOptions = {}) =>
   Effect.gen(function* () {
     const metadata = yield* MetadataStore;
     const blobs = yield* BlobStore;
-    const deleting = yield* metadata.listByStatus(
-      "deleting",
-      options.batchSize ?? 100,
-    );
+    const deleting = yield* metadata.listByStatus("deleting", options.batchSize ?? 100);
     let swept = 0;
     for (const item of deleting) {
       yield* blobs.delete(item.storageKey);
       yield* blobs.delete(item.stagingKey);
-      const removed = yield* metadata.remove(
-        item.tenantId,
-        item.id,
-        "deleting",
-      );
+      const removed = yield* metadata.remove(item.tenantId, item.id, "deleting");
       if (removed) swept++;
     }
     return swept;

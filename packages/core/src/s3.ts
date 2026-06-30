@@ -16,8 +16,7 @@ export interface S3BlobStoreConfig {
 
 const trimSlashes = (value: string): string => value.replace(/^\/+|\/+$/g, "");
 
-const encodeKey = (key: string): string =>
-  key.split("/").map(encodeURIComponent).join("/");
+const encodeKey = (key: string): string => key.split("/").map(encodeURIComponent).join("/");
 
 const objectUrl = (config: S3BlobStoreConfig, key: string): string => {
   const endpoint = new URL(config.endpoint);
@@ -39,15 +38,11 @@ const requestEffect = (
 ): Effect.Effect<Response, StorageUnavailable> =>
   Effect.tryPromise({ try: operation, catch: storageError }).pipe(
     Effect.flatMap((response) =>
-      response.ok
-        ? Effect.succeed(response)
-        : Effect.fail(storageError())
+      response.ok ? Effect.succeed(response) : Effect.fail(storageError()),
     ),
   );
 
-export const makeS3BlobStore = (
-  config: S3BlobStoreConfig,
-): BlobStoreService => {
+export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => {
   const client = new AwsClient({
     accessKeyId: config.accessKeyId,
     secretAccessKey: config.secretAccessKey,
@@ -85,8 +80,7 @@ export const makeS3BlobStore = (
         "content-length": String(size),
         "content-type": contentType,
       }),
-    presignDownload: (key) =>
-      presign(key, "GET", config.downloadTtlSeconds ?? 300),
+    presignDownload: (key) => presign(key, "GET", config.downloadTtlSeconds ?? 300),
     head: (key) =>
       Effect.tryPromise({
         try: async () => {
@@ -131,7 +125,5 @@ export const makeS3BlobStore = (
   };
 };
 
-export const S3BlobStoreLive = (
-  config: S3BlobStoreConfig,
-): Layer.Layer<BlobStore> =>
+export const S3BlobStoreLive = (config: S3BlobStoreConfig): Layer.Layer<BlobStore> =>
   Layer.sync(BlobStore, () => makeS3BlobStore(config));

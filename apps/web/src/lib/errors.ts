@@ -18,9 +18,7 @@ export const errorMessage = (error: unknown): string => {
   if (hasTag(error)) {
     const tag = error._tag;
     const message =
-      typeof error.message === "string" && error.message.length > 0
-        ? error.message
-        : undefined;
+      typeof error.message === "string" && error.message.length > 0 ? error.message : undefined;
     switch (tag) {
       case "Unauthorized":
         return message ?? "Your session has expired. Please sign in again.";

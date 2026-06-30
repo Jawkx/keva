@@ -8,15 +8,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeKevaEngine } from "./engine.js";
 import { makeMemoryMetadataStore, MemoryBlobStoreLive } from "./memory.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
-import {
-  BlobStore,
-  MetadataStore,
-  type MetadataStoreService,
-} from "./services.js";
+import { BlobStore, MetadataStore, type MetadataStoreService } from "./services.js";
 
-const DATABASE_URL = (
-  globalThis as { process?: { env?: Record<string, string | undefined> } }
-).process?.env?.KEVA_TEST_DATABASE_URL;
+const DATABASE_URL = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+  .process?.env?.KEVA_TEST_DATABASE_URL;
 
 const principal = (tenantId: string): Principal => ({
   tenantId,
@@ -25,16 +20,8 @@ const principal = (tenantId: string): Principal => ({
 });
 
 const SEED: ReadonlyArray<[string, string, Record<string, unknown>]> = [
-  [
-    "alpha",
-    "text/plain",
-    { kind: "doc", rating: 5, tags: ["x", "y"], note: "hello world" },
-  ],
-  [
-    "bravo",
-    "image/png",
-    { kind: "image", rating: 10, tags: ["y", "z"] },
-  ],
+  ["alpha", "text/plain", { kind: "doc", rating: 5, tags: ["x", "y"], note: "hello world" }],
+  ["bravo", "image/png", { kind: "image", rating: 10, tags: ["y", "z"] }],
   ["carol", "application/pdf", { kind: "doc", rating: 1, label: null }],
 ];
 
@@ -84,15 +71,10 @@ const EXPECTED: Record<string, string[]> = {
   sysSizeNeqTypeMismatch: ["alpha", "bravo", "carol"],
 };
 
-const migrationDir = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../drizzle",
-);
+const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");
 
 const applyMigrations = async (sql: Sql): Promise<void> => {
-  const files = (await readdir(migrationDir))
-    .filter((file) => /^\d{4}_.+\.sql$/.test(file))
-    .sort();
+  const files = (await readdir(migrationDir)).filter((file) => /^\d{4}_.+\.sql$/.test(file)).sort();
 
   for (const file of files) {
     const migration = await readFile(resolve(migrationDir, file), "utf8");
@@ -105,15 +87,10 @@ const applyMigrations = async (sql: Sql): Promise<void> => {
   }
 };
 
-const seedAndRun = async (
-  store: MetadataStoreService,
-): Promise<Record<string, string[]>> => {
+const seedAndRun = async (store: MetadataStoreService): Promise<Record<string, string[]>> => {
   const tenant = crypto.randomUUID();
   const p = principal(tenant);
-  const layer = Layer.merge(
-    Layer.succeed(MetadataStore, store),
-    MemoryBlobStoreLive(),
-  );
+  const layer = Layer.merge(Layer.succeed(MetadataStore, store), MemoryBlobStoreLive());
   const run = <A, E>(effect: Effect.Effect<A, E, BlobStore | MetadataStore>) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)));
 

@@ -12,9 +12,7 @@ export interface BetterAuthConfig {
   readonly trustedOrigins?: ReadonlyArray<string>;
 }
 
-export const createBetterAuth = (
-  config: BetterAuthConfig,
-): ReturnType<typeof betterAuth> =>
+export const createBetterAuth = (config: BetterAuthConfig): ReturnType<typeof betterAuth> =>
   betterAuth({
     database: drizzleAdapter(config.database, {
       provider: "pg",
@@ -33,17 +31,14 @@ export const createBetterAuth = (
 // one. Better Auth's `createOrganization` makes the new org the session's active
 // org automatically (creator joins as "owner"), so after the first call every
 // subsequent session short-circuits on `activeOrganizationId`.
-export const betterAuthSessionResolver = (
-  auth: ReturnType<typeof createBetterAuth>,
-): SessionResolver =>
+export const betterAuthSessionResolver =
+  (auth: ReturnType<typeof createBetterAuth>): SessionResolver =>
   async (headers) => {
     const result = await auth.api.getSession({ headers });
     if (!result) return null;
 
     const api = auth.api as unknown as {
-      listOrganizations: (input: {
-        headers: Headers;
-      }) => Promise<ReadonlyArray<{ id: string }>>;
+      listOrganizations: (input: { headers: Headers }) => Promise<ReadonlyArray<{ id: string }>>;
       createOrganization: (input: {
         headers: Headers;
         body: { name: string; slug: string };
@@ -79,10 +74,7 @@ export const betterAuthSessionResolver = (
           // A concurrent first request may have already created it; fall back
           // to whatever now exists rather than failing the whole request.
           .catch(() => null);
-        tenantId =
-          created?.id ??
-          (await api.listOrganizations({ headers }))[0]?.id ??
-          null;
+        tenantId = created?.id ?? (await api.listOrganizations({ headers }))[0]?.id ?? null;
       }
     }
     if (!tenantId) return null;

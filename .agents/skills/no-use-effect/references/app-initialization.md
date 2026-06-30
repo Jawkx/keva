@@ -8,7 +8,7 @@ useEffect(() => {
 }, []);
 
 // GOOD option 1: module-level
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   checkAuthToken();
   loadDataFromLocalStorage();
 }

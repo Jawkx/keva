@@ -1,10 +1,5 @@
 import { useCallback, useState } from "react";
-import {
-  IconAlertTriangle,
-  IconCopy,
-  IconKey,
-  IconTrash,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconCopy, IconKey, IconTrash } from "@tabler/icons-react";
 import { toast } from "sonner";
 import type { Scope, TokenRecord } from "@keva/schema";
 import { CodeBlock } from "../components/CodeBlock";
@@ -28,20 +23,9 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import {
   Empty,
   EmptyDescription,
@@ -97,9 +81,7 @@ export function TokensPage() {
 
   const toggleScope = (scope: Scope) => {
     setScopes((prev) =>
-      prev.includes(scope)
-        ? prev.filter((s) => s !== scope)
-        : [...prev, scope],
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
     );
   };
 
@@ -144,10 +126,7 @@ export function TokensPage() {
 
   return (
     <div>
-      <PageHeader
-        title="API tokens"
-        description="Programmatic access for your apps and agents."
-      />
+      <PageHeader title="API tokens" description="Programmatic access for your apps and agents." />
 
       {error && (
         <Alert variant="destructive" className="mb-4">
@@ -169,11 +148,7 @@ export function TokensPage() {
                 <IconCopy data-icon="inline-start" />
                 Copy
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setPlaintext(null)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => setPlaintext(null)}>
                 Dismiss
               </Button>
             </div>
@@ -202,31 +177,20 @@ export function TokensPage() {
                 <FieldLegend variant="label">Scopes</FieldLegend>
                 <div className="flex flex-wrap gap-4">
                   {ALL_SCOPES.map((scope) => (
-                    <Field
-                      key={scope}
-                      orientation="horizontal"
-                      className="w-auto"
-                    >
+                    <Field key={scope} orientation="horizontal" className="w-auto">
                       <Checkbox
                         id={`scope-${scope}`}
                         checked={scopes.includes(scope)}
                         onCheckedChange={() => toggleScope(scope)}
                       />
-                      <FieldLabel
-                        htmlFor={`scope-${scope}`}
-                        className="font-normal"
-                      >
+                      <FieldLabel htmlFor={`scope-${scope}`} className="font-normal">
                         {scope}
                       </FieldLabel>
                     </Field>
                   ))}
                 </div>
               </FieldSet>
-              <Button
-                type="submit"
-                className="w-fit"
-                disabled={minting || scopes.length === 0}
-              >
+              <Button type="submit" className="w-fit" disabled={minting || scopes.length === 0}>
                 {minting ? "Minting…" : "Mint token"}
               </Button>
             </FieldGroup>
@@ -248,9 +212,7 @@ export function TokensPage() {
               <IconKey />
             </EmptyMedia>
             <EmptyTitle>No tokens yet</EmptyTitle>
-            <EmptyDescription>
-              Mint a token above to access keva from code.
-            </EmptyDescription>
+            <EmptyDescription>Mint a token above to access keva from code.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -304,9 +266,7 @@ export function TokensPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">
-              Base URL
-            </span>
+            <span className="text-xs font-medium text-muted-foreground">Base URL</span>
             <div className="flex items-center gap-2">
               <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2.5 py-1.5 font-mono text-xs">
                 {apiBase}

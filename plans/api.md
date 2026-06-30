@@ -7,7 +7,7 @@ endpoint surface.
 
 ## The error contract
 
-Effect's error *channel* (`Effect<A, E, R>`) is compile-time and in-process — it
+Effect's error _channel_ (`Effect<A, E, R>`) is compile-time and in-process — it
 does **not** cross HTTP. The frontend gets typed errors anyway by treating errors
 as a **shared, serializable contract**:
 
@@ -16,29 +16,29 @@ as a **shared, serializable contract**:
 2. The Hono edge maps the Effect failure channel to `{ status, body }` via a
    single `statusFor` helper. Unexpected defects become a generic `500` — stack
    traces, causes, and internals are **never** serialized to clients.
-3. `@keva/sdk` decodes the body with the *same* `KevaError` schema into a typed
+3. `@keva/sdk` decodes the body with the _same_ `KevaError` schema into a typed
    discriminated union, so callers can `switch (err._tag)`.
 
 Because both sides import the error definitions from the shared package, the
 contract **cannot drift** — that is the sync mechanism, enforced by the compiler.
 
-> **SDK & Effect:** the SDK exposes no Effect API and takes no Effect *peer*
-> dependency. It may bundle `effect` *internally* to run the decode; consumers
+> **SDK & Effect:** the SDK exposes no Effect API and takes no Effect _peer_
+> dependency. It may bundle `effect` _internally_ to run the decode; consumers
 > never see or install it. If that bundle weight matters, replace the decode with
 > a generated/hand-written validator so the SDK is fully Effect-free.
 
 ### Taxonomy & status mapping (`statusFor`)
 
-| `_tag` | HTTP | Meaning |
-|---|---|---|
-| `ValidationError` | 400 | malformed input / bad query / bad property |
-| `Unauthorized` | 401 | missing or invalid credential |
-| `Forbidden` | 403 | authenticated but scope/prefix disallows it |
-| `NotFound` | 404 | item (within the caller's prefix) doesn't exist |
-| `Conflict` | 409 | e.g. confirm on an item not in `pending` |
-| `QuotaExceeded` | 413 / 429 | size or property limits exceeded |
-| `StorageUnavailable` | 502 | the blob backend failed |
-| `Internal` | 500 | catch-all for unexpected defects (no detail leaked) |
+| `_tag`               | HTTP      | Meaning                                             |
+| -------------------- | --------- | --------------------------------------------------- |
+| `ValidationError`    | 400       | malformed input / bad query / bad property          |
+| `Unauthorized`       | 401       | missing or invalid credential                       |
+| `Forbidden`          | 403       | authenticated but scope/prefix disallows it         |
+| `NotFound`           | 404       | item (within the caller's prefix) doesn't exist     |
+| `Conflict`           | 409       | e.g. confirm on an item not in `pending`            |
+| `QuotaExceeded`      | 413 / 429 | size or property limits exceeded                    |
+| `StorageUnavailable` | 502       | the blob backend failed                             |
+| `Internal`           | 500       | catch-all for unexpected defects (no detail leaked) |
 
 ## Upload flow (direct-to-storage, staging → copy → final)
 
@@ -85,18 +85,18 @@ egress through the worker; free on R2).
 
 Every route authenticates to a `Principal` and is scoped by its prefix + scopes.
 
-| Method & path | Scope | Purpose |
-|---|---|---|
-| `POST /items` | write | initiate: create `pending` record, return presigned PUT |
-| `POST /items/:id/confirm` | write | HEAD-confirm, flip to `ready` |
-| `GET /items/:id` | read | fetch the item's metadata |
-| `GET /items/:id/content` | read | presigned GET for the bytes |
-| `PATCH /items/:id/properties` | write | `set` / `unset` user properties (see [`data-model.md`](./data-model.md)) |
-| `DELETE /items/:id` | delete | two-phase delete: record intent, then remove blob + row (see [`lifecycle.md`](./lifecycle.md)) |
-| `POST /query` | read | query items by property conditions |
-| `POST /tokens` | admin | mint an API token (session-only in practice) |
-| `GET /tokens` · `DELETE /tokens/:id` | admin | list / revoke tokens |
-| `GET /health` | — | liveness |
+| Method & path                        | Scope  | Purpose                                                                                        |
+| ------------------------------------ | ------ | ---------------------------------------------------------------------------------------------- |
+| `POST /items`                        | write  | initiate: create `pending` record, return presigned PUT                                        |
+| `POST /items/:id/confirm`            | write  | HEAD-confirm, flip to `ready`                                                                  |
+| `GET /items/:id`                     | read   | fetch the item's metadata                                                                      |
+| `GET /items/:id/content`             | read   | presigned GET for the bytes                                                                    |
+| `PATCH /items/:id/properties`        | write  | `set` / `unset` user properties (see [`data-model.md`](./data-model.md))                       |
+| `DELETE /items/:id`                  | delete | two-phase delete: record intent, then remove blob + row (see [`lifecycle.md`](./lifecycle.md)) |
+| `POST /query`                        | read   | query items by property conditions                                                             |
+| `POST /tokens`                       | admin  | mint an API token (session-only in practice)                                                   |
+| `GET /tokens` · `DELETE /tokens/:id` | admin  | list / revoke tokens                                                                           |
+| `GET /health`                        | —      | liveness                                                                                       |
 
 The MCP server (later) exposes the read/query/patch-properties subset as tools,
 backed by the same core.
@@ -106,6 +106,6 @@ backed by the same core.
 - JSON request/response bodies validated by Effect Schema; validation failures →
   `ValidationError` (400).
 - Auth via `Authorization: Bearer keva_sk_…` (machines) or session cookie (web).
-- The future `@effect/platform` HttpApi migration, if taken, would *derive* this
+- The future `@effect/platform` HttpApi migration, if taken, would _derive_ this
   surface, the SDK client, and OpenAPI docs from one definition — these endpoints
   are the contract it would formalize.

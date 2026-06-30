@@ -25,10 +25,7 @@ describe("KevaClient", () => {
       baseUrl: "https://keva.invalid",
       token: "test",
       fetch: async () =>
-        Response.json(
-          { _tag: "NotFound", message: "Item not found" },
-          { status: 404 },
-        ),
+        Response.json({ _tag: "NotFound", message: "Item not found" }, { status: 404 }),
     });
 
     await expect(client.get("missing")).rejects.toMatchObject({
@@ -40,10 +37,7 @@ describe("KevaClient", () => {
       baseUrl: "https://keva.invalid",
       token: "bad",
       fetch: async () =>
-        Response.json(
-          { _tag: "Unauthorized", message: "Invalid credential" },
-          { status: 401 },
-        ),
+        Response.json({ _tag: "Unauthorized", message: "Invalid credential" }, { status: 401 }),
     });
     await expect(unauthorized.query()).rejects.toMatchObject({
       _tag: "Unauthorized",
@@ -88,13 +82,16 @@ describe("KevaClient", () => {
     });
 
     await expect(
-      client.uploadBody({
-        name: "hello.txt",
-        contentType: "text/plain",
-        size: 5,
-        source: "upload",
-        properties: {},
-      }, body),
+      client.uploadBody(
+        {
+          name: "hello.txt",
+          contentType: "text/plain",
+          size: 5,
+          source: "upload",
+          properties: {},
+        },
+        body,
+      ),
     ).resolves.toMatchObject({ id: item.id });
     expect(uploadBodies).toEqual([body]);
   });
@@ -117,9 +114,7 @@ describe("KevaClient", () => {
       url: "https://blob.invalid/download",
       expiresAt: "2026-01-01T00:15:00.000Z",
     });
-    expect(calls).toEqual([
-      `https://keva.invalid/api/items/${item.id}/content`,
-    ]);
+    expect(calls).toEqual([`https://keva.invalid/api/items/${item.id}/content`]);
   });
 
   it("buffers downloads only through downloadBytes", async () => {
@@ -140,9 +135,7 @@ describe("KevaClient", () => {
       },
     });
 
-    await expect(client.downloadBytes(item.id)).resolves.toEqual(
-      new TextEncoder().encode("hello"),
-    );
+    await expect(client.downloadBytes(item.id)).resolves.toEqual(new TextEncoder().encode("hello"));
     expect(calls).toEqual([
       `https://keva.invalid/api/items/${item.id}/content`,
       "https://blob.invalid/download",

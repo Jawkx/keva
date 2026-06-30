@@ -35,16 +35,18 @@ function Profile({ userId }) {
   const [user, setUser] = useState(null);
   const isMounted = useRef(true);
   useEffect(() => {
-    fetchUser(userId).then(data => {
+    fetchUser(userId).then((data) => {
       if (isMounted.current) setUser(data);
     });
-    return () => { isMounted.current = false; };
+    return () => {
+      isMounted.current = false;
+    };
   }, [userId]);
 }
 
 // GOOD: data-fetching library handles cancellation
 function Profile({ userId }) {
-  const { data: user } = useQuery(['user', userId], () => fetchUser(userId));
+  const { data: user } = useQuery(["user", userId], () => fetchUser(userId));
 }
 
 // GOOD: if no library, use a cleanup boolean in a custom hook (not a ref)
@@ -53,9 +55,13 @@ function useData(url) {
   useEffect(() => {
     let ignore = false;
     fetch(url)
-      .then(r => r.json())
-      .then(json => { if (!ignore) setData(json); });
-    return () => { ignore = true; };
+      .then((r) => r.json())
+      .then((json) => {
+        if (!ignore) setData(json);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [url]);
   return data;
 }
@@ -73,7 +79,7 @@ function ChatRoom({ roomId, onMessage }) {
 
   useEffect(() => {
     const conn = createConnection(roomId);
-    conn.on('message', (msg) => onMessageRef.current(msg));
+    conn.on("message", (msg) => onMessageRef.current(msg));
     return () => conn.disconnect();
   }, [roomId]); // onMessage is missing — linter would complain without the ref trick
 }

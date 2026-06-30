@@ -5,8 +5,10 @@
 ```tsx
 // BAD
 function ProfilePage({ userId }) {
-  const [comment, setComment] = useState('');
-  useEffect(() => { setComment(''); }, [userId]);
+  const [comment, setComment] = useState("");
+  useEffect(() => {
+    setComment("");
+  }, [userId]);
 }
 
 // GOOD: key forces full reset
@@ -15,7 +17,7 @@ function ProfilePage({ userId }) {
 }
 
 function Profile({ userId }) {
-  const [comment, setComment] = useState('');
+  const [comment, setComment] = useState("");
   // Fresh state on each userId change
 }
 ```
@@ -25,11 +27,11 @@ function Profile({ userId }) {
 ```tsx
 // BAD: effect clears form fields
 useEffect(() => {
-  setName('');
-  setEmail('');
-  setNotes('');
+  setName("");
+  setEmail("");
+  setNotes("");
 }, [contactId]);
 
 // GOOD
-<EditForm key={contactId} contact={contact} />
+<EditForm key={contactId} contact={contact} />;
 ```

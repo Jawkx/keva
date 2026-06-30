@@ -46,29 +46,20 @@ type Mode = "form" | "json";
 
 interface PropertiesEditorProps {
   properties: Properties;
-  onPatch: (
-    set: Record<string, PropertyValue>,
-    unset: string[],
-  ) => Promise<void>;
+  onPatch: (set: Record<string, PropertyValue>, unset: string[]) => Promise<void>;
 }
 
 // Two views over the same properties: a Form view that commits each change
 // immediately, and a JSON view that batches a hand-edited item into one
 // patch. They share nothing but the `properties` prop, so flipping between
 // them is always lossless.
-export function PropertiesEditor({
-  properties,
-  onPatch,
-}: PropertiesEditorProps) {
+export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps) {
   const [mode, setMode] = useState<Mode>("form");
   const [busy, setBusy] = useState(false);
 
   const entries = Object.entries(properties);
 
-  const commit = async (
-    set: Record<string, PropertyValue>,
-    unset: string[],
-  ) => {
+  const commit = async (set: Record<string, PropertyValue>, unset: string[]) => {
     setBusy(true);
     try {
       await onPatch(set, unset);
@@ -153,11 +144,7 @@ function FormView({
           ))}
         </ul>
       )}
-      <AddRow
-        busy={busy}
-        existingKeys={entries.map(([k]) => k)}
-        onAdd={onSet}
-      />
+      <AddRow busy={busy} existingKeys={entries.map(([k]) => k)} onAdd={onSet} />
     </div>
   );
 }
@@ -213,12 +200,7 @@ function PropertyRow({
             autoFocus
           />
         </div>
-        <Button
-          size="icon-sm"
-          aria-label="Save"
-          disabled={busy}
-          onClick={() => void save()}
-        >
+        <Button size="icon-sm" aria-label="Save" disabled={busy} onClick={() => void save()}>
           <IconCheck />
         </Button>
         <Button
@@ -298,8 +280,7 @@ function AddRow({
     if (!trimmedKey) return null;
     const formatError = validateKey(trimmedKey);
     if (formatError) return formatError;
-    if (existingKeys.includes(trimmedKey))
-      return "An property with this key already exists";
+    if (existingKeys.includes(trimmedKey)) return "An property with this key already exists";
     return null;
   }, [trimmedKey, existingKeys]);
 
@@ -361,9 +342,7 @@ function AddRow({
         <IconPlus data-icon="inline-start" />
         Add
       </Button>
-      {touched && keyError && (
-        <p className="w-full text-xs text-destructive">{keyError}</p>
-      )}
+      {touched && keyError && <p className="w-full text-xs text-destructive">{keyError}</p>}
     </form>
   );
 }
@@ -377,10 +356,7 @@ function JsonView({
 }: {
   properties: Properties;
   busy: boolean;
-  commit: (
-    set: Record<string, PropertyValue>,
-    unset: string[],
-  ) => Promise<void>;
+  commit: (set: Record<string, PropertyValue>, unset: string[]) => Promise<void>;
 }) {
   const baseline = prettyJson(properties);
   // Seeded once on mount; the view remounts whenever the mode switches back to
@@ -392,9 +368,7 @@ function JsonView({
     () => (parsed.ok ? diffProperties(properties, parsed.value) : null),
     [parsed, properties],
   );
-  const changeCount = diff
-    ? Object.keys(diff.set).length + diff.unset.length
-    : 0;
+  const changeCount = diff ? Object.keys(diff.set).length + diff.unset.length : 0;
   const modified = text !== baseline;
 
   const save = async () => {
@@ -466,13 +440,12 @@ function TypePill({ type }: { type: ValueType }) {
 // Icon per scalar type. The trigger shows only the icon to stay compact (the
 // full words overflowed a fixed-width text trigger); the dropdown spells the
 // type out in full next to the same icon.
-const TYPE_ICON: Record<ScalarType, React.ComponentType<{ className?: string }>> =
-  {
-    string: IconLetterCase,
-    number: IconNumber123,
-    boolean: IconToggleLeft,
-    null: IconCircleOff,
-  };
+const TYPE_ICON: Record<ScalarType, React.ComponentType<{ className?: string }>> = {
+  string: IconLetterCase,
+  number: IconNumber123,
+  boolean: IconToggleLeft,
+  null: IconCircleOff,
+};
 
 function TypeSelect({
   value,
@@ -522,11 +495,7 @@ function ValueControl({
   autoFocus?: boolean;
 }) {
   if (type === "null") {
-    return (
-      <span className="block px-1 text-sm text-muted-foreground italic">
-        null
-      </span>
-    );
+    return <span className="block px-1 text-sm text-muted-foreground italic">null</span>;
   }
   if (type === "boolean") {
     return (

@@ -10,7 +10,7 @@ keva is the permanent, structured home for your files — simple enough to use t
 
 The file system we all still use was designed for a human sitting at a desk, clicking through folders, remembering where they put things. The folder tree is a primitive from the 1970s, and it has barely changed since. It assumes the only intelligence in the loop is the person doing the filing.
 
-That assumption is breaking. Software can now read, watch, and understand the contents of a file. But the file itself is still a blob in a tree — the system knows its name, its size, and where it sits in a hierarchy, and almost nothing else. It doesn't know what's *in* the file, what it's *for*, or how it relates to everything around it. We've taught machines to understand our files, then handed them a storage model that hides everything worth understanding.
+That assumption is breaking. Software can now read, watch, and understand the contents of a file. But the file itself is still a blob in a tree — the system knows its name, its size, and where it sits in a hierarchy, and almost nothing else. It doesn't know what's _in_ the file, what it's _for_, or how it relates to everything around it. We've taught machines to understand our files, then handed them a storage model that hides everything worth understanding.
 
 keva starts from a different primitive. A file is not a blob to be buried in a folder. It is an **item with open-ended, structured meaning** — a set of key-value properties that anything can read, write, query, and act on. Some of that meaning is automatic (type, size, source). Most of it is yours to define. And increasingly, some of it is written by the agents working on your behalf.
 
@@ -22,7 +22,7 @@ For the person who just wants their scattered files in one trustworthy place, ke
 
 Underneath that simplicity is the part that matters. Every file in keva carries metadata — structured key-value properties, fully customizable. And every one of those properties is reachable through a clean, first-class API. You can read and write it. Your apps can. And an AI agent, connected over the API or through MCP, can query your files by meaning, enrich them with what it learns, and organize them on your behalf.
 
-So you can ask your agent to go find what's inside all your diving videos, tag them by location and who's in them, and pull up the three best clips — and it can actually *do* that, because the files aren't opaque. They're items it can reason about.
+So you can ask your agent to go find what's inside all your diving videos, tag them by location and who's in them, and pull up the three best clips — and it can actually _do_ that, because the files aren't opaque. They're items it can reason about.
 
 ## Who it's for
 
@@ -46,7 +46,7 @@ keva is built so the same system serves both, and so the first person grows natu
 
 **Simple at the surface, deep underneath.** Power should never be the price of ease. A first-time user and a fleet of agents touch the same system and each gets exactly what they need from it.
 
-**Your data is permanent and it is yours.** keva means *fixed, settled, kept*. Files you trust to it stay yours — portable, exportable, never held hostage. Trust is the whole product. We don't get a second chance at it.
+**Your data is permanent and it is yours.** keva means _fixed, settled, kept_. Files you trust to it stay yours — portable, exportable, never held hostage. Trust is the whole product. We don't get a second chance at it.
 
 ## The world we're building toward
 
@@ -65,4 +65,4 @@ The folder tree taught us to think like filing cabinets. keva lets your files th
 
 ---
 
-*keva — the structured home for your files. Storage that you and your agent can use.*
+_keva — the structured home for your files. Storage that you and your agent can use._

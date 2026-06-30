@@ -6,7 +6,7 @@ description: Guidance for driving the keva web app with the Playwright MCP brows
 # Playwright guide (keva web)
 
 Use the Playwright MCP (`mcp__playwright__*`) tools to drive and visually verify the
-`apps/web` app in a real browser. This is the only way to actually *see* the rendered
+`apps/web` app in a real browser. This is the only way to actually _see_ the rendered
 UI in this repo (there is no other browser automation) — reach for it whenever a change
 needs visual confirmation, especially layout/overflow bugs that can't be caught from
 CSS reasoning alone.
@@ -51,7 +51,7 @@ credentials when a logged-in view is needed — never hardcode a password in thi
 
 - **Discover before acting.** Use `browser_snapshot` (accessibility tree, returned as
   text) to find elements — it's better than a screenshot for choosing what to click.
-  Screenshots are for *seeing* the result, not for deriving what to interact with.
+  Screenshots are for _seeing_ the result, not for deriving what to interact with.
 - **Prefer CSS selectors over `ref=` ids for `target`.** Element refs (`e26`, `e30`, …)
   go stale between calls and the page sometimes resets to `about:blank` between separate
   tool invocations; a selector like `input[type=email]` or `button:has-text("Sign in")`

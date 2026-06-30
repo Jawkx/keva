@@ -20,8 +20,7 @@ interface MemoryBlob {
   readonly etag: string;
 }
 
-const cloneItem = (item: KevaItem): KevaItem =>
-  structuredClone(item);
+const cloneItem = (item: KevaItem): KevaItem => structuredClone(item);
 
 const valueAt = (
   item: KevaItem,
@@ -31,11 +30,7 @@ const valueAt = (
   // every other key resolves against the property blob.
   const field = FIELD_BY_KEY.get(key);
   if (field) {
-    const value = item[field.itemField] as
-      | PropertyValue
-      | string
-      | number
-      | null;
+    const value = item[field.itemField] as PropertyValue | string | number | null;
     return { exists: true, value: value ?? null };
   }
   return Object.prototype.hasOwnProperty.call(item.properties, key)
@@ -62,9 +57,9 @@ const matches = (item: KevaItem, condition: QueryCondition): boolean => {
     case "lte": {
       if (
         typeof candidate.value !== typeof operand ||
-        (typeof candidate.value !== "number" &&
-          typeof candidate.value !== "string")
-      ) return false;
+        (typeof candidate.value !== "number" && typeof candidate.value !== "string")
+      )
+        return false;
       const left = candidate.value;
       const right = operand as number | string;
       if (typeof left === "number" && typeof right === "number") {
@@ -85,25 +80,19 @@ const matches = (item: KevaItem, condition: QueryCondition): boolean => {
       if (typeof candidate.value === "string" && typeof operand === "string") {
         return candidate.value.includes(operand);
       }
-      return Array.isArray(candidate.value) &&
-        candidate.value.some((item) => equals(item, operand));
+      return (
+        Array.isArray(candidate.value) && candidate.value.some((item) => equals(item, operand))
+      );
   }
 };
 
-const matchesSearch = (
-  item: KevaItem,
-  search: string | undefined,
-): boolean => {
+const matchesSearch = (item: KevaItem, search: string | undefined): boolean => {
   const term = search?.trim().toLowerCase();
   if (!term) return true;
-  return (
-    item.name.toLowerCase().includes(term) ||
-    item.contentType.toLowerCase().includes(term)
-  );
+  return item.name.toLowerCase().includes(term) || item.contentType.toLowerCase().includes(term);
 };
 
-const encodeCursor = (item: KevaItem): string =>
-  btoa(JSON.stringify([item.createdAt, item.id]));
+const encodeCursor = (item: KevaItem): string => btoa(JSON.stringify([item.createdAt, item.id]));
 
 const decodeCursor = (cursor: string): readonly [string, string] | null => {
   try {
@@ -145,7 +134,8 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           !item ||
           !from.includes(item.status) ||
           (olderThan !== undefined && item.createdAt >= olderThan)
-        ) return false;
+        )
+          return false;
         items.set(key, cloneItem({ ...item, ...patch }));
         return true;
       }),
@@ -184,13 +174,12 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           .sort((a, b) =>
             a.createdAt === b.createdAt
               ? a.id.localeCompare(b.id)
-              : a.createdAt.localeCompare(b.createdAt)
+              : a.createdAt.localeCompare(b.createdAt),
           );
         if (cursor) {
           rows = rows.filter(
             (item) =>
-              item.createdAt > cursor[0] ||
-              (item.createdAt === cursor[0] && item.id > cursor[1]),
+              item.createdAt > cursor[0] || (item.createdAt === cursor[0] && item.id > cursor[1]),
           );
         }
         const page = rows.slice(0, query.limit + 1);
@@ -198,9 +187,7 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         const result = page.slice(0, query.limit).map(cloneItem);
         return {
           items: result,
-          ...(hasMore && result.at(-1)
-            ? { nextCursor: encodeCursor(result.at(-1)!) }
-            : {}),
+          ...(hasMore && result.at(-1) ? { nextCursor: encodeCursor(result.at(-1)!) } : {}),
         };
       }),
     listByStatus: (status, limit, olderThan) =>
@@ -208,20 +195,16 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         [...items.values()]
           .filter(
             (item) =>
-              item.status === status &&
-              (olderThan === undefined || item.createdAt < olderThan),
+              item.status === status && (olderThan === undefined || item.createdAt < olderThan),
           )
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
           .slice(0, limit)
-          .map(cloneItem)
+          .map(cloneItem),
       ),
   };
 };
 
-export const MemoryMetadataStoreLive = Layer.sync(
-  MetadataStore,
-  makeMemoryMetadataStore,
-);
+export const MemoryMetadataStoreLive = Layer.sync(MetadataStore, makeMemoryMetadataStore);
 
 export interface MemoryBlobStoreOptions {
   readonly baseUrl?: string;
@@ -230,26 +213,22 @@ export interface MemoryBlobStoreOptions {
 }
 
 const hashBytes = async (bytes: Uint8Array): Promise<string> => {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    bytes.slice().buffer as ArrayBuffer,
-  );
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
-export const makeMemoryBlobStore = (
-  options: MemoryBlobStoreOptions = {},
-): BlobStoreService => {
+export const makeMemoryBlobStore = (options: MemoryBlobStoreOptions = {}): BlobStoreService => {
   const blobs = new Map<string, MemoryBlob>();
-  const grants = new Map<string, {
-    readonly key: string;
-    readonly method: "PUT" | "GET";
-    readonly size?: number;
-    readonly contentType?: string;
-    readonly expiresAt: number;
-  }>();
+  const grants = new Map<
+    string,
+    {
+      readonly key: string;
+      readonly method: "PUT" | "GET";
+      readonly size?: number;
+      readonly contentType?: string;
+      readonly expiresAt: number;
+    }
+  >();
   const baseUrl = options.baseUrl ?? "http://127.0.0.1:8787";
 
   const presign = (
@@ -272,26 +251,20 @@ export const makeMemoryBlobStore = (
       return {
         url: `${baseUrl}/__dev/blobs/${encodeURIComponent(key)}?token=${token}`,
         expiresAt: new Date(expiresAt).toISOString(),
-        headers: method === "PUT"
-          ? {
-              "content-length": String(size ?? 0),
-              "content-type": contentType ?? "application/octet-stream",
-            }
-          : {},
+        headers:
+          method === "PUT"
+            ? {
+                "content-length": String(size ?? 0),
+                "content-type": contentType ?? "application/octet-stream",
+              }
+            : {},
       };
     });
 
   return {
     presignUpload: (key, size, contentType) =>
-      presign(
-        key,
-        "PUT",
-        options.uploadTtlSeconds ?? 900,
-        size,
-        contentType,
-      ),
-    presignDownload: (key) =>
-      presign(key, "GET", options.downloadTtlSeconds ?? 300),
+      presign(key, "PUT", options.uploadTtlSeconds ?? 900, size, contentType),
+    presignDownload: (key) => presign(key, "GET", options.downloadTtlSeconds ?? 300),
     head: (key) =>
       Effect.sync(() => {
         const blob = blobs.get(key);
@@ -338,23 +311,14 @@ export const makeMemoryBlobStore = (
     devGet: (key, token) =>
       Effect.gen(function* () {
         const grant = grants.get(token);
-        if (
-          !grant ||
-          grant.key !== key ||
-          grant.method !== "GET" ||
-          grant.expiresAt < Date.now()
-        ) {
+        if (!grant || grant.key !== key || grant.method !== "GET" || grant.expiresAt < Date.now()) {
           return yield* new Conflict({ message: "Invalid download grant" });
         }
         const blob = blobs.get(key);
-        return blob
-          ? { bytes: blob.bytes.slice(), contentType: blob.contentType }
-          : null;
+        return blob ? { bytes: blob.bytes.slice(), contentType: blob.contentType } : null;
       }),
   };
 };
 
-export const MemoryBlobStoreLive = (
-  options: MemoryBlobStoreOptions = {},
-): Layer.Layer<BlobStore> =>
+export const MemoryBlobStoreLive = (options: MemoryBlobStoreOptions = {}): Layer.Layer<BlobStore> =>
   Layer.sync(BlobStore, () => makeMemoryBlobStore(options));

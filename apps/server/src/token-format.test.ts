@@ -11,14 +11,11 @@ describe("API token format", () => {
     }
   });
 
-  it(
-    "emits a delimiter-free alphabet so the single '_' separator is unambiguous",
-    () => {
-      for (let i = 0; i < 2000; i++) {
-        expect(/[_-]/.test(randomTokenPart(16))).toBe(false);
-      }
-    },
-  );
+  it("emits a delimiter-free alphabet so the single '_' separator is unambiguous", () => {
+    for (let i = 0; i < 2000; i++) {
+      expect(/[_-]/.test(randomTokenPart(16))).toBe(false);
+    }
+  });
 
   it("returns null for malformed tokens", () => {
     expect(parseTokenParts("nope")).toBeNull();

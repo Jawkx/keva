@@ -20,9 +20,7 @@ describe("S3BlobStore", () => {
 
     expect(url.pathname).toBe("/keva/staging/tenant/object");
     expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
-    expect(url.searchParams.get("X-Amz-SignedHeaders")).toContain(
-      "content-length",
-    );
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toContain("content-length");
     expect(signed.headers).toEqual({
       "content-length": "42",
       "content-type": "text/plain",

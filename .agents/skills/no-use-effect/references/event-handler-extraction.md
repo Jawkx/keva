@@ -16,8 +16,13 @@ function buyProduct() {
   showNotification(`Added ${product.name}!`);
 }
 
-function handleBuyClick() { buyProduct(); }
-function handleCheckoutClick() { buyProduct(); navigateTo('/checkout'); }
+function handleBuyClick() {
+  buyProduct();
+}
+function handleCheckoutClick() {
+  buyProduct();
+  navigateTo("/checkout");
+}
 ```
 
 ## Form submission
@@ -26,13 +31,13 @@ function handleCheckoutClick() { buyProduct(); navigateTo('/checkout'); }
 // BAD: effect watches jsonToSubmit
 const [jsonToSubmit, setJsonToSubmit] = useState(null);
 useEffect(() => {
-  if (jsonToSubmit !== null) post('/api/register', jsonToSubmit);
+  if (jsonToSubmit !== null) post("/api/register", jsonToSubmit);
 }, [jsonToSubmit]);
 
 // GOOD: submit in the handler
 function handleSubmit(e) {
   e.preventDefault();
-  post('/api/register', { firstName, lastName });
+  post("/api/register", { firstName, lastName });
 }
 ```
 

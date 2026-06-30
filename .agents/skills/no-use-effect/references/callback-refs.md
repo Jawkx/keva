@@ -32,11 +32,13 @@ function MeasuredBox() {
 ```tsx
 // BAD
 const inputRef = useRef<HTMLInputElement>(null);
-useMountEffect(() => { inputRef.current?.focus(); });
+useMountEffect(() => {
+  inputRef.current?.focus();
+});
 return <input ref={inputRef} />;
 
 // GOOD: callback ref
-<input ref={(node) => node?.focus()} />
+<input ref={(node) => node?.focus()} />;
 ```
 
 ## Third-party library initialization (React 19+)
@@ -51,11 +53,14 @@ useMountEffect(() => {
 return <div ref={containerRef} />;
 
 // GOOD: callback ref with cleanup (React 19+ supports return values)
-const chartRef = useCallback((node: HTMLDivElement | null) => {
-  if (node === null) return;
-  const chart = new Chart(node, config);
-  return () => chart.destroy(); // cleanup when node detaches
-}, [config]);
+const chartRef = useCallback(
+  (node: HTMLDivElement | null) => {
+    if (node === null) return;
+    const chart = new Chart(node, config);
+    return () => chart.destroy(); // cleanup when node detaches
+  },
+  [config],
+);
 return <div ref={chartRef} />;
 ```
 

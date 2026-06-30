@@ -11,7 +11,7 @@ function ChatRoom({ roomId, onMessage }) {
   onMessageRef.current = onMessage;
   useEffect(() => {
     const conn = createConnection(roomId);
-    conn.on('message', (msg) => onMessageRef.current(msg));
+    conn.on("message", (msg) => onMessageRef.current(msg));
     return () => conn.disconnect();
   }, [roomId]);
 }
@@ -24,7 +24,7 @@ function ChatRoom({ roomId, onMessage }) {
 
   useEffect(() => {
     const conn = createConnection(roomId);
-    conn.on('message', onMsg);
+    conn.on("message", onMsg);
     return () => conn.disconnect();
   }, [roomId]); // onMsg is stable, no need to list it
 }
@@ -35,7 +35,7 @@ function ChatRoom({ roomId, onMessage }) {
 ```tsx
 // BAD: ref to read latest theme in effect
 function Page({ url }) {
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState("light");
   const themeRef = useRef(theme);
   themeRef.current = theme;
   useEffect(() => {
@@ -47,7 +47,7 @@ function Page({ url }) {
 
 // GOOD: useEffectEvent
 function Page({ url }) {
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState("light");
   const onVisit = useEffectEvent(() => {
     logVisit(url, theme); // always reads latest theme
   });

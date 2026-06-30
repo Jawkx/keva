@@ -7,10 +7,7 @@ import type { KevaItem, QueryResult } from "@keva/sdk";
 // sees the change.
 export type ItemsCache = InfiniteData<QueryResult, string | undefined>;
 
-export function removeItemsFromPages(
-  data: ItemsCache,
-  ids: Iterable<string>,
-): ItemsCache {
+export function removeItemsFromPages(data: ItemsCache, ids: Iterable<string>): ItemsCache {
   const drop = new Set(ids);
   return {
     ...data,
@@ -21,25 +18,17 @@ export function removeItemsFromPages(
   };
 }
 
-export function replaceItemInPages(
-  data: ItemsCache,
-  item: KevaItem,
-): ItemsCache {
+export function replaceItemInPages(data: ItemsCache, item: KevaItem): ItemsCache {
   return {
     ...data,
     pages: data.pages.map((page) => ({
       ...page,
-      items: page.items.map((existing) =>
-        existing.id === item.id ? item : existing,
-      ),
+      items: page.items.map((existing) => (existing.id === item.id ? item : existing)),
     })),
   };
 }
 
-export function prependItemToPages(
-  data: ItemsCache,
-  item: KevaItem,
-): ItemsCache {
+export function prependItemToPages(data: ItemsCache, item: KevaItem): ItemsCache {
   const [first, ...rest] = data.pages;
   if (!first) return data;
   return {

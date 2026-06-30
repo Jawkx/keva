@@ -1,7 +1,4 @@
-import {
-  MemoryBlobStoreLive,
-  MemoryMetadataStoreLive,
-} from "@keva/core";
+import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
@@ -42,27 +39,24 @@ describe("server API", () => {
       }),
     });
     expect(initiatedResponse.status).toBe(200);
-    const initiated = await initiatedResponse.json() as {
+    const initiated = (await initiatedResponse.json()) as {
       item: { id: string };
       uploadUrl: string;
       headers: Record<string, string>;
     };
 
     const uploadUrl = new URL(initiated.uploadUrl);
-    const uploaded = await app.request(
-      `${uploadUrl.pathname}${uploadUrl.search}`,
-      {
-        method: "PUT",
-        headers: initiated.headers,
-        body: "hello",
-      },
-    );
+    const uploaded = await app.request(`${uploadUrl.pathname}${uploadUrl.search}`, {
+      method: "PUT",
+      headers: initiated.headers,
+      body: "hello",
+    });
     expect(uploaded.status).toBe(200);
 
-    const confirmed = await app.request(
-      `/api/items/${initiated.item.id}/confirm`,
-      { method: "POST", headers: auth },
-    );
+    const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {
+      method: "POST",
+      headers: auth,
+    });
     expect(confirmed.status).toBe(200);
     expect(await confirmed.json()).toMatchObject({
       id: initiated.item.id,
@@ -78,6 +72,6 @@ describe("server API", () => {
       }),
     });
     expect(queried.status).toBe(200);
-    expect((await queried.json() as { items: unknown[] }).items).toHaveLength(1);
+    expect(((await queried.json()) as { items: unknown[] }).items).toHaveLength(1);
   });
 });

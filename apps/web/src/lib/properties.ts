@@ -15,12 +15,7 @@ export const MAX_ARRAY_ITEMS = 256;
 export type ScalarType = "string" | "number" | "boolean" | "null";
 export type ValueType = ScalarType | "array";
 
-export const SCALAR_TYPES: ScalarType[] = [
-  "string",
-  "number",
-  "boolean",
-  "null",
-];
+export const SCALAR_TYPES: ScalarType[] = ["string", "number", "boolean", "null"];
 
 // Short, dev-friendly labels for the type pill.
 export const TYPE_LABEL: Record<ValueType, string> = {
@@ -41,9 +36,7 @@ export const valueType = (value: PropertyValue): ValueType => {
 
 // What you most likely meant by typing `raw`. Null is never inferred — it's an
 // explicit choice — so a value-first flow stays predictable.
-export const inferScalarType = (
-  raw: string,
-): Exclude<ScalarType, "null"> => {
+export const inferScalarType = (raw: string): Exclude<ScalarType, "null"> => {
   const trimmed = raw.trim();
   if (trimmed === "true" || trimmed === "false") return "boolean";
   if (trimmed !== "" && Number.isFinite(Number(trimmed))) return "number";
@@ -71,8 +64,7 @@ export const scalarToInput = (value: PropertyValue): string => {
 export const validateKey = (key: string): string | null => {
   if (!key) return "Key is required";
   if (key.length > KEY_MAX) return `Key must be at most ${KEY_MAX} characters`;
-  if (!KEY_PATTERN.test(key))
-    return "Use letters, digits, . _ - and start with a letter or digit";
+  if (!KEY_PATTERN.test(key)) return "Use letters, digits, . _ - and start with a letter or digit";
   if (key.startsWith("system.") || key.startsWith("keva."))
     return "Keys cannot use the system. or keva. namespaces";
   return null;
@@ -84,11 +76,9 @@ const encodedBytes = (value: unknown): number =>
 const validateValue = (value: unknown): string | null => {
   if (value === null) return null;
   if (typeof value === "string" || typeof value === "boolean") return null;
-  if (typeof value === "number")
-    return Number.isFinite(value) ? null : "Numbers must be finite";
+  if (typeof value === "number") return Number.isFinite(value) ? null : "Numbers must be finite";
   if (Array.isArray(value)) {
-    if (value.length > MAX_ARRAY_ITEMS)
-      return `Arrays may have at most ${MAX_ARRAY_ITEMS} items`;
+    if (value.length > MAX_ARRAY_ITEMS) return `Arrays may have at most ${MAX_ARRAY_ITEMS} items`;
     const itemType = typeof value[0];
     if (itemType !== "string" && itemType !== "number" && itemType !== "boolean")
       return "Arrays must contain strings, numbers, or booleans";
@@ -146,8 +136,7 @@ export const diffProperties = (
 ): { set: Record<string, PropertyValue>; unset: string[] } => {
   const set: Record<string, PropertyValue> = {};
   for (const [key, value] of Object.entries(next)) {
-    if (!(key in original) || !valuesEqual(original[key]!, value))
-      set[key] = value;
+    if (!(key in original) || !valuesEqual(original[key]!, value)) set[key] = value;
   }
   const unset = Object.keys(original).filter((key) => !(key in next));
   return { set, unset };

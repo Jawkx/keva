@@ -36,10 +36,7 @@ const filteredProducts = products.filter((p) => p.inStock);
 For expensive calculations, use `useMemo`:
 
 ```tsx
-const visibleTodos = useMemo(
-  () => getFilteredTodos(todos, filter),
-  [todos, filter]
-);
+const visibleTodos = useMemo(() => getFilteredTodos(todos, filter), [todos, filter]);
 ```
 
 **Smell test:** You're about to write `useEffect(() => setX(f(y)), [y])` or state that only mirrors other state/props.
@@ -55,10 +52,7 @@ useEffect(() => {
 }, [productId]);
 
 // GOOD: library handles cancellation/caching/staleness
-const { data: product } = useQuery(
-  ['product', productId],
-  () => fetchProduct(productId)
-);
+const { data: product } = useQuery(["product", productId], () => fetchProduct(productId));
 ```
 
 In React 19+, use the `use()` hook with `<Suspense>` to unwrap promises without `useEffect` or `useState`:
@@ -81,11 +75,14 @@ If a user action triggers it, do the work in the handler. Procedural logic (vali
 // BAD: flag-relay through effect
 const [liked, setLiked] = useState(false);
 useEffect(() => {
-  if (liked) { postLike(); setLiked(false); }
+  if (liked) {
+    postLike();
+    setLiked(false);
+  }
 }, [liked]);
 
 // GOOD: direct
-<button onClick={() => postLike()}>Like</button>
+<button onClick={() => postLike()}>Like</button>;
 ```
 
 For shared logic between handlers, extract a function — not an effect:
@@ -127,13 +124,17 @@ If you need "start fresh when ID changes," use React's remount semantics.
 
 ```tsx
 // BAD: effect resets on ID change
-useEffect(() => { loadVideo(videoId); }, [videoId]);
+useEffect(() => {
+  loadVideo(videoId);
+}, [videoId]);
 
 // GOOD: key forces clean remount
-<VideoPlayer key={videoId} videoId={videoId} />
+<VideoPlayer key={videoId} videoId={videoId} />;
 
 function VideoPlayer({ videoId }) {
-  useMountEffect(() => { loadVideo(videoId); });
+  useMountEffect(() => {
+    loadVideo(videoId);
+  });
 }
 ```
 
@@ -166,7 +167,7 @@ const onMessageRef = useRef(onMessage);
 onMessageRef.current = onMessage;
 useEffect(() => {
   const conn = createConnection(roomId);
-  conn.on('message', (msg) => onMessageRef.current(msg));
+  conn.on("message", (msg) => onMessageRef.current(msg));
   return () => conn.disconnect();
 }, [roomId]);
 
@@ -176,12 +177,12 @@ const onMsg = useEffectEvent((msg) => {
 });
 useEffect(() => {
   const conn = createConnection(roomId);
-  conn.on('message', onMsg);
+  conn.on("message", onMsg);
   return () => conn.disconnect();
 }, [roomId]);
 ```
 
-The React docs explicitly warn: *"The right question isn't 'how to run an Effect once', but 'how to fix my Effect so that it works after remounting'."*
+The React docs explicitly warn: _"The right question isn't 'how to run an Effect once', but 'how to fix my Effect so that it works after remounting'."_
 
 **Smell test:** You're adding `hasRun.current`, `isMounted.current`, or a ref whose sole purpose is controlling when/if an effect runs. Or you're storing a callback in a ref to avoid listing it as a dependency.
 
@@ -193,7 +194,9 @@ Do not use an effect to call `onChange` — update both in the event handler, or
 
 ```tsx
 // BAD
-useEffect(() => { onChange(isOn); }, [isOn, onChange]);
+useEffect(() => {
+  onChange(isOn);
+}, [isOn, onChange]);
 
 // GOOD: update both during the event
 function updateToggle(nextIsOn) {
@@ -256,7 +259,7 @@ Use `useSyncExternalStore` instead of manual subscription effects:
 const isOnline = useSyncExternalStore(
   subscribe,
   () => navigator.onLine,
-  () => true
+  () => true,
 );
 ```
 
@@ -265,7 +268,7 @@ const isOnline = useSyncExternalStore(
 Run once at module level, not in an effect:
 
 ```tsx
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   checkAuthToken();
   loadDataFromLocalStorage();
 }
@@ -277,9 +280,18 @@ Never chain effects that trigger each other. Derive values inline and batch stat
 
 ```tsx
 // BAD: 3 effects chaining state -> 3 extra renders
-useEffect(() => { if (card?.gold) setGoldCardCount(c => c + 1); }, [card]);
-useEffect(() => { if (goldCardCount > 3) { setRound(r => r + 1); setGoldCardCount(0); } }, [goldCardCount]);
-useEffect(() => { if (round > 5) setIsGameOver(true); }, [round]);
+useEffect(() => {
+  if (card?.gold) setGoldCardCount((c) => c + 1);
+}, [card]);
+useEffect(() => {
+  if (goldCardCount > 3) {
+    setRound((r) => r + 1);
+    setGoldCardCount(0);
+  }
+}, [goldCardCount]);
+useEffect(() => {
+  if (round > 5) setIsGameOver(true);
+}, [round]);
 
 // GOOD: derive + handle in event
 const isGameOver = round > 5;
@@ -288,7 +300,10 @@ function handlePlaceCard(nextCard) {
   setCard(nextCard);
   if (nextCard.gold) {
     if (goldCardCount < 3) setGoldCardCount(goldCardCount + 1);
-    else { setGoldCardCount(0); setRound(round + 1); }
+    else {
+      setGoldCardCount(0);
+      setRound(round + 1);
+    }
   }
 }
 ```

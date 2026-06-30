@@ -29,16 +29,10 @@ export const isReservedKey = (key: string): boolean =>
 
 // A key a user may freely set/unset as a property (the open long tail).
 export const isPropertyKey = (key: string): boolean =>
-  queryKeyPattern.test(key) &&
-  key.length <= PROPERTY_LIMITS.keyLength &&
-  !isReservedKey(key);
+  queryKeyPattern.test(key) && key.length <= PROPERTY_LIMITS.keyLength && !isReservedKey(key);
 
 export type FieldOwner = "user" | "system";
-export type FieldQueryType =
-  | "string"
-  | "number"
-  | "nullable-string"
-  | "timestamp";
+export type FieldQueryType = "string" | "number" | "nullable-string" | "timestamp";
 
 export interface FieldDescriptor {
   /** Canonical key in the unified key-space (e.g. "name", "system.size"). */
@@ -58,7 +52,14 @@ export interface FieldDescriptor {
 }
 
 export const FIELDS: readonly FieldDescriptor[] = [
-  { key: "id", owner: "system", required: true, column: "id", itemField: "id", queryType: "string" },
+  {
+    key: "id",
+    owner: "system",
+    required: true,
+    column: "id",
+    itemField: "id",
+    queryType: "string",
+  },
   {
     key: "name",
     owner: "user",
@@ -68,14 +69,70 @@ export const FIELDS: readonly FieldDescriptor[] = [
     queryType: "string",
     valueSchema: Schema.NonEmptyString,
   },
-  { key: "system.content_type", owner: "system", required: true, column: "content_type", itemField: "contentType", queryType: "string" },
-  { key: "system.size", owner: "system", required: false, column: "size", itemField: "size", queryType: "number" },
-  { key: "system.etag", owner: "system", required: false, column: "etag", itemField: "etag", queryType: "nullable-string" },
-  { key: "system.checksum", owner: "system", required: false, column: "checksum", itemField: "checksum", queryType: "nullable-string" },
-  { key: "system.source", owner: "system", required: true, column: "source", itemField: "source", queryType: "string" },
-  { key: "system.status", owner: "system", required: true, column: "status", itemField: "status", queryType: "string" },
-  { key: "system.created_at", owner: "system", required: true, column: "created_at", itemField: "createdAt", queryType: "timestamp" },
-  { key: "system.updated_at", owner: "system", required: true, column: "updated_at", itemField: "updatedAt", queryType: "timestamp" },
+  {
+    key: "system.content_type",
+    owner: "system",
+    required: true,
+    column: "content_type",
+    itemField: "contentType",
+    queryType: "string",
+  },
+  {
+    key: "system.size",
+    owner: "system",
+    required: false,
+    column: "size",
+    itemField: "size",
+    queryType: "number",
+  },
+  {
+    key: "system.etag",
+    owner: "system",
+    required: false,
+    column: "etag",
+    itemField: "etag",
+    queryType: "nullable-string",
+  },
+  {
+    key: "system.checksum",
+    owner: "system",
+    required: false,
+    column: "checksum",
+    itemField: "checksum",
+    queryType: "nullable-string",
+  },
+  {
+    key: "system.source",
+    owner: "system",
+    required: true,
+    column: "source",
+    itemField: "source",
+    queryType: "string",
+  },
+  {
+    key: "system.status",
+    owner: "system",
+    required: true,
+    column: "status",
+    itemField: "status",
+    queryType: "string",
+  },
+  {
+    key: "system.created_at",
+    owner: "system",
+    required: true,
+    column: "created_at",
+    itemField: "createdAt",
+    queryType: "timestamp",
+  },
+  {
+    key: "system.updated_at",
+    owner: "system",
+    required: true,
+    column: "updated_at",
+    itemField: "updatedAt",
+    queryType: "timestamp",
+  },
 ];
 
 export const FIELD_BY_KEY: ReadonlyMap<string, FieldDescriptor> = new Map(
@@ -85,8 +142,7 @@ export const FIELD_BY_KEY: ReadonlyMap<string, FieldDescriptor> = new Map(
 // A key is queryable if it is a declared field or a valid user-property key.
 // (`keva.`-prefixed keys pass the pattern but match nothing — preserved as-is.)
 export const isQueryKey = (key: string): boolean =>
-  FIELD_BY_KEY.has(key) ||
-  (!key.startsWith("system.") && queryKeyPattern.test(key));
+  FIELD_BY_KEY.has(key) || (!key.startsWith("system.") && queryKeyPattern.test(key));
 
 export interface RoutedPatch {
   /** User-writable column fields, keyed by canonical field key (e.g. "name"). */

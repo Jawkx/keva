@@ -69,8 +69,7 @@ export class KevaClient {
   constructor(options: KevaClientOptions) {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
     this.#token = options.token;
-    this.#credentials =
-      options.credentials ?? (options.token ? "same-origin" : "include");
+    this.#credentials = options.credentials ?? (options.token ? "same-origin" : "include");
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
@@ -99,7 +98,8 @@ export class KevaClient {
           error !== null &&
           "_tag" in error &&
           error._tag !== "ParseError"
-        ) throw error;
+        )
+          throw error;
         throw new KevaProtocolError(
           `Server returned ${response.status} with an invalid error body`,
         );
@@ -119,10 +119,7 @@ export class KevaClient {
     return this.#request("POST", "/items", InitiateUploadResult, body);
   }
 
-  async uploadBody(
-    input: InitiateUploadType,
-    body: UploadBody,
-  ): Promise<KevaItemType> {
+  async uploadBody(input: InitiateUploadType, body: UploadBody): Promise<KevaItemType> {
     const initiated = await this.initiate(input);
     const response = await this.#fetch(initiated.uploadUrl, {
       method: "PUT",
@@ -167,11 +164,7 @@ export class KevaClient {
   }
 
   getDownloadUrl(id: string): Promise<DownloadResultType> {
-    return this.#request(
-      "GET",
-      `/items/${encodeURIComponent(id)}/content`,
-      DownloadResult,
-    );
+    return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
   }
 
   async downloadResponse(id: string): Promise<Response> {
@@ -214,11 +207,6 @@ export class KevaClient {
   }
 
   deleteMany(ids: readonly string[]): Promise<BatchDeleteResultType> {
-    return this.#request(
-      "POST",
-      "/items/delete",
-      BatchDeleteResult,
-      decode(BatchDelete, { ids }),
-    );
+    return this.#request("POST", "/items/delete", BatchDeleteResult, decode(BatchDelete, { ids }));
   }
 }

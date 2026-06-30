@@ -62,8 +62,7 @@ export function AppShell() {
     exact ? location.pathname === url : location.pathname.startsWith(url);
   // The Files screen owns its own full-height, edge-to-edge master/detail
   // layout; every other page gets the centered, padded container.
-  const fullBleed =
-    location.pathname === "/" || location.pathname.startsWith("/items/");
+  const fullBleed = location.pathname === "/" || location.pathname.startsWith("/items/");
 
   return (
     <SidebarProvider>
@@ -77,9 +76,7 @@ export function AppShell() {
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-heading font-semibold">keva</span>
-                  <span className="text-xs text-muted-foreground">
-                    structured storage
-                  </span>
+                  <span className="text-xs text-muted-foreground">structured storage</span>
                 </div>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -113,10 +110,7 @@ export function AppShell() {
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
-                    <SidebarMenuButton
-                      size="lg"
-                      className="data-[state=open]:bg-sidebar-accent"
-                    />
+                    <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent" />
                   }
                 >
                   <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-sm font-medium uppercase">
@@ -124,17 +118,11 @@ export function AppShell() {
                   </div>
                   <div className="flex flex-1 flex-col gap-0.5 text-left leading-none">
                     <span className="truncate text-sm font-medium">{name}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {email}
-                    </span>
+                    <span className="truncate text-xs text-muted-foreground">{email}</span>
                   </div>
                   <IconSelector className="ml-auto size-4 text-muted-foreground" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  side="top"
-                  align="start"
-                  className="min-w-56"
-                >
+                <DropdownMenuContent side="top" align="start" className="min-w-56">
                   <DropdownMenuGroup>
                     <DropdownMenuLabel>{email}</DropdownMenuLabel>
                   </DropdownMenuGroup>

@@ -18,8 +18,7 @@ export type PropertyKey = typeof PropertyKey.Type;
 
 export const PropertyString = Schema.String.pipe(
   Schema.filter(
-    (value) =>
-      new TextEncoder().encode(value).byteLength <= PROPERTY_LIMITS.stringBytes,
+    (value) => new TextEncoder().encode(value).byteLength <= PROPERTY_LIMITS.stringBytes,
     { message: () => "String properties must be at most 8 KB" },
   ),
 );
@@ -42,18 +41,15 @@ export const Properties = Schema.Record({
   key: Schema.String,
   value: PropertyValue,
 }).pipe(
-  Schema.filter(
-    (properties) => Object.keys(properties).every(isPropertyKey),
-    { message: () => "Invalid or reserved property key" },
-  ),
-  Schema.filter(
-    (properties) => Object.keys(properties).length <= PROPERTY_LIMITS.keys,
-    { message: () => "An item may have at most 256 properties" },
-  ),
-  Schema.filter(
-    (properties) => encodedBytes(properties) <= PROPERTY_LIMITS.totalBytes,
-    { message: () => "Properties must be at most 64 KB in total" },
-  ),
+  Schema.filter((properties) => Object.keys(properties).every(isPropertyKey), {
+    message: () => "Invalid or reserved property key",
+  }),
+  Schema.filter((properties) => Object.keys(properties).length <= PROPERTY_LIMITS.keys, {
+    message: () => "An item may have at most 256 properties",
+  }),
+  Schema.filter((properties) => encodedBytes(properties) <= PROPERTY_LIMITS.totalBytes, {
+    message: () => "Properties must be at most 64 KB in total",
+  }),
 );
 export type Properties = typeof Properties.Type;
 
@@ -92,16 +88,7 @@ export const KevaItem = Schema.Struct({
 });
 export type KevaItem = typeof KevaItem.Type;
 
-export const Operator = Schema.Literal(
-  "eq",
-  "neq",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "contains",
-  "exists",
-);
+export const Operator = Schema.Literal("eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists");
 export type Operator = typeof Operator.Type;
 
 export const QueryKey = Schema.String.pipe(
@@ -120,8 +107,8 @@ export const QueryCondition = Schema.Struct({
     ({ op, value }) => {
       if (op === "exists") return value === undefined;
       if (value === undefined) return false;
-      if (op === "contains") return typeof value === "string" ||
-        typeof value === "number" || typeof value === "boolean";
+      if (op === "contains")
+        return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
       if (["gt", "gte", "lt", "lte"].includes(op)) {
         return typeof value === "string" || typeof value === "number";
       }
@@ -137,10 +124,9 @@ export const Query = Schema.Struct({
     default: () => [],
   }),
   search: Schema.optional(Schema.String.pipe(Schema.maxLength(256))),
-  limit: Schema.optionalWith(
-    Schema.Number.pipe(Schema.int(), Schema.between(1, 1000)),
-    { default: () => 100 },
-  ),
+  limit: Schema.optionalWith(Schema.Number.pipe(Schema.int(), Schema.between(1, 1000)), {
+    default: () => 100,
+  }),
   cursor: Schema.optional(Schema.String),
 });
 export type Query = typeof Query.Type;
@@ -152,18 +138,13 @@ export const QueryResult = Schema.Struct({
 export type QueryResult = typeof QueryResult.Type;
 
 export const BatchDelete = Schema.Struct({
-  ids: Schema.Array(ItemId).pipe(
-    Schema.minItems(1),
-    Schema.maxItems(1000),
-  ),
+  ids: Schema.Array(ItemId).pipe(Schema.minItems(1), Schema.maxItems(1000)),
 });
 export type BatchDelete = typeof BatchDelete.Type;
 
 export const BatchDeleteResult = Schema.Struct({
   deleted: Schema.Array(Schema.String),
-  failed: Schema.Array(
-    Schema.Struct({ id: Schema.String, error: Schema.String }),
-  ),
+  failed: Schema.Array(Schema.Struct({ id: Schema.String, error: Schema.String })),
 });
 export type BatchDeleteResult = typeof BatchDeleteResult.Type;
 
@@ -192,10 +173,9 @@ export type InitiateUploadResult = typeof InitiateUploadResult.Type;
 // authority that routes each key to its column or the property blob and rejects
 // writes to system-owned or reserved keys.
 export const ItemPatch = Schema.Struct({
-  set: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: PropertyValue }),
-    { default: () => ({}) },
-  ),
+  set: Schema.optionalWith(Schema.Record({ key: Schema.String, value: PropertyValue }), {
+    default: () => ({}),
+  }),
   unset: Schema.optionalWith(Schema.Array(Schema.String), {
     default: () => [],
   }),
@@ -232,38 +212,31 @@ export const MintTokenResult = Schema.Struct({
 });
 export type MintTokenResult = typeof MintTokenResult.Type;
 
-export class ValidationError extends Schema.TaggedError<ValidationError>()(
-  "ValidationError",
-  { message: Schema.String },
-) {}
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
-  "Unauthorized",
-  { message: Schema.String },
-) {}
-export class Forbidden extends Schema.TaggedError<Forbidden>()(
-  "Forbidden",
-  { message: Schema.String },
-) {}
-export class NotFound extends Schema.TaggedError<NotFound>()(
-  "NotFound",
-  { message: Schema.String },
-) {}
-export class Conflict extends Schema.TaggedError<Conflict>()(
-  "Conflict",
-  { message: Schema.String },
-) {}
-export class QuotaExceeded extends Schema.TaggedError<QuotaExceeded>()(
-  "QuotaExceeded",
-  { message: Schema.String },
-) {}
+export class ValidationError extends Schema.TaggedError<ValidationError>()("ValidationError", {
+  message: Schema.String,
+}) {}
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", {
+  message: Schema.String,
+}) {}
+export class Forbidden extends Schema.TaggedError<Forbidden>()("Forbidden", {
+  message: Schema.String,
+}) {}
+export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", {
+  message: Schema.String,
+}) {}
+export class Conflict extends Schema.TaggedError<Conflict>()("Conflict", {
+  message: Schema.String,
+}) {}
+export class QuotaExceeded extends Schema.TaggedError<QuotaExceeded>()("QuotaExceeded", {
+  message: Schema.String,
+}) {}
 export class StorageUnavailable extends Schema.TaggedError<StorageUnavailable>()(
   "StorageUnavailable",
   { message: Schema.String },
 ) {}
-export class Internal extends Schema.TaggedError<Internal>()(
-  "Internal",
-  { message: Schema.String },
-) {}
+export class Internal extends Schema.TaggedError<Internal>()("Internal", {
+  message: Schema.String,
+}) {}
 
 export const KevaError = Schema.Union(
   ValidationError,

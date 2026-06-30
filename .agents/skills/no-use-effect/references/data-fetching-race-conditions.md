@@ -16,9 +16,13 @@ function useData(url) {
   useEffect(() => {
     let ignore = false;
     fetch(url)
-      .then(r => r.json())
-      .then(json => { if (!ignore) setData(json); });
-    return () => { ignore = true; };
+      .then((r) => r.json())
+      .then((json) => {
+        if (!ignore) setData(json);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [url]);
   return data;
 }
