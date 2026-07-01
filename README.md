@@ -36,7 +36,9 @@ The SDK base URL should point at the API prefix (`/api`), not the server root.
 
 ## Database
 
-Set `DATABASE_URL`, then run `pnpm db:migrate`. The checked-in migration includes
-both keva metadata/API-token tables and the Better Auth organization/session
-tables needed by phase 4. Regenerate the Better Auth schema with
-`pnpm --filter @keva/server auth:generate` after changing auth plugins.
+Set `DATABASE_URL`, then run `pnpm db:migrate`. The checked-in migrations include
+keva metadata/API-token tables, the Better Auth organization/session tables, and
+the OAuth tables (`oauth_application`, `oauth_access_token`, `oauth_consent`) that
+back the MCP server's OAuth 2.1 authorization. Regenerate the Better Auth schema
+with `pnpm --filter @keva/server auth:generate` after changing auth plugins, then
+`pnpm db:generate` to produce the migration.

@@ -91,11 +91,11 @@ keva/
 │   │   │   ├── worker.ts       # Workers entry — export default app
 │   │   │   └── node.ts         # Node entry — @hono/node-server
 │   │   └── wrangler.toml
-│   ├── web/                    # consumer dashboard + Better Auth (control plane)
-│   └── mcp/                    # MCP server — planned agent client
+│   └── web/                    # consumer dashboard + Better Auth (control plane) + OAuth login/consent UI
 ├── packages/
 │   ├── schema/                 # Effect Schema: item, query, errors, Principal. Source of truth.
 │   ├── core/                   # Effect: KevaEngine + BlobStore/MetadataStore services & layers (authorizes from Principal)
+│   ├── mcp/                    # MCP tool definitions (zod); pure, delegates to an injected engine. Mounted by apps/server's /mcp route.
 │   └── sdk/                    # public client. Plain Promises. Decodes shared error schema.
 ├── tooling/
 │   └── tsconfig/               # shared TS config

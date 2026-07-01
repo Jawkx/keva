@@ -10,15 +10,26 @@ docs in `plans/` are design/reference material, not a backlog.
 
 ## Remaining Work
 
-### Agent surface (MCP)
+### Agent surface (MCP) — shipped, with follow-ups
 
-- Add `apps/mcp` with MCP tools for query, item metadata read, content URL/read,
-  and property writes.
-- Authenticate the MCP server with existing `keva_sk_...` API tokens.
-- Reuse `@keva/core` for authorization, tenancy, validation, and lifecycle
-  rules.
-- Add end-to-end tests proving MCP token access is confined to the token's
-  tenant and scopes.
+keva is now an MCP server: `packages/mcp` declares the tools (`query_items`,
+`get_item`, `get_content_url`, `set_properties`, `delete_item`) and the `/mcp`
+route in `apps/server` resolves an OAuth access token to a `Principal` and runs
+each tool through `@keva/core` (so tenancy/scopes/validation are not duplicated).
+Auth is OAuth 2.1 via Better Auth's `mcp` plugin (see [`auth.md`](./auth.md)).
+Remaining:
+
+- Add automated end-to-end tests that exercise the full OAuth + `/mcp` flow
+  against a real database (register → authorize → consent → token → tool call),
+  proving tenant isolation and scope enforcement over HTTP. Current coverage is
+  the pure mapping + route-auth unit tests plus tool-level tests in
+  `packages/mcp`; the live flow is verified manually with the MCP Inspector.
+- Add CORS handling on `/mcp` and `/.well-known/*` if browser-based MCP clients
+  need it (server-side clients and the Inspector proxy do not).
+- Optional: an `apps/mcp` stdio entry point reusing `packages/mcp` for local
+  clients that prefer stdio over remote HTTP.
+- Consider an `upload`/multipart tool once a presigned-PUT-friendly tool shape is
+  designed; v1 is read/query/property-write/delete.
 
 ### Multi-tenant hardening
 
@@ -55,10 +66,14 @@ docs in `plans/` are design/reference material, not a backlog.
   ranges, sorts, substring search, or full-text search on selected keys.
 - Add provenance for property writes if agent/user attribution becomes necessary.
 
-### Hosted MCP auth
+### Hosted MCP auth — decided & shipped
 
-- Evaluate OAuth 2.1 for a hosted remote MCP endpoint. Local or self-hosted MCP
-  can continue to use existing API tokens unless the deployment model changes.
+The remote MCP endpoint uses **OAuth 2.1** (PKCE + dynamic client registration +
+protected-resource metadata), served by Better Auth's `mcp`/OIDC provider. Access
+tokens are opaque and DB-backed (revocable), keeping the no-JWT guardrail. The
+authorization server requires a database; in the no-DB/static-token path the
+`/mcp` and discovery routes stay unmounted. `keva_sk_…` API tokens remain the
+credential for the plain HTTP API and SDK.
 
 ### Optional platform work
 

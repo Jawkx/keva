@@ -98,8 +98,26 @@ Every route authenticates to a `Principal` and is scoped by its prefix + scopes.
 | `GET /tokens` · `DELETE /tokens/:id` | admin  | list / revoke tokens                                                                           |
 | `GET /health`                        | —      | liveness                                                                                       |
 
-The MCP server (later) exposes the read/query/patch-properties subset as tools,
-backed by the same core.
+## MCP surface (OAuth 2.1)
+
+keva is also an MCP server. These routes are mounted only when Better Auth is
+configured (i.e. a database is present); the static-token path omits them.
+
+| Method & path                                  | Auth                | Purpose                                                                 |
+| ---------------------------------------------- | ------------------- | ----------------------------------------------------------------------- |
+| `ALL /mcp`                                     | OAuth bearer        | Streamable-HTTP MCP endpoint (stateless, JSON responses). Tools below.  |
+| `GET /.well-known/oauth-protected-resource`    | —                   | RFC 9728 metadata pointing at the authorization server                  |
+| `GET /.well-known/oauth-authorization-server`  | —                   | RFC 8414 authorization-server metadata                                  |
+| `… /api/auth/mcp/{authorize,token,register}`   | OAuth               | Better Auth authorize / token / dynamic client registration            |
+| `POST /api/auth/oauth2/consent`                | session             | record the user's consent decision                                      |
+| `GET /api/connections` · `DELETE /api/connections/:id` | session     | list / revoke authorized MCP applications                               |
+
+The `/mcp` endpoint authenticates the OAuth access token to a `Principal` and
+exposes the read/query/property-write subset as tools (`query_items`, `get_item`,
+`get_content_url`, `set_properties`, `delete_item`), each backed by the same
+`@keva/core` engine. Tools are registered per-connection from the token's granted
+scopes, so a read-only token never sees the write tools. See
+[`auth.md`](./auth.md#mcp).
 
 ## Conventions
 

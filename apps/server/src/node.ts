@@ -1,11 +1,7 @@
 import { serve } from "@hono/node-server";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
 import { createApp } from "./app.js";
-import * as authSchema from "./auth-schema.js";
-import { betterAuthSessionResolver, createBetterAuth } from "./better-auth.js";
 import { trustedOriginsFor } from "./origins.js";
-import { makeRuntimeLayer } from "./runtime.js";
+import { createServerOptions } from "./server-options.js";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -32,38 +28,23 @@ const s3 = process.env.S3_ENDPOINT
       forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== "false",
     }
   : undefined;
-const auth =
-  process.env.DATABASE_URL && process.env.BETTER_AUTH_SECRET
-    ? createBetterAuth({
-        database: drizzle(postgres(process.env.DATABASE_URL), {
-          schema: authSchema,
-        }),
-        secret: process.env.BETTER_AUTH_SECRET,
-        baseURL: process.env.BETTER_AUTH_URL ?? baseUrl,
-        trustedOrigins,
-      })
-    : undefined;
-
-const layer = makeRuntimeLayer({
+const appOptions = createServerOptions({
   staticToken: required("KEVA_STATIC_TOKEN"),
   tenantId: process.env.KEVA_TENANT_ID ?? "local",
   baseUrl,
-  // Set KEVA_LOOPBACK_BASE_URL="" when serving the web app behind a dev proxy
-  // so loopback blob URLs are relative and forwarded same-origin.
   ...(process.env.KEVA_LOOPBACK_BASE_URL !== undefined
     ? { loopbackBaseUrl: process.env.KEVA_LOOPBACK_BASE_URL }
     : {}),
   ...(process.env.DATABASE_URL ? { databaseUrl: process.env.DATABASE_URL } : {}),
-  ...(auth ? { sessionResolver: betterAuthSessionResolver(auth) } : {}),
+  ...(process.env.BETTER_AUTH_SECRET ? { betterAuthSecret: process.env.BETTER_AUTH_SECRET } : {}),
+  ...(process.env.BETTER_AUTH_URL ? { betterAuthUrl: process.env.BETTER_AUTH_URL } : {}),
+  trustedOrigins,
   ...(s3 ? { s3 } : {}),
 });
 
 serve(
   {
-    fetch: createApp({
-      layer,
-      ...(auth ? { authHandler: auth.handler } : {}),
-    }).fetch,
+    fetch: createApp(appOptions).fetch,
     port,
   },
   (info) => {

@@ -35,9 +35,15 @@ importers:
       '@keva/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@keva/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@keva/schema':
         specifier: workspace:*
         version: link:../../packages/schema
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
       better-auth:
         specifier: 1.6.20
         version: 1.6.20(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(svelte@5.56.4)(vitest@4.1.9(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@6.0.3))
@@ -245,6 +251,22 @@ importers:
       drizzle-kit:
         specifier: 0.31.10
         version: 0.31.10
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@keva/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/tsconfig
       vitest:
         specifier: 4.1.9
         version: 4.1.9(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -4872,6 +4894,28 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
+    dependencies:
+      '@hono/node-server': 1.19.14(hono@4.12.26)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      express: 5.2.1
+      express-rate-limit: 8.5.2(express@5.2.1)
+      hono: 4.12.26
+      jose: 6.2.3
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
+    transitivePeerDependencies:
+      - supports-color
+
   '@mrleebo/prisma-ast@0.13.1':
     dependencies:
       chevrotain: 10.5.0
@@ -7210,6 +7254,10 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
+
+  zod-to-json-schema@3.25.2(zod@4.4.3):
+    dependencies:
+      zod: 4.4.3
 
   zod@3.25.76: {}
 

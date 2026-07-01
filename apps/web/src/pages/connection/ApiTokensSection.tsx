@@ -1,25 +1,12 @@
-import { useCallback, useState } from "react";
-import { IconAlertTriangle, IconCopy, IconKey, IconTrash } from "@tabler/icons-react";
+import { useCallback, useState, type FormEvent } from "react";
+import { IconAlertTriangle, IconCopy, IconKey } from "@tabler/icons-react";
 import { toast } from "sonner";
 import type { Scope, TokenRecord } from "@keva/schema";
-import { CodeBlock } from "../components/CodeBlock";
-import { CopyButton } from "../components/CopyButton";
-import { PageHeader } from "../components/PageHeader";
-import { formatDate } from "../lib/format";
-import { listTokens, mintToken, revokeToken } from "../lib/tokens";
-import { useApiError } from "../lib/useApiError";
-import { useMountEffect } from "../lib/useMountEffect";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { formatDate } from "../../lib/format";
+import { listTokens, mintToken, revokeToken } from "../../lib/tokens";
+import { useApiError } from "../../lib/useApiError";
+import { useMountEffect } from "../../lib/useMountEffect";
+import { ConfirmRevoke } from "./ConfirmRevoke";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +33,7 @@ import {
 
 const ALL_SCOPES: Scope[] = ["read", "write", "delete", "admin"];
 
-export function TokensPage() {
+export function ApiTokensSection() {
   const handleError = useApiError();
   const [tokens, setTokens] = useState<readonly TokenRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,12 +43,6 @@ export function TokensPage() {
   const [scopes, setScopes] = useState<Scope[]>(["read"]);
   const [minting, setMinting] = useState(false);
   const [plaintext, setPlaintext] = useState<string | null>(null);
-
-  const apiBase = `${window.location.origin}/api`;
-  const exampleCurl = `curl -X POST ${apiBase}/query \\
-  -H "Authorization: Bearer $KEVA_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '{"where":[],"limit":50}'`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,11 +62,11 @@ export function TokensPage() {
 
   const toggleScope = (scope: Scope) => {
     setScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+      prev.includes(scope) ? prev.filter((value) => value !== scope) : [...prev, scope],
     );
   };
 
-  const onMint = async (event: React.FormEvent) => {
+  const onMint = async (event: FormEvent) => {
     event.preventDefault();
     if (!name.trim() || scopes.length === 0) return;
     setMinting(true);
@@ -126,7 +107,10 @@ export function TokensPage() {
 
   return (
     <div>
-      <PageHeader title="API tokens" description="Programmatic access for your apps and agents." />
+      <h2 className="mb-1 font-heading text-lg font-medium">API tokens</h2>
+      <p className="mb-3 text-sm text-muted-foreground">
+        Bearer tokens for scripts, the SDK, and direct API access.
+      </p>
 
       {error && (
         <Alert variant="destructive" className="mb-4">
@@ -168,7 +152,7 @@ export function TokensPage() {
                 <Input
                   id="token-name"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(event) => setName(event.target.value)}
                   placeholder="ci-pipeline"
                   required
                 />
@@ -198,7 +182,6 @@ export function TokensPage() {
         </CardContent>
       </Card>
 
-      <h2 className="mb-3 font-heading text-lg font-medium">Existing tokens</h2>
       {loading ? (
         <div className="flex flex-col gap-2">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -251,7 +234,12 @@ export function TokensPage() {
                     {token.lastUsedAt ? formatDate(token.lastUsedAt) : "never"}
                   </TableCell>
                   <TableCell>
-                    <RevokeTokenButton onConfirm={() => onRevoke(token.id)} />
+                    <ConfirmRevoke
+                      title="Revoke this token?"
+                      description="Clients using it will immediately stop working. This cannot be undone."
+                      label="Revoke token"
+                      onConfirm={() => onRevoke(token.id)}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
@@ -259,64 +247,6 @@ export function TokensPage() {
           </Table>
         </Card>
       )}
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Using the API</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">Base URL</span>
-            <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2.5 py-1.5 font-mono text-xs">
-                {apiBase}
-              </code>
-              <CopyButton value={apiBase} label="Copy base URL" />
-            </div>
-          </div>
-          <CodeBlock label="Example: query items" code={exampleCurl} />
-        </CardContent>
-      </Card>
     </div>
-  );
-}
-
-function RevokeTokenButton({ onConfirm }: { onConfirm: () => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger
-        render={
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="text-destructive"
-            aria-label="Revoke token"
-          />
-        }
-      >
-        <IconTrash />
-      </AlertDialogTrigger>
-      <AlertDialogContent size="sm">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Revoke this token?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Clients using it will immediately stop working. This cannot be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={() => {
-              setOpen(false);
-              onConfirm();
-            }}
-          >
-            Revoke
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

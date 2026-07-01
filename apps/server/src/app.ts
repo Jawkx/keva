@@ -15,8 +15,9 @@ import {
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { Hono, type Context } from "hono";
 import { ApiTokenStore, Authenticator, requireAdminSession } from "./auth.js";
+import { mountMcp, type McpDeps } from "./mcp.js";
 
-type AppServices = Authenticator | BlobStore | MetadataStore | ApiTokenStore;
+export type AppServices = Authenticator | BlobStore | MetadataStore | ApiTokenStore;
 
 const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
   Schema.decodeUnknown(schema)(value).pipe(
@@ -60,14 +61,23 @@ const principalEffect = (headers: Headers) =>
 export interface CreateAppOptions {
   readonly layer: Layer.Layer<AppServices>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
+  // Present only when Better Auth is configured (requires a database). Enables
+  // the OAuth 2.1 discovery endpoints and the /mcp resource server. In the
+  // no-DB/static-token path these routes stay unmounted, mirroring how token
+  // management is unavailable without a database.
+  readonly mcp?: McpDeps;
 }
 
-export const createApp = ({ layer, authHandler }: CreateAppOptions): Hono => {
+export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono => {
   const app = new Hono();
   const runtime = ManagedRuntime.make(layer);
 
   if (authHandler) {
     app.on(["GET", "POST"], "/api/auth/*", (context) => authHandler(context.req.raw));
+  }
+
+  if (mcp) {
+    mountMcp(app, mcp, runtime);
   }
 
   app.get("/health", (context) => context.json({ ok: true, service: "keva" }));

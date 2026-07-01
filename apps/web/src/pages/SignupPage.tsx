@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { IconAlertTriangle, IconDatabase } from "@tabler/icons-react";
 import { authClient } from "../lib/auth";
+import { oauthContinuation } from "../lib/oauth";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,12 @@ export function SignupPage() {
       const result = await authClient.signUp.email({ email, password, name });
       if (result.error) {
         setError(result.error.message ?? "Sign up failed.");
+        return;
+      }
+      // Resume an in-progress OAuth authorize if an agent sent the user here.
+      const continuation = oauthContinuation(window.location.search);
+      if (continuation) {
+        window.location.href = continuation;
         return;
       }
       navigate("/", { replace: true });
@@ -103,7 +110,10 @@ export function SignupPage() {
         </Card>
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link to="/login" className="text-primary hover:underline">
+          <Link
+            to={{ pathname: "/login", search: window.location.search }}
+            className="text-primary hover:underline"
+          >
             Sign in
           </Link>
         </p>

@@ -3,8 +3,8 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   IconDatabase,
   IconFiles,
-  IconKey,
   IconLogout,
+  IconPlugConnected,
   IconSearch,
   IconSelector,
   IconSettings,
@@ -38,7 +38,7 @@ import {
 const NAV = [
   { title: "Files", url: "/", icon: IconFiles, exact: true },
   { title: "Query", url: "/query", icon: IconSearch, exact: false },
-  { title: "Tokens", url: "/tokens", icon: IconKey, exact: false },
+  { title: "Connection", url: "/connection", icon: IconPlugConnected, exact: false },
 ] as const;
 
 export function AppShell() {

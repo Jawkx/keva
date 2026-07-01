@@ -1,10 +1,6 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
 import { createApp } from "./app.js";
-import * as authSchema from "./auth-schema.js";
-import { betterAuthSessionResolver, createBetterAuth } from "./better-auth.js";
 import { trustedOriginsFor } from "./origins.js";
-import { makeRuntimeLayer } from "./runtime.js";
+import { createServerOptions } from "./server-options.js";
 
 interface Env {
   readonly KEVA_STATIC_TOKEN?: string;
@@ -46,29 +42,18 @@ export default {
             }
           : undefined;
       const databaseUrl = env.HYPERDRIVE?.connectionString;
-      const auth =
-        databaseUrl && env.BETTER_AUTH_SECRET
-          ? createBetterAuth({
-              database: drizzle(postgres(databaseUrl), {
-                schema: authSchema,
-              }),
-              secret: env.BETTER_AUTH_SECRET,
-              baseURL: env.BETTER_AUTH_URL ?? baseUrl,
-              trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
-            })
-          : undefined;
-      const layer = makeRuntimeLayer({
-        staticToken,
-        tenantId: env.KEVA_TENANT_ID ?? "local",
-        baseUrl,
-        ...(databaseUrl ? { databaseUrl } : {}),
-        ...(auth ? { sessionResolver: betterAuthSessionResolver(auth) } : {}),
-        ...(s3 ? { s3 } : {}),
-      });
-      app = createApp({
-        layer,
-        ...(auth ? { authHandler: auth.handler } : {}),
-      });
+      app = createApp(
+        createServerOptions({
+          staticToken,
+          tenantId: env.KEVA_TENANT_ID ?? "local",
+          baseUrl,
+          ...(databaseUrl ? { databaseUrl } : {}),
+          ...(env.BETTER_AUTH_SECRET ? { betterAuthSecret: env.BETTER_AUTH_SECRET } : {}),
+          ...(env.BETTER_AUTH_URL ? { betterAuthUrl: env.BETTER_AUTH_URL } : {}),
+          trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
+          ...(s3 ? { s3 } : {}),
+        }),
+      );
     }
     return app.fetch(request);
   },

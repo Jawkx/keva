@@ -15,6 +15,13 @@
       "when": 1782717630693,
       "tag": "0001_rename_objects_to_items",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782837707996,
+      "tag": "0002_worthless_thena",
+      "breakpoints": true
     }
   ]
 }

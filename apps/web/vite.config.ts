@@ -10,10 +10,12 @@ import { defineConfig } from "vite";
 const API_TARGET = "http://127.0.0.1:8787";
 
 // The API surface lives under /api (including /api/auth). /health and /__dev
-// stay at the root. Crucially, /items, /query and /tokens are NOT proxied:
-// those are the web app's own client-side routes, so a refresh / deep link
-// falls through to Vite and loads the SPA instead of hitting the API.
-const proxyPaths = ["/api", "/health", "/__dev"];
+// stay at the root, as do the MCP resource server (/mcp) and the OAuth
+// discovery documents (/.well-known/*) so a local MCP client pointed at the web
+// origin reaches the API. Crucially, /items, /query and /connection are NOT
+// proxied: those are the web app's own client-side routes, so a refresh / deep
+// link falls through to Vite and loads the SPA instead of hitting the API.
+const proxyPaths = ["/api", "/health", "/__dev", "/mcp", "/.well-known"];
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

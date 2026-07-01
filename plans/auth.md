@@ -146,10 +146,33 @@ GitHub: the web UI rides your session, the API also takes a PAT). Both produce a
 
 ## MCP
 
-Reuse the same API tokens initially — the MCP server accepts a `keva_sk_…` bearer
-from the client config. **OAuth 2.1** (the MCP spec's auth for remote HTTP
-servers) is a later upgrade for the hosted MCP endpoint. Local/stdio MCP needs no
-auth (runs as a local process with the user's credentials).
+keva's remote MCP server (`/mcp`) authenticates with **OAuth 2.1**, the auth the
+MCP spec mandates for remote HTTP transports. Better Auth's `mcp` plugin (built
+on its OIDC provider) is the authorization server:
+
+- **Discovery** — `GET /.well-known/oauth-protected-resource` (RFC 9728) points
+  clients at `GET /.well-known/oauth-authorization-server` (RFC 8414). A
+  `/mcp` request without a valid token gets `401` +
+  `WWW-Authenticate: Bearer resource_metadata="…"`, which kicks off discovery.
+- **Dynamic client registration** (RFC 7591) + **PKCE** — MCP clients register
+  themselves and run the authorization-code flow; the dashboard renders the login
+  (`/login`) and consent (`/oauth/consent`) screens.
+- **Opaque, DB-backed access tokens** — validated by lookup on each `/mcp`
+  request via `auth.api.getMcpSession`; revocable from the Connection screen.
+  This keeps the **no-JWT** stance for machine credentials (`useJWTPlugin` off).
+  The OIDC `id_token` is a JWT by spec but is not the API credential.
+- **Scopes** — clients request `keva:read` / `keva:write` / `keva:delete`
+  (advertised in the protected-resource metadata). On each call the granted
+  scopes map onto the engine's `Scope` enum and the token's `userId` resolves to
+  the tenant (the user's organization), yielding a `Principal{ via: "token" }`.
+  `admin` is never granted over MCP — token/connection management stays
+  session-only.
+
+The data plane stays unchanged: an MCP access token is just another way to reach
+a `Principal`, which `@keva/core` authorizes identically to a session or a
+`keva_sk_…` token. The OAuth tables live with Better Auth and require a database;
+without one, `/mcp` and discovery are not mounted. A future local/stdio MCP entry
+could reuse `keva_sk_…` tokens directly (no OAuth needed for a local process).
 
 ## Two planes, kept apart
 
