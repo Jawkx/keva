@@ -5,7 +5,6 @@ import {
   IconFiles,
   IconLogout,
   IconPlugConnected,
-  IconSearch,
   IconSelector,
   IconSettings,
 } from "@tabler/icons-react";
@@ -37,7 +36,6 @@ import {
 
 const NAV = [
   { title: "Files", url: "/", icon: IconFiles, exact: true },
-  { title: "Query", url: "/query", icon: IconSearch, exact: false },
   { title: "Connection", url: "/connection", icon: IconPlugConnected, exact: false },
 ] as const;
 

@@ -6,7 +6,6 @@ import { FilesPage } from "./pages/FilesPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { OAuthConsentPage } from "./pages/OAuthConsentPage";
-import { QueryPage } from "./pages/QueryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignupPage } from "./pages/SignupPage";
 
@@ -32,7 +31,9 @@ export const router = createBrowserRouter([
     children: [
       { path: "/", element: <FilesPage /> },
       { path: "/items/:id", element: <FilesPage /> },
-      { path: "/query", element: <QueryPage /> },
+      // The former Query page is now the Files filter panel; keep the path as a
+      // redirect so old links/bookmarks don't 404.
+      { path: "/query", element: <Navigate to="/" replace /> },
       { path: "/connection", element: <ConnectionPage /> },
       // Old deep links to the token-management screen.
       { path: "/tokens", element: <Navigate to="/connection" replace /> },

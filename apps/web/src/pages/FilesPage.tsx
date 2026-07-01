@@ -20,21 +20,32 @@ import {
   IconArrowUp,
   IconCloudUpload,
   IconFiles,
+  IconFilter,
   IconLoader2,
   IconSearch,
   IconTrash,
   IconUpload,
+  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import type { QueryCondition } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
+import { FilterPanel } from "../components/FilterPanel";
 import { UploadModal } from "../components/UploadModal";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatContentType, formatRelative } from "../lib/format";
-import { prependItemToPages, removeItemsFromPages, type ItemsCache } from "../lib/items-cache";
+import { createFilterDraft } from "../lib/item-filters";
+import {
+  itemsQueryKey,
+  prependItemToPages,
+  removeItemsFromPages,
+  type ItemsCache,
+} from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import { useMountEffect } from "../lib/useMountEffect";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -236,6 +247,14 @@ export function FilesPage() {
 
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
+  const [activeWhere, setActiveWhere] = useState<QueryCondition[]>([]);
+  const [filterDraft, setFilterDraft] = useState(createFilterDraft);
+  const [showFilters, setShowFilters] = useState(false);
+  // Debounce timer for free-text search; scheduled from the change handler (an
+  // event, not a lifecycle effect) and cleared on unmount so a late tick can't
+  // set state after the page is gone.
+  const searchTimer = useRef<number | undefined>(undefined);
+  useMountEffect(() => () => window.clearTimeout(searchTimer.current));
   const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -254,11 +273,11 @@ export function FilesPage() {
   const dragDepth = useRef(0);
 
   const itemsQuery = useInfiniteQuery({
-    queryKey: ["items", { search: activeSearch }],
+    queryKey: itemsQueryKey(activeSearch, activeWhere),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       keva.query({
-        where: [],
+        where: activeWhere,
         ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
         limit: PAGE_SIZE,
         ...(pageParam ? { cursor: pageParam } : {}),
@@ -286,6 +305,8 @@ export function FilesPage() {
   };
 
   const selectMode = Object.values(rowSelection).some(Boolean);
+  // Whether anything is narrowing the list — drives the toolbar "Clear" button.
+  const filtered = activeSearch.trim().length > 0 || activeWhere.length > 0;
 
   // Upload lifecycle. Files appear instantly as optimistic rows; each upload
   // runs independently and reconciles its own row — moving the real item into
@@ -300,10 +321,10 @@ export function FilesPage() {
         // Prepend into the (unfiltered) list and drop the optimistic row in the
         // same tick so the row swaps in place — no refetch, no flicker. With a
         // search active we can't know if the item matches, so refetch instead.
-        if (activeSearch.trim()) {
+        if (activeSearch.trim() || activeWhere.length > 0) {
           void queryClient.invalidateQueries({ queryKey: ["items"] });
         } else {
-          queryClient.setQueryData<ItemsCache>(["items", { search: activeSearch }], (old) =>
+          queryClient.setQueryData<ItemsCache>(itemsQueryKey(activeSearch, activeWhere), (old) =>
             old ? prependItemToPages(old, item) : old,
           );
         }
@@ -315,7 +336,7 @@ export function FilesPage() {
         );
       }
     },
-    [activeSearch, queryClient],
+    [activeSearch, activeWhere, queryClient],
   );
 
   const startUploads = useCallback(
@@ -406,11 +427,33 @@ export function FilesPage() {
     if (ids.length > 0) bulkDeleteMutation.mutate(ids);
   };
 
-  const runSearch = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    // Changing the active search swaps the query key, so React Query fetches
-    // the new list automatically.
-    setActiveSearch(search.trim());
+  // Update the controlled value instantly; commit the active search — which
+  // swaps the query key and auto-refetches — after a short pause. No submit.
+  const onSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    setSearch(value);
+    window.clearTimeout(searchTimer.current);
+    searchTimer.current = window.setTimeout(() => {
+      setActiveSearch(value.trim());
+      setRowSelection({});
+    }, 300);
+  };
+
+  // Advanced conditions + quick facets commit here; swapping activeWhere swaps
+  // the query key so the list refetches.
+  const applyFilters = (where: QueryCondition[]) => {
+    setActiveWhere(where);
+    setRowSelection({});
+  };
+
+  // One-click back to the full list: drop the search text, conditions, facets,
+  // and any pending search debounce.
+  const clearFilters = () => {
+    window.clearTimeout(searchTimer.current);
+    setSearch("");
+    setActiveSearch("");
+    setActiveWhere([]);
+    setFilterDraft(createFilterDraft());
     setRowSelection({});
   };
 
@@ -537,20 +580,26 @@ export function FilesPage() {
           </>
         ) : (
           <>
-            <form className="flex w-full items-center gap-2 sm:w-72" onSubmit={runSearch}>
-              <div className="relative min-w-0 flex-1">
-                <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name or type…"
-                  className="pl-8"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <Button type="submit" variant="outline">
-                Search
+            <div className="relative w-full min-w-0 sm:w-72">
+              <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name or type…"
+                className="pl-8"
+                value={search}
+                onChange={onSearchChange}
+              />
+            </div>
+            <Button variant="outline" onClick={() => setShowFilters((v) => !v)}>
+              <IconFilter data-icon="inline-start" />
+              Filters
+              {activeWhere.length > 0 && <Badge className="ml-1">{activeWhere.length}</Badge>}
+            </Button>
+            {filtered && (
+              <Button variant="ghost" onClick={clearFilters}>
+                <IconX data-icon="inline-start" />
+                Clear
               </Button>
-            </form>
+            )}
             <Button className="sm:ml-auto" onClick={() => openUpload([])}>
               <IconUpload data-icon="inline-start" />
               Upload
@@ -558,6 +607,15 @@ export function FilesPage() {
           </>
         )}
       </div>
+      <FilterPanel
+        open={showFilters}
+        search={activeSearch}
+        draft={filterDraft}
+        onDraftChange={setFilterDraft}
+        onApply={applyFilters}
+        onClear={clearFilters}
+        onClose={() => setShowFilters(false)}
+      />
       <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto">
         {!loading && rows.length === 0 ? (
           <Empty className="py-16">
@@ -566,7 +624,7 @@ export function FilesPage() {
                 <IconSearch />
               </EmptyMedia>
               <EmptyTitle>No matches</EmptyTitle>
-              <EmptyDescription>No items match “{activeSearch}”.</EmptyDescription>
+              <EmptyDescription>No items match your search and filters.</EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -614,7 +672,7 @@ export function FilesPage() {
         </div>
       )}
 
-      {!loading && !hasItems ? (
+      {!loading && !hasItems && !filtered ? (
         <div className="flex flex-1 items-center justify-center p-6">
           <Empty>
             <EmptyHeader>
