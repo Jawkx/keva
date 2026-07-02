@@ -1,11 +1,11 @@
-import { useCallback, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconAlertTriangle, IconCopy, IconKey } from "@tabler/icons-react";
 import { toast } from "sonner";
-import type { Scope, TokenRecord } from "@keva/schema";
+import type { Scope } from "@keva/schema";
 import { formatDate } from "../../lib/format";
 import { listTokens, mintToken, revokeToken } from "../../lib/tokens";
 import { useApiError } from "../../lib/useApiError";
-import { useMountEffect } from "../../lib/useMountEffect";
 import { ConfirmRevoke } from "./ConfirmRevoke";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -35,29 +35,37 @@ const ALL_SCOPES: Scope[] = ["read", "write", "delete", "admin"];
 
 export function ApiTokensSection() {
   const handleError = useApiError();
-  const [tokens, setTokens] = useState<readonly TokenRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<Scope[]>(["read"]);
-  const [minting, setMinting] = useState(false);
   const [plaintext, setPlaintext] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setTokens(await listTokens());
-    } catch (err) {
-      setError(handleError(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [handleError]);
+  const tokensQuery = useQuery({
+    queryKey: ["tokens"],
+    queryFn: listTokens,
+  });
+  const tokens = tokensQuery.data ?? [];
+  const error = tokensQuery.error ? handleError(tokensQuery.error) : null;
 
-  useMountEffect(() => {
-    void load();
+  const mintMutation = useMutation({
+    mutationFn: mintToken,
+    onSuccess: (result) => {
+      setPlaintext(result.token);
+      setName("");
+      setScopes(["read"]);
+      void queryClient.invalidateQueries({ queryKey: ["tokens"] });
+    },
+    onError: (err) => toast.error(handleError(err)),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: revokeToken,
+    onSuccess: () => {
+      toast.success("Token revoked");
+      void queryClient.invalidateQueries({ queryKey: ["tokens"] });
+    },
+    onError: (err) => toast.error(handleError(err)),
   });
 
   const toggleScope = (scope: Scope) => {
@@ -66,33 +74,11 @@ export function ApiTokensSection() {
     );
   };
 
-  const onMint = async (event: FormEvent) => {
+  const onMint = (event: FormEvent) => {
     event.preventDefault();
     if (!name.trim() || scopes.length === 0) return;
-    setMinting(true);
-    setError(null);
     setPlaintext(null);
-    try {
-      const result = await mintToken({ name: name.trim(), scopes });
-      setPlaintext(result.token);
-      setName("");
-      setScopes(["read"]);
-      await load();
-    } catch (err) {
-      setError(handleError(err));
-    } finally {
-      setMinting(false);
-    }
-  };
-
-  const onRevoke = async (id: string) => {
-    try {
-      await revokeToken(id);
-      toast.success("Token revoked");
-      await load();
-    } catch (err) {
-      toast.error(handleError(err));
-    }
+    mintMutation.mutate({ name: name.trim(), scopes });
   };
 
   const onCopy = async () => {
@@ -107,11 +93,6 @@ export function ApiTokensSection() {
 
   return (
     <div>
-      <h2 className="mb-1 font-heading text-lg font-medium">API tokens</h2>
-      <p className="mb-3 text-sm text-muted-foreground">
-        Bearer tokens for scripts, the SDK, and direct API access.
-      </p>
-
       {error && (
         <Alert variant="destructive" className="mb-4">
           <IconAlertTriangle />
@@ -174,15 +155,19 @@ export function ApiTokensSection() {
                   ))}
                 </div>
               </FieldSet>
-              <Button type="submit" className="w-fit" disabled={minting || scopes.length === 0}>
-                {minting ? "Minting…" : "Mint token"}
+              <Button
+                type="submit"
+                className="w-fit"
+                disabled={mintMutation.isPending || scopes.length === 0}
+              >
+                {mintMutation.isPending ? "Minting…" : "Mint token"}
               </Button>
             </FieldGroup>
           </form>
         </CardContent>
       </Card>
 
-      {loading ? (
+      {tokensQuery.isLoading ? (
         <div className="flex flex-col gap-2">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
@@ -238,7 +223,7 @@ export function ApiTokensSection() {
                       title="Revoke this token?"
                       description="Clients using it will immediately stop working. This cannot be undone."
                       label="Revoke token"
-                      onConfirm={() => onRevoke(token.id)}
+                      onConfirm={() => revokeMutation.mutate(token.id)}
                     />
                   </TableCell>
                 </TableRow>
