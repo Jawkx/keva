@@ -240,6 +240,34 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
     ),
   );
 
+  // Autocomplete sources: distinct property keys across the tenant, and distinct
+  // scalar values for one key (`?key=`). Read-scoped, like /query.
+  app.get("/api/properties/keys", (context) =>
+    execute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        return yield* makeKevaEngine(principal).propertyKeys();
+      }),
+      runtime,
+    ),
+  );
+
+  app.get("/api/properties/values", (context) =>
+    execute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const key = context.req.query("key");
+        if (!key) {
+          return yield* new ValidationError({ message: "Missing 'key' query parameter" });
+        }
+        return yield* makeKevaEngine(principal).propertyValues(key);
+      }),
+      runtime,
+    ),
+  );
+
   app.post("/api/tokens", async (context) =>
     execute(
       context,

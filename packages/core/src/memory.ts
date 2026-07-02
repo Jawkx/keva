@@ -2,6 +2,7 @@ import {
   Conflict,
   FIELD_BY_KEY,
   Internal,
+  type PropertyScalar,
   type PropertyValue,
   type KevaItem,
   type QueryCondition,
@@ -12,6 +13,8 @@ import {
   type BlobStoreService,
   MetadataStore,
   type MetadataStoreService,
+  SUGGESTION_KEY_LIMIT,
+  SUGGESTION_VALUE_LIMIT,
 } from "./services.js";
 
 interface MemoryBlob {
@@ -21,6 +24,9 @@ interface MemoryBlob {
 }
 
 const cloneItem = (item: KevaItem): KevaItem => structuredClone(item);
+
+const isScalar = (value: PropertyValue | undefined): value is PropertyScalar =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 
 const valueAt = (
   item: KevaItem,
@@ -189,6 +195,28 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           items: result,
           ...(hasMore && result.at(-1) ? { nextCursor: encodeCursor(result.at(-1)!) } : {}),
         };
+      }),
+    propertyKeys: (tenantId) =>
+      Effect.sync(() => {
+        const keys = new Set<string>();
+        for (const item of items.values()) {
+          if (item.tenantId !== tenantId || item.status !== "ready") continue;
+          for (const key of Object.keys(item.properties)) keys.add(key);
+        }
+        return [...keys].sort().slice(0, SUGGESTION_KEY_LIMIT);
+      }),
+    propertyValues: (tenantId, key) =>
+      Effect.sync(() => {
+        // Dedup by JSON so 1 (number) and "1" (string) stay distinct.
+        const seen = new Map<string, PropertyScalar>();
+        for (const item of items.values()) {
+          if (item.tenantId !== tenantId || item.status !== "ready") continue;
+          const value = item.properties[key];
+          if (isScalar(value)) seen.set(JSON.stringify(value), value);
+        }
+        return [...seen.values()]
+          .sort((a, b) => String(a).localeCompare(String(b)))
+          .slice(0, SUGGESTION_VALUE_LIMIT);
       }),
     listByStatus: (status, limit, olderThan) =>
       Effect.sync(() =>

@@ -263,4 +263,40 @@ describe("KevaEngine", () => {
       tags: ["diving", "summer"],
     });
   });
+
+  it("aggregates distinct property keys and scalar values per tenant", async () => {
+    const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(principal("tenant-a"));
+      const one = yield* upload("tenant-a", "a.txt", new TextEncoder().encode("a"));
+      const two = yield* upload("tenant-a", "b.txt", new TextEncoder().encode("b"));
+      yield* engine.patch(one.id, {
+        set: { location: "bali", rating: 5, tags: ["x"] },
+        unset: [],
+      });
+      yield* engine.patch(two.id, { set: { location: "tokyo", rating: 5 }, unset: [] });
+      // A second tenant's keys and values must not leak into the aggregation.
+      const other = yield* upload("tenant-b", "c.txt", new TextEncoder().encode("c"));
+      yield* makeKevaEngine(principal("tenant-b")).patch(other.id, {
+        set: { secret: "nope" },
+        unset: [],
+      });
+
+      return {
+        keys: yield* engine.propertyKeys(),
+        locations: yield* engine.propertyValues("location"),
+        ratings: yield* engine.propertyValues("rating"),
+        tags: yield* engine.propertyValues("tags"),
+      };
+    }).pipe(Effect.provide(layer));
+
+    const result = await Effect.runPromise(program);
+    // Sorted, distinct, tenant-scoped (no "secret" from tenant-b).
+    expect(result.keys).toEqual({ keys: ["location", "rating", "tags"] });
+    expect(result.locations).toEqual({ values: ["bali", "tokyo"] });
+    // Duplicate scalar values collapse to one.
+    expect(result.ratings).toEqual({ values: [5] });
+    // Array-valued properties are excluded — they can't seed a single-line input.
+    expect(result.tags).toEqual({ values: [] });
+  });
 });

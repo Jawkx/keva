@@ -7,8 +7,11 @@ import {
   InitiateUploadResult,
   KevaError,
   KevaItem,
+  PropertyKeysResult,
+  PropertyValuesResult,
   Query,
   QueryResult,
+  type PropertyScalar as PropertyScalarType,
   type ItemPatch as ItemPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
   type DownloadResult as DownloadResultType,
@@ -29,6 +32,7 @@ export type {
   QueryType as Query,
   QueryResultType as QueryResult,
   DownloadResultType as DownloadResult,
+  PropertyScalarType as PropertyScalar,
 };
 
 export type UploadBody = BodyInit;
@@ -196,6 +200,22 @@ export class KevaClient {
 
   query(query: QueryType = { where: [], limit: 100 }): Promise<QueryResultType> {
     return this.#request("POST", "/query", QueryResult, decode(Query, query));
+  }
+
+  // Distinct property keys across the tenant, for key autocomplete.
+  async propertyKeys(): Promise<string[]> {
+    const { keys } = await this.#request("GET", "/properties/keys", PropertyKeysResult);
+    return [...keys];
+  }
+
+  // Distinct scalar values seen for one property key, for value autocomplete.
+  async propertyValues(key: string): Promise<PropertyScalarType[]> {
+    const { values } = await this.#request(
+      "GET",
+      `/properties/values?key=${encodeURIComponent(key)}`,
+      PropertyValuesResult,
+    );
+    return [...values];
   }
 
   async delete(id: string): Promise<void> {

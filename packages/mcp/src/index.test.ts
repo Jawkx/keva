@@ -7,6 +7,8 @@ const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   queryItems: async () => ({ items: [] }),
   getItem: async () => ({ id: "item-1", name: "a.txt" }),
   getContentUrl: async () => ({ url: "https://blob/x", expiresAt: "2030-01-01T00:00:00Z" }),
+  listPropertyKeys: async () => ({ keys: ["tag"] }),
+  listPropertyValues: async () => ({ values: ["x"] }),
   setProperties: async () => ({ id: "item-1", properties: { tag: "x" } }),
   deleteItem: async () => {},
   ...overrides,
@@ -41,7 +43,13 @@ const textOf = (result: { content: Array<{ type: string; text?: string }> }): st
 
 describe("createKevaMcpServer tool registration", () => {
   it("exposes only read tools for a read-only principal", async () => {
-    expect(await toolNames(["read"])).toEqual(["get_content_url", "get_item", "query_items"]);
+    expect(await toolNames(["read"])).toEqual([
+      "get_content_url",
+      "get_item",
+      "list_property_keys",
+      "list_property_values",
+      "query_items",
+    ]);
   });
 
   it("adds set_properties when write is granted", async () => {
@@ -104,6 +112,21 @@ describe("createKevaMcpServer tool execution", () => {
       set: { tag: "x" },
       unset: ["old"],
     });
+    await close();
+  });
+
+  it("delegates list_property_values with the requested key", async () => {
+    const listPropertyValues = vi.fn(async () => ({ values: ["bali", "tokyo"] }));
+    const { client, close } = await connect(stubEngine({ listPropertyValues }), ["read"]);
+
+    const result = await client.callTool({
+      name: "list_property_values",
+      arguments: { key: "location" },
+    });
+
+    expect(listPropertyValues).toHaveBeenCalledWith({ key: "location" });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(textOf(result as never))).toEqual({ values: ["bali", "tokyo"] });
     await close();
   });
 

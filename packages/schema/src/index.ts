@@ -137,6 +137,23 @@ export const QueryResult = Schema.Struct({
 });
 export type QueryResult = typeof QueryResult.Type;
 
+// Distinct property keys used across a tenant's items — powers key autocomplete
+// in the editor and filter UIs.
+export const PropertyKeysResult = Schema.Struct({
+  keys: Schema.Array(Schema.String),
+});
+export type PropertyKeysResult = typeof PropertyKeysResult.Type;
+
+// Distinct scalar values seen for a single property key across a tenant's items.
+// Arrays and nulls are excluded — only values a single-line input can suggest.
+export const PropertyScalar = Schema.Union(Schema.String, Schema.Number, Schema.Boolean);
+export type PropertyScalar = typeof PropertyScalar.Type;
+
+export const PropertyValuesResult = Schema.Struct({
+  values: Schema.Array(PropertyScalar),
+});
+export type PropertyValuesResult = typeof PropertyValuesResult.Type;
+
 export const BatchDelete = Schema.Struct({
   ids: Schema.Array(ItemId).pipe(Schema.minItems(1), Schema.maxItems(1000)),
 });

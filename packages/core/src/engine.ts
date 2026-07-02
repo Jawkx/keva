@@ -168,6 +168,20 @@ export const makeKevaEngine = (principal: Principal) => ({
       return yield* metadata.query(principal.tenantId, query);
     }),
 
+  propertyKeys: () =>
+    Effect.gen(function* () {
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      return { keys: yield* metadata.propertyKeys(principal.tenantId) };
+    }),
+
+  propertyValues: (key: string) =>
+    Effect.gen(function* () {
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      return { values: yield* metadata.propertyValues(principal.tenantId, key) };
+    }),
+
   delete: (id: string) =>
     Effect.gen(function* () {
       yield* requireScope(principal, "delete");

@@ -82,6 +82,8 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
           return yield* engine.download(itemId);
         }),
       ),
+    listPropertyKeys: () => runEngine(runtime, engine.propertyKeys()),
+    listPropertyValues: ({ key }) => runEngine(runtime, engine.propertyValues(key)),
     setProperties: (input) =>
       runEngine(
         runtime,

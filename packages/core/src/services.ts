@@ -1,4 +1,5 @@
 import type {
+  PropertyScalar,
   PropertyValue,
   KevaError,
   KevaItem,
@@ -44,6 +45,11 @@ export interface BlobStoreService {
 
 export class BlobStore extends Context.Tag("@keva/core/BlobStore")<BlobStore, BlobStoreService>() {}
 
+// Caps on autocomplete aggregations so responses stay small even for tenants
+// with many distinct keys/values. Shared by every MetadataStore implementation.
+export const SUGGESTION_KEY_LIMIT = 500;
+export const SUGGESTION_VALUE_LIMIT = 100;
+
 export interface ItemTransition {
   readonly status?: ItemStatus;
   readonly size?: number | null;
@@ -83,6 +89,13 @@ export interface MetadataStoreService {
     expectedStatus: ItemStatus,
   ) => Effect.Effect<boolean, KevaError>;
   readonly query: (tenantId: string, query: Query) => Effect.Effect<QueryResult, KevaError>;
+  // Distinct property keys across a tenant's ready items, for key autocomplete.
+  readonly propertyKeys: (tenantId: string) => Effect.Effect<ReadonlyArray<string>, KevaError>;
+  // Distinct scalar values seen for one property key, for value autocomplete.
+  readonly propertyValues: (
+    tenantId: string,
+    key: string,
+  ) => Effect.Effect<ReadonlyArray<PropertyScalar>, KevaError>;
   readonly listByStatus: (
     status: ItemStatus,
     limit: number,

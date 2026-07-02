@@ -5,11 +5,17 @@ import {
   ValidationError,
   type KevaError,
   type KevaItem,
+  type PropertyScalar,
   type QueryCondition,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
-import { MetadataStore, type MetadataStoreService } from "../services.js";
+import {
+  MetadataStore,
+  type MetadataStoreService,
+  SUGGESTION_KEY_LIMIT,
+  SUGGESTION_VALUE_LIMIT,
+} from "../services.js";
 
 export interface PostgresConfig {
   readonly url: string;
@@ -281,6 +287,35 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           ? { nextCursor: encodeCursor(items.at(-1)!) }
           : {}),
       };
+    }),
+  propertyKeys: (tenantId) =>
+    attempt(async () => {
+      // Fan out each item's top-level property keys, then dedupe across the
+      // tenant. The GIN index doesn't serve this, but distinct key counts are
+      // small and the row scan is bounded by the tenant's ready items.
+      const rows = await sql<{ key: string }[]>`
+        select distinct k as key
+        from items, lateral jsonb_object_keys(properties) as k
+        where tenant_id = ${tenantId} and status = 'ready'
+        order by key
+        limit ${SUGGESTION_KEY_LIMIT}
+      `;
+      return rows.map((row) => row.key);
+    }),
+  propertyValues: (tenantId, key) =>
+    attempt(async () => {
+      // Only scalar values can seed a single-line input; arrays/objects/nulls
+      // are filtered out by jsonb_typeof. The driver parses jsonb back to JS
+      // scalars, so `value` is already a string/number/boolean.
+      const rows = await sql<{ value: PropertyScalar }[]>`
+        select distinct properties -> ${key} as value
+        from items
+        where tenant_id = ${tenantId} and status = 'ready'
+          and jsonb_typeof(properties -> ${key}) in ('string', 'number', 'boolean')
+        order by value
+        limit ${SUGGESTION_VALUE_LIMIT}
+      `;
+      return rows.map((row) => row.value);
     }),
   listByStatus: (status, limit, olderThan) =>
     attempt(async () => {

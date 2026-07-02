@@ -29,8 +29,9 @@ import {
   type ScalarType,
   type ValueType,
 } from "../lib/properties";
+import { usePropertyKeys, usePropertyValues } from "../lib/use-property-suggestions";
+import { SuggestInput } from "./SuggestInput";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -69,6 +70,9 @@ interface PropertiesEditorProps {
 export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps) {
   const [mode, setMode] = useState<Mode>("form");
   const [busy, setBusy] = useState(false);
+  // Distinct keys across the whole tenant, for key autocomplete. Fetched once
+  // here and threaded down to the form rows.
+  const knownKeys = usePropertyKeys();
 
   const entries = Object.entries(properties);
 
@@ -113,6 +117,7 @@ export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps)
         <FormView
           properties={properties}
           busy={busy}
+          knownKeys={knownKeys}
           onSet={(key, value) => commit({ [key]: value }, [])}
           onUnset={(key) => commit({}, [key])}
         />
@@ -128,11 +133,13 @@ export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps)
 function FormView({
   properties,
   busy,
+  knownKeys,
   onSet,
   onUnset,
 }: {
   properties: Properties;
   busy: boolean;
+  knownKeys: readonly string[];
   onSet: (key: string, value: PropertyValue) => Promise<void>;
   onUnset: (key: string) => Promise<void>;
 }) {
@@ -156,7 +163,12 @@ function FormView({
           ))}
         </ul>
       )}
-      <AddRow busy={busy} existingKeys={entries.map(([k]) => k)} onAdd={onSet} />
+      <AddRow
+        busy={busy}
+        existingKeys={entries.map(([k]) => k)}
+        knownKeys={knownKeys}
+        onAdd={onSet}
+      />
     </div>
   );
 }
@@ -181,6 +193,8 @@ function PropertyRow({
     editable ? (type as ScalarType) : "string",
   );
   const [draft, setDraft] = useState(scalarToInput(value));
+  // Values seen elsewhere for this key, offered while editing.
+  const valueSuggestions = usePropertyValues(attrKey, editing);
 
   const beginEdit = () => {
     setDraftType(type as ScalarType);
@@ -206,6 +220,7 @@ function PropertyRow({
             value={draft}
             onChange={setDraft}
             onEnter={() => void save()}
+            suggestions={valueSuggestions}
             autoFocus
           />
         </div>
@@ -269,10 +284,12 @@ function PropertyRow({
 function AddRow({
   busy,
   existingKeys,
+  knownKeys,
   onAdd,
 }: {
   busy: boolean;
   existingKeys: string[];
+  knownKeys: readonly string[];
   onAdd: (key: string, value: PropertyValue) => Promise<void>;
 }) {
   const [key, setKey] = useState("");
@@ -289,6 +306,14 @@ function AddRow({
     if (existingKeys.includes(trimmedKey)) return "An property with this key already exists";
     return null;
   }, [trimmedKey, existingKeys]);
+
+  // Suggest keys not already on this item; once the key names a known property,
+  // suggest the values seen for it.
+  const keySuggestions = useMemo(
+    () => knownKeys.filter((k) => !existingKeys.includes(k)),
+    [knownKeys, existingKeys],
+  );
+  const valueSuggestions = usePropertyValues(trimmedKey, knownKeys.includes(trimmedKey));
 
   const canAdd = Boolean(trimmedKey) && !keyError && !busy;
 
@@ -320,12 +345,14 @@ function AddRow({
       className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 px-3 py-2.5"
     >
       <div className="min-w-0 flex-1 basis-32">
-        <Input
+        <SuggestInput
           placeholder="new key"
-          aria-invalid={touched && Boolean(keyError)}
+          invalid={touched && Boolean(keyError)}
           className="h-8 font-mono"
           value={key}
-          onChange={(e) => setKey(e.target.value)}
+          onValueChange={setKey}
+          suggestions={keySuggestions}
+          onEnter={() => void submit()}
           onBlur={() => setTouched(true)}
         />
       </div>
@@ -342,6 +369,7 @@ function AddRow({
           value={value}
           onChange={onValueChange}
           onEnter={() => void submit()}
+          suggestions={valueSuggestions}
         />
       </div>
       <Button type="submit" size="sm" disabled={!canAdd}>
@@ -493,12 +521,14 @@ function ValueControl({
   onChange,
   onEnter,
   autoFocus,
+  suggestions = [],
 }: {
   type: ScalarType;
   value: string;
   onChange: (next: string) => void;
   onEnter?: () => void;
   autoFocus?: boolean;
+  suggestions?: readonly string[];
 }) {
   if (type === "null") {
     return <span className="block px-1 text-sm text-muted-foreground italic">null</span>;
@@ -522,20 +552,15 @@ function ValueControl({
     );
   }
   return (
-    <Input
-      // eslint-disable-next-line jsx-a11y/no-autofocus
+    <SuggestInput
       autoFocus={autoFocus}
       placeholder="value"
       type={type === "number" ? "number" : "text"}
       className="h-8"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onEnter?.();
-        }
-      }}
+      onValueChange={onChange}
+      suggestions={suggestions}
+      onEnter={onEnter}
     />
   );
 }

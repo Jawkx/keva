@@ -43,6 +43,12 @@ const itemIdArgs = z.object({
   id: z.string().describe("The item id."),
 });
 
+const propertyValuesArgs = z.object({
+  key: z.string().describe("Property key to list distinct values for (e.g. 'tag', 'author')."),
+});
+
+export type PropertyValuesToolInput = z.infer<typeof propertyValuesArgs>;
+
 const setPropertiesArgs = z.object({
   id: z.string().describe("The item id."),
   set: z
@@ -63,6 +69,8 @@ export interface McpEngine {
   readonly queryItems: (input: QueryToolInput) => Promise<unknown>;
   readonly getItem: (id: string) => Promise<unknown>;
   readonly getContentUrl: (id: string) => Promise<unknown>;
+  readonly listPropertyKeys: () => Promise<unknown>;
+  readonly listPropertyValues: (input: PropertyValuesToolInput) => Promise<unknown>;
   readonly setProperties: (input: SetPropertiesToolInput) => Promise<unknown>;
   readonly deleteItem: (id: string) => Promise<void>;
 }
@@ -139,6 +147,30 @@ export const createKevaMcpServer = (
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ id }) => run(() => engine.getContentUrl(id)),
+    );
+
+    server.registerTool(
+      "list_property_keys",
+      {
+        title: "List property keys",
+        description:
+          "List the distinct property keys used across items, for discovering what can be queried or set.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      () => run(() => engine.listPropertyKeys()),
+    );
+
+    server.registerTool(
+      "list_property_values",
+      {
+        title: "List property values",
+        description:
+          "List the distinct scalar values seen for a single property key, for discovering valid filter values.",
+        inputSchema: propertyValuesArgs.shape,
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      (input) => run(() => engine.listPropertyValues(input)),
     );
   }
 
