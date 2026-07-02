@@ -18,7 +18,14 @@ const API_TARGET = "http://127.0.0.1:8787";
 const proxyPaths = ["/api", "/health", "/__dev", "/mcp", "/.well-known"];
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", { target: "19" }]],
+      },
+    }),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
