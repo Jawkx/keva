@@ -1,3 +1,31 @@
 name = "keva-server"
 main = "src/worker.ts"
 compatibility_date = "2026-06-20"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/mcp", "/mcp/*", "/.well-known/*", "/health", "/__dev/*"]
+
+[env.staging]
+name = "keva-staging"
+
+[env.staging.vars]
+KEVA_BASE_URL = "https://staging.usekeva.com"
+BETTER_AUTH_URL = "https://staging.usekeva.com"
+KEVA_TRUSTED_ORIGINS = "https://staging.usekeva.com"
+KEVA_TENANT_ID = "staging"
+S3_ENDPOINT = "https://90203c49970ccbafedc99866c91c1b9f.r2.cloudflarestorage.com"
+S3_REGION = "auto"
+S3_BUCKET = "keva-staging"
+S3_FORCE_PATH_STYLE = "true"
+
+[[env.staging.routes]]
+pattern = "staging.usekeva.com"
+custom_domain = true
+
+[[env.staging.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "6458d8de93be4e7090f5bfc0872798a8"

@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://staging.usekeva.com"],
+        "methods": ["GET", "PUT", "HEAD"],
+        "headers": ["content-type", "content-length"]
+      },
+      "exposeHeaders": ["etag", "content-length", "content-type"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

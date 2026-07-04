@@ -2,7 +2,12 @@ import { createApp } from "./app.js";
 import { trustedOriginsFor } from "./origins.js";
 import { createServerOptions } from "./server-options.js";
 
+interface AssetsBinding {
+  readonly fetch: (request: Request) => Promise<Response>;
+}
+
 interface Env {
+  readonly ASSETS?: AssetsBinding;
   readonly KEVA_STATIC_TOKEN?: string;
   readonly KEVA_TENANT_ID?: string;
   readonly KEVA_BASE_URL?: string;
@@ -20,6 +25,11 @@ interface Env {
 
 let app: ReturnType<typeof createApp> | undefined;
 
+const serverPaths = ["/api", "/mcp", "/.well-known", "/health", "/__dev"];
+
+const isServerPath = (pathname: string): boolean =>
+  serverPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+
 const required = (value: string | undefined, name: string): string => {
   if (!value) throw new Error(`${name} is required`);
   return value;
@@ -27,6 +37,11 @@ const required = (value: string | undefined, name: string): string => {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (!isServerPath(url.pathname) && env.ASSETS) {
+      return env.ASSETS.fetch(request);
+    }
+
     const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
     const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
     if (!app) {
