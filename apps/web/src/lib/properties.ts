@@ -10,36 +10,16 @@ export const MAX_KEYS = 256;
 export const MAX_TOTAL_BYTES = 64 * 1024;
 export const MAX_ARRAY_ITEMS = 256;
 
-// Scalars are the only types the Form view edits directly; arrays are shown
-// read-only there and edited through the JSON view.
+// Scalars are the only types the tag chips edit directly; arrays are shown as
+// removable chips and otherwise edited through the JSON view.
 export type ScalarType = "string" | "number" | "boolean" | "null";
 export type ValueType = ScalarType | "array";
-
-export const SCALAR_TYPES: ScalarType[] = ["string", "number", "boolean", "null"];
-
-// Short, dev-friendly labels for the type pill.
-export const TYPE_LABEL: Record<ValueType, string> = {
-  string: "str",
-  number: "num",
-  boolean: "bool",
-  null: "null",
-  array: "list",
-};
 
 export const valueType = (value: PropertyValue): ValueType => {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   if (typeof value === "number") return "number";
   if (typeof value === "boolean") return "boolean";
-  return "string";
-};
-
-// What you most likely meant by typing `raw`. Null is never inferred — it's an
-// explicit choice — so a value-first flow stays predictable.
-export const inferScalarType = (raw: string): Exclude<ScalarType, "null"> => {
-  const trimmed = raw.trim();
-  if (trimmed === "true" || trimmed === "false") return "boolean";
-  if (trimmed !== "" && Number.isFinite(Number(trimmed))) return "number";
   return "string";
 };
 

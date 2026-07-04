@@ -1,80 +1,112 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
+  IconAbc,
   IconAlertTriangle,
   IconBraces,
-  IconCheck,
-  IconCircleOff,
   IconDeviceFloppy,
-  IconLetterCase,
-  IconListDetails,
-  IconNumber123,
+  IconHash,
+  IconLayoutRows,
+  IconList,
+  IconLock,
   IconPlus,
-  IconToggleLeft,
-  IconTrash,
+  IconTag,
+  IconToggleRight,
   IconX,
 } from "@tabler/icons-react";
 import type { PropertyValue, Properties } from "@keva/schema";
-import { formatPropertyValue } from "../lib/format";
 import {
   coerceScalar,
   diffProperties,
-  inferScalarType,
   parsePropertiesJson,
   prettyJson,
   scalarToInput,
-  SCALAR_TYPES,
-  TYPE_LABEL,
+  type ScalarType,
   validateKey,
   valueType,
-  type ScalarType,
-  type ValueType,
 } from "../lib/properties";
 import { usePropertyKeys, usePropertyValues } from "../lib/use-property-suggestions";
 import { SuggestInput } from "./SuggestInput";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
-type Mode = "form" | "json";
+// An item is one bag of key→value pairs: system-owned keys are read-only, the
+// user's own properties are editable. They render as ONE list (not two groups),
+// each row led by an icon that says which it is — a lock for system, a clickable
+// type icon for editable properties. The last row of the list is the add row.
+// JSON is a hand-edit escape hatch (arrays, bulk edits).
+type Mode = "rows" | "json";
 
-// One row shape for the whole detail list, shared by the read-only System rows
-// and the editable Custom rows so the two sections read as a single sectioned
-// list rather than two visual styles. Rows live inside `propertyListClass` — a
-// bordered, divided container that grounds them — and the key is a fixed left
-// column so values line up in a column to its right.
+// A read-only system field, supplied by the parent as pre-rendered value nodes
+// (badges, relative dates, copy buttons) so this component can weave them into
+// the same list as the editable custom rows.
+export interface SystemField {
+  key: string;
+  value: ReactNode;
+  title?: string | undefined;
+}
+
+// The bordered, divided container that grounds the property rows.
 export const propertyListClass = "divide-y divide-border overflow-hidden rounded-lg border";
-export const propertyRowClass = "flex items-center gap-3 px-3 py-2";
-// Left key column. System uses it bare for its labels; Custom adds `font-mono`.
-export const propertyKeyClass = "w-28 shrink-0 truncate text-sm";
-// Value column: fills the row to the right of the key.
-export const propertyValueClass = "flex min-w-0 flex-1 items-center gap-1.5 text-sm";
+
+// The type a stored value edits as. Arrays aren't edited by the scalar control
+// (they're shown read-only and otherwise edited in JSON), so they map to text.
+const editTypeOf = (value: PropertyValue): ScalarType => {
+  const type = valueType(value);
+  return type === "array" ? "string" : type;
+};
+
+// Fold the type + draft string a control produced into a value to store. A blank
+// text/number field is treated as a bare membership tag (null) so you never
+// accidentally store an empty string.
+const buildValue = (type: ScalarType, draft: string): PropertyValue => {
+  if ((type === "string" || type === "number") && draft.trim() === "") return null;
+  return coerceScalar(type, draft);
+};
+
+const TYPE_OPTS: { type: ScalarType; label: string; Icon: typeof IconTag }[] = [
+  { type: "null", label: "Bare tag", Icon: IconTag },
+  { type: "string", label: "Text", Icon: IconAbc },
+  { type: "number", label: "Number", Icon: IconHash },
+  { type: "boolean", label: "Boolean", Icon: IconToggleRight },
+];
+const typeMeta = (type: ScalarType) => TYPE_OPTS.find((o) => o.type === type)!;
+
+// A borderless input that reads as plain text (like a system row's value) until
+// you hover or focus it, so a *set* property matches the read-only rows.
+const GHOST_INPUT =
+  "h-7 border-transparent bg-transparent px-1.5 shadow-none hover:border-input dark:bg-transparent";
 
 interface PropertiesEditorProps {
   properties: Properties;
+  systemRows: readonly SystemField[];
   onPatch: (set: Record<string, PropertyValue>, unset: string[]) => Promise<void>;
 }
 
-// Two views over the same properties: a Form view that commits each change
-// immediately, and a JSON view that batches a hand-edited item into one
-// patch. They share nothing but the `properties` prop, so flipping between
-// them is always lossless.
-export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps) {
-  const [mode, setMode] = useState<Mode>("form");
-  const [busy, setBusy] = useState(false);
-  // Distinct keys across the whole tenant, for key autocomplete. Fetched once
-  // here and threaded down to the form rows.
-  const knownKeys = usePropertyKeys();
+interface FieldProps {
+  properties: Properties;
+  systemRows: readonly SystemField[];
+  busy: boolean;
+  knownKeys: readonly string[];
+  knownSet: ReadonlySet<string>;
+  onSet: (key: string, value: PropertyValue) => Promise<void>;
+  onUnset: (key: string) => Promise<void>;
+}
 
-  const entries = Object.entries(properties);
+export function PropertiesEditor({ properties, systemRows, onPatch }: PropertiesEditorProps) {
+  const [mode, setMode] = useState<Mode>("rows");
+  const [busy, setBusy] = useState(false);
+  // Distinct keys across the whole tenant, offered as autocomplete options.
+  const knownKeys = usePropertyKeys();
+  const knownSet = useMemo(() => new Set(knownKeys), [knownKeys]);
 
   const commit = async (set: Record<string, PropertyValue>, unset: string[]) => {
     setBusy(true);
@@ -85,12 +117,21 @@ export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps)
     }
   };
 
+  const field: FieldProps = {
+    properties,
+    systemRows,
+    busy,
+    knownKeys,
+    knownSet,
+    onSet: (key, value) => commit({ [key]: value }, []),
+    onUnset: (key) => commit({}, [key]),
+  };
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="flex items-baseline gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Custom
-          <span className="font-normal tabular-nums opacity-70">{entries.length}</span>
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Properties
         </h3>
         <ToggleGroup
           variant="outline"
@@ -102,282 +143,385 @@ export function PropertiesEditor({ properties, onPatch }: PropertiesEditorProps)
           }}
           aria-label="Editor mode"
         >
-          <ToggleGroupItem value="form">
-            <IconListDetails data-icon="inline-start" />
-            Form
+          <ToggleGroupItem value="rows" title="Rows">
+            <IconLayoutRows />
           </ToggleGroupItem>
-          <ToggleGroupItem value="json">
-            <IconBraces data-icon="inline-start" />
-            JSON
+          <ToggleGroupItem value="json" title="JSON">
+            <IconBraces />
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
 
-      {mode === "form" ? (
-        <FormView
-          properties={properties}
-          busy={busy}
-          knownKeys={knownKeys}
-          onSet={(key, value) => commit({ [key]: value }, [])}
-          onUnset={(key) => commit({}, [key])}
-        />
-      ) : (
-        <JsonView properties={properties} busy={busy} commit={commit} />
-      )}
+      {mode === "rows" ? <RowsField {...field} /> : <JsonView {...field} commit={commit} />}
     </div>
   );
 }
 
-/* ------------------------------- Form view ------------------------------- */
+/* ----------------------------- Shared row chrome -------------------------- */
 
-function FormView({
-  properties,
-  busy,
-  knownKeys,
-  onSet,
-  onUnset,
+// One row of the unified list: leading icon | key | value | trailing action.
+// System and custom rows share it so they line up as a single list.
+function PropRow({
+  icon,
+  label,
+  labelNode,
+  labelTitle,
+  mono,
+  muted,
+  action,
+  children,
 }: {
-  properties: Properties;
-  busy: boolean;
-  knownKeys: readonly string[];
-  onSet: (key: string, value: PropertyValue) => Promise<void>;
-  onUnset: (key: string) => Promise<void>;
+  icon: ReactNode;
+  label?: string | undefined;
+  labelNode?: ReactNode;
+  labelTitle?: string | undefined;
+  mono?: boolean;
+  muted?: boolean;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
-  const entries = Object.entries(properties);
-
   return (
-    <div className="flex flex-col gap-2">
-      {entries.length === 0 ? (
-        <p className="px-1 text-sm text-muted-foreground">No custom properties yet.</p>
-      ) : (
-        <ul className={propertyListClass}>
-          {entries.map(([key, value]) => (
-            <PropertyRow
-              key={key}
-              attrKey={key}
-              value={value}
-              busy={busy}
-              onSave={(next) => onSet(key, next)}
-              onUnset={() => onUnset(key)}
-            />
-          ))}
-        </ul>
+    <div className="group flex items-center gap-2 px-3 py-1.5">
+      <span className="flex size-6 shrink-0 items-center justify-center">{icon}</span>
+      {labelNode ?? (
+        <span
+          className={cn(
+            "w-24 shrink-0 truncate text-sm",
+            mono && "font-mono",
+            muted && "text-muted-foreground",
+          )}
+          title={labelTitle ?? label}
+        >
+          {label}
+        </span>
       )}
-      <AddRow
-        busy={busy}
-        existingKeys={entries.map(([k]) => k)}
-        knownKeys={knownKeys}
-        onAdd={onSet}
-      />
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">{children}</div>
+      {action}
     </div>
   );
 }
 
-function PropertyRow({
-  attrKey,
-  value,
-  busy,
-  onSave,
-  onUnset,
-}: {
-  attrKey: string;
-  value: PropertyValue;
-  busy: boolean;
-  onSave: (next: PropertyValue) => Promise<void>;
-  onUnset: () => Promise<void>;
-}) {
-  const type = valueType(value);
-  const editable = type !== "array";
-  const [editing, setEditing] = useState(false);
-  const [draftType, setDraftType] = useState<ScalarType>(
-    editable ? (type as ScalarType) : "string",
-  );
-  const [draft, setDraft] = useState(scalarToInput(value));
-  // Values seen elsewhere for this key, offered while editing.
-  const valueSuggestions = usePropertyValues(attrKey, editing);
-
-  const beginEdit = () => {
-    setDraftType(type as ScalarType);
-    setDraft(scalarToInput(value));
-    setEditing(true);
-  };
-
-  const save = async () => {
-    await onSave(coerceScalar(draftType, draft));
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <li className="flex flex-wrap items-center gap-2 bg-muted/40 px-3 py-2">
-        <span className={cn(propertyKeyClass, "font-mono font-medium")} title={attrKey}>
-          {attrKey}
+// The system rows woven into the list — a muted lock marks them read-only.
+const systemRowNodes = (rows: readonly SystemField[]) =>
+  rows.map((f) => (
+    <PropRow
+      key={`sys:${f.key}`}
+      icon={
+        <span title="System · read-only">
+          <IconLock className="size-3.5 text-muted-foreground" />
         </span>
-        <TypeSelect value={draftType} onChange={setDraftType} />
-        <div className="min-w-0 flex-1">
-          <ValueControl
-            type={draftType}
-            value={draft}
-            onChange={setDraft}
-            onEnter={() => void save()}
-            suggestions={valueSuggestions}
-            autoFocus
+      }
+      label={f.key}
+      labelTitle={f.title}
+      muted
+    >
+      {f.value}
+    </PropRow>
+  ));
+
+// The reveal-on-hover remove button used by editable rows.
+function RemoveButton({
+  label,
+  busy,
+  onClick,
+}: {
+  label: string;
+  busy: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`Remove ${label}`}
+      disabled={busy}
+      className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100 [&>svg]:size-4"
+      onClick={onClick}
+    >
+      <IconX />
+    </button>
+  );
+}
+
+// The leading type icon on an editable row: shows the value's type and opens a
+// menu to change it — this is the "force to boolean" affordance.
+function TypeMenu({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: ScalarType;
+  disabled?: boolean | undefined;
+  onChange: (type: ScalarType) => void;
+}) {
+  const Current = typeMeta(value).Icon;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={disabled}
+            title={`${typeMeta(value).label} — change type`}
           />
-        </div>
-        <Button size="icon-sm" aria-label="Save" disabled={busy} onClick={() => void save()}>
-          <IconCheck />
-        </Button>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Cancel"
-          onClick={() => setEditing(false)}
-        >
-          <IconX />
-        </Button>
-      </li>
+        }
+      >
+        <Current className="text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-36">
+        {TYPE_OPTS.map(({ type, label, Icon }) => (
+          <DropdownMenuItem
+            key={type}
+            onClick={() => onChange(type)}
+            className={cn(type === value && "bg-accent/60")}
+          >
+            <Icon />
+            {label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// The value cell for an editable scalar: a bare tag shows "—", a boolean shows a
+// true/false toggle, and text/number show a ghost input. `onCommit` fires when
+// the value should persist (blur, Enter, bool flip); `onEnter` submits an add.
+function ScalarValue({
+  type,
+  draft,
+  valueSuggestions,
+  busy,
+  autoFocus,
+  onDraft,
+  onCommit,
+  onEnter,
+}: {
+  type: ScalarType;
+  draft: string;
+  valueSuggestions: readonly string[];
+  busy: boolean;
+  autoFocus?: boolean | undefined;
+  onDraft: (draft: string) => void;
+  onCommit?: ((draft: string) => void) | undefined;
+  onEnter?: (() => void) | undefined;
+}) {
+  if (type === "null") return <span className="text-muted-foreground">—</span>;
+  if (type === "boolean") {
+    return (
+      <Toggle
+        variant="outline"
+        size="sm"
+        pressed={draft === "true"}
+        disabled={busy}
+        className="min-w-14 font-mono"
+        onPressedChange={(pressed) => {
+          const d = pressed ? "true" : "false";
+          onDraft(d);
+          onCommit?.(d);
+        }}
+      >
+        {draft === "true" ? "true" : "false"}
+      </Toggle>
     );
   }
-
   return (
-    <li className={cn(propertyRowClass, "group transition-colors hover:bg-muted/40")}>
-      <span className={cn(propertyKeyClass, "font-mono font-medium")} title={attrKey}>
-        {attrKey}
-      </span>
-      {editable ? (
-        <button
-          type="button"
-          onClick={beginEdit}
-          disabled={busy}
-          title={formatPropertyValue(value)}
-          className="-mx-1 min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-        >
-          {value === null ? (
-            <span className="text-muted-foreground italic">null</span>
-          ) : (
-            formatPropertyValue(value)
-          )}
-        </button>
-      ) : (
-        <span
-          className="min-w-0 flex-1 truncate text-sm text-muted-foreground"
-          title={formatPropertyValue(value)}
-        >
-          {formatPropertyValue(value)}
-        </span>
-      )}
-      <TypePill type={type} />
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
-        aria-label={`Remove ${attrKey}`}
-        disabled={busy}
-        onClick={() => void onUnset()}
-      >
-        <IconTrash />
-      </Button>
-    </li>
+    <SuggestInput
+      value={draft}
+      onValueChange={onDraft}
+      onBlur={onCommit ? () => onCommit(draft) : undefined}
+      onEnter={onEnter}
+      suggestions={valueSuggestions}
+      inputMode={type === "number" ? "decimal" : undefined}
+      placeholder={type === "number" ? "0" : "value"}
+      className={GHOST_INPUT}
+      autoFocus={autoFocus}
+      disabled={busy}
+    />
   );
 }
 
+/* -------------------------------- Rows view ------------------------------- */
+
+// One editable custom row. Set values read like a system row (clean text via a
+// ghost input); the leading type icon changes type; edits persist on blur,
+// Enter, a type change, or a bool flip — but only when the value actually
+// changes. Arrays are read-only here (edit in JSON).
+function CustomRow({
+  propKey,
+  value,
+  busy,
+  known,
+  onCommit,
+  onRemove,
+}: {
+  propKey: string;
+  value: PropertyValue;
+  busy: boolean;
+  known: boolean;
+  onCommit: (value: PropertyValue) => void;
+  onRemove: () => void;
+}) {
+  const [type, setType] = useState<ScalarType>(editTypeOf(value));
+  const [draft, setDraft] = useState(scalarToInput(value));
+  const valueSuggestions = usePropertyValues(propKey, known);
+  const isArray = Array.isArray(value);
+
+  const commitScalar = (next: PropertyValue) => {
+    if (next !== value) onCommit(next);
+  };
+
+  return (
+    <PropRow
+      icon={
+        isArray ? (
+          <IconList className="size-3.5 text-muted-foreground" />
+        ) : (
+          <TypeMenu
+            value={type}
+            disabled={busy}
+            onChange={(nextType) => {
+              setType(nextType);
+              commitScalar(buildValue(nextType, draft));
+            }}
+          />
+        )
+      }
+      label={propKey}
+      mono
+      action={<RemoveButton label={propKey} busy={busy} onClick={onRemove} />}
+    >
+      {isArray ? (
+        <span className="truncate font-mono text-muted-foreground" title={value.join(" | ")}>
+          {value.join(" | ")}
+        </span>
+      ) : (
+        <ScalarValue
+          type={type}
+          draft={draft}
+          valueSuggestions={valueSuggestions}
+          busy={busy}
+          onDraft={setDraft}
+          onCommit={(d) => commitScalar(buildValue(type, d))}
+        />
+      )}
+    </PropRow>
+  );
+}
+
+// The add row — the last row of the list. Same shape as a custom row: leading
+// type icon | key input | value | a "+" icon button that commits.
 function AddRow({
   busy,
-  existingKeys,
-  knownKeys,
+  availableKeys,
+  appliedKeys,
+  knownSet,
   onAdd,
 }: {
   busy: boolean;
-  existingKeys: string[];
-  knownKeys: readonly string[];
-  onAdd: (key: string, value: PropertyValue) => Promise<void>;
+  availableKeys: readonly string[];
+  appliedKeys: ReadonlySet<string>;
+  knownSet: ReadonlySet<string>;
+  onAdd: (key: string, value: PropertyValue) => void;
 }) {
   const [key, setKey] = useState("");
   const [type, setType] = useState<ScalarType>("string");
-  const [typeLocked, setTypeLocked] = useState(false);
-  const [value, setValue] = useState("");
-  const [touched, setTouched] = useState(false);
+  const [draft, setDraft] = useState("");
 
   const trimmedKey = key.trim();
-  const keyError = useMemo(() => {
-    if (!trimmedKey) return null;
-    const formatError = validateKey(trimmedKey);
-    if (formatError) return formatError;
-    if (existingKeys.includes(trimmedKey)) return "An property with this key already exists";
-    return null;
-  }, [trimmedKey, existingKeys]);
+  const keyError = trimmedKey ? validateKey(trimmedKey) : null;
+  const duplicate = appliedKeys.has(trimmedKey);
+  const valueSuggestions = usePropertyValues(trimmedKey, knownSet.has(trimmedKey));
+  const canAdd = trimmedKey !== "" && !keyError && !duplicate;
 
-  // Suggest keys not already on this item; once the key names a known property,
-  // suggest the values seen for it.
-  const keySuggestions = useMemo(
-    () => knownKeys.filter((k) => !existingKeys.includes(k)),
-    [knownKeys, existingKeys],
-  );
-  const valueSuggestions = usePropertyValues(trimmedKey, knownKeys.includes(trimmedKey));
-
-  const canAdd = Boolean(trimmedKey) && !keyError && !busy;
-
-  const onValueChange = (next: string) => {
-    setValue(next);
-    // Value-first: keep inferring the type until the user picks one by hand.
-    if (!typeLocked && type !== "null") setType(inferScalarType(next));
-  };
-
-  const reset = () => {
-    setKey("");
-    setValue("");
-    setType("string");
-    setTypeLocked(false);
-    setTouched(false);
-  };
-
-  const submit = async (event?: React.FormEvent) => {
-    event?.preventDefault();
-    setTouched(true);
+  const submit = () => {
     if (!canAdd) return;
-    await onAdd(trimmedKey, coerceScalar(type, value));
-    reset();
+    onAdd(trimmedKey, buildValue(type, draft));
+    setKey("");
+    setType("string");
+    setDraft("");
   };
 
   return (
-    <form
-      onSubmit={submit}
-      className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 px-3 py-2.5"
+    <PropRow
+      icon={<TypeMenu value={type} disabled={busy} onChange={setType} />}
+      labelNode={
+        <div className="w-24 shrink-0">
+          <SuggestInput
+            value={key}
+            onValueChange={setKey}
+            suggestions={availableKeys}
+            placeholder="new key"
+            className={cn(GHOST_INPUT, "font-mono")}
+            invalid={!!keyError || duplicate}
+            onEnter={submit}
+            disabled={busy}
+          />
+        </div>
+      }
+      action={
+        <button
+          type="button"
+          aria-label="Add property"
+          title={keyError ?? (duplicate ? "That key already exists" : "Add property")}
+          disabled={busy || !canAdd}
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-40 [&>svg]:size-4"
+          onClick={submit}
+        >
+          <IconPlus />
+        </button>
+      }
     >
-      <div className="min-w-0 flex-1 basis-32">
-        <SuggestInput
-          placeholder="new key"
-          invalid={touched && Boolean(keyError)}
-          className="h-8 font-mono"
-          value={key}
-          onValueChange={setKey}
-          suggestions={keySuggestions}
-          onEnter={() => void submit()}
-          onBlur={() => setTouched(true)}
-        />
-      </div>
-      <TypeSelect
-        value={type}
-        onChange={(next) => {
-          setType(next);
-          setTypeLocked(true);
-        }}
+      <ScalarValue
+        type={type}
+        draft={draft}
+        valueSuggestions={valueSuggestions}
+        busy={busy}
+        onDraft={setDraft}
+        onEnter={submit}
       />
-      <div className="min-w-0 flex-1 basis-32">
-        <ValueControl
-          type={type}
+    </PropRow>
+  );
+}
+
+function RowsField({
+  properties,
+  systemRows,
+  busy,
+  knownKeys,
+  knownSet,
+  onSet,
+  onUnset,
+}: FieldProps) {
+  const entries = Object.entries(properties);
+  const appliedKeys = useMemo(() => new Set(Object.keys(properties)), [properties]);
+  const availableKeys = useMemo(
+    () => knownKeys.filter((key) => !appliedKeys.has(key)),
+    [knownKeys, appliedKeys],
+  );
+
+  return (
+    <div className={propertyListClass}>
+      {systemRowNodes(systemRows)}
+      {entries.map(([key, value]) => (
+        <CustomRow
+          key={key}
+          propKey={key}
           value={value}
-          onChange={onValueChange}
-          onEnter={() => void submit()}
-          suggestions={valueSuggestions}
+          busy={busy}
+          known={knownSet.has(key)}
+          onCommit={(next) => void onSet(key, next)}
+          onRemove={() => void onUnset(key)}
         />
-      </div>
-      <Button type="submit" size="sm" disabled={!canAdd}>
-        <IconPlus data-icon="inline-start" />
-        Add
-      </Button>
-      {touched && keyError && <p className="w-full text-xs text-destructive">{keyError}</p>}
-    </form>
+      ))}
+      <AddRow
+        busy={busy}
+        availableKeys={availableKeys}
+        appliedKeys={appliedKeys}
+        knownSet={knownSet}
+        onAdd={(key, value) => void onSet(key, value)}
+      />
+    </div>
   );
 }
 
@@ -385,11 +529,10 @@ function AddRow({
 
 function JsonView({
   properties,
+  systemRows,
   busy,
   commit,
-}: {
-  properties: Properties;
-  busy: boolean;
+}: FieldProps & {
   commit: (set: Record<string, PropertyValue>, unset: string[]) => Promise<void>;
 }) {
   const baseline = prettyJson(properties);
@@ -414,7 +557,8 @@ function JsonView({
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className={propertyListClass}>{systemRowNodes(systemRows)}</div>
       <Textarea
         spellCheck={false}
         autoComplete="off"
@@ -458,109 +602,5 @@ function JsonView({
         </div>
       </div>
     </div>
-  );
-}
-
-/* ------------------------------- Controls -------------------------------- */
-
-function TypePill({ type }: { type: ValueType }) {
-  return (
-    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
-      {TYPE_LABEL[type]}
-    </span>
-  );
-}
-
-// Icon per scalar type. The trigger shows only the icon to stay compact (the
-// full words overflowed a fixed-width text trigger); the dropdown spells the
-// type out in full next to the same icon.
-const TYPE_ICON: Record<ScalarType, React.ComponentType<{ className?: string }>> = {
-  string: IconLetterCase,
-  number: IconNumber123,
-  boolean: IconToggleLeft,
-  null: IconCircleOff,
-};
-
-function TypeSelect({
-  value,
-  onChange,
-}: {
-  value: ScalarType;
-  onChange: (next: ScalarType) => void;
-}) {
-  return (
-    <Select value={value} onValueChange={(next) => onChange(next as ScalarType)}>
-      <SelectTrigger className="w-auto" aria-label="Value type" title={value}>
-        <SelectValue>
-          {(selected: ScalarType | null) => {
-            const Icon = TYPE_ICON[selected ?? "string"];
-            return <Icon className="size-4 text-muted-foreground" />;
-          }}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {SCALAR_TYPES.map((t) => {
-            const Icon = TYPE_ICON[t];
-            return (
-              <SelectItem key={t} value={t} className="font-mono text-xs">
-                <Icon className="size-4 text-muted-foreground" />
-                {t}
-              </SelectItem>
-            );
-          })}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
-  );
-}
-
-function ValueControl({
-  type,
-  value,
-  onChange,
-  onEnter,
-  autoFocus,
-  suggestions = [],
-}: {
-  type: ScalarType;
-  value: string;
-  onChange: (next: string) => void;
-  onEnter?: () => void;
-  autoFocus?: boolean;
-  suggestions?: readonly string[];
-}) {
-  if (type === "null") {
-    return <span className="block px-1 text-sm text-muted-foreground italic">null</span>;
-  }
-  if (type === "boolean") {
-    return (
-      <Select
-        value={value.trim() === "false" ? "false" : "true"}
-        onValueChange={(next) => onChange(next ?? "true")}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectItem value="true">true</SelectItem>
-            <SelectItem value="false">false</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    );
-  }
-  return (
-    <SuggestInput
-      autoFocus={autoFocus}
-      placeholder="value"
-      type={type === "number" ? "number" : "text"}
-      className="h-8"
-      value={value}
-      onValueChange={onChange}
-      suggestions={suggestions}
-      onEnter={onEnter}
-    />
   );
 }

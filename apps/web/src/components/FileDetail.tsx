@@ -5,13 +5,7 @@ import { IconAlertTriangle, IconDownload, IconPencil, IconTrash, IconX } from "@
 import { toast } from "sonner";
 import type { PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
-import {
-  PropertiesEditor,
-  propertyKeyClass,
-  propertyListClass,
-  propertyRowClass,
-  propertyValueClass,
-} from "./PropertiesEditor";
+import { PropertiesEditor } from "./PropertiesEditor";
 import { CopyButton } from "./CopyButton";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
@@ -467,56 +461,51 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
           </section>
         ) : (
           // Info and properties are one surface: an item is just a bag of
-          // key→value pairs. The system-owned keys are read-only; the user's
-          // own properties are editable below.
-          <section className="flex min-w-0 flex-col gap-6">
-            <div className="min-w-0">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                System <span className="font-normal normal-case opacity-70">· read-only</span>
-              </h3>
-              {/* Content type and size live in the header above; this list
-                  carries the rest of the system-owned keys. Same row shape as
-                  the Custom list below so the two read as one sectioned list. */}
-              <dl className={propertyListClass}>
-                <SystemRow label="Status">
-                  <Badge variant="secondary">{item.status}</Badge>
-                </SystemRow>
-                <SystemRow label="Source">
-                  <span className="truncate" title={item.source}>
-                    {item.source}
-                  </span>
-                </SystemRow>
-                <SystemRow label="Created">
-                  <span title={formatDate(item.createdAt)}>{formatRelative(item.createdAt)}</span>
-                </SystemRow>
-                <SystemRow label="Updated">
-                  <span title={formatDate(item.updatedAt)}>{formatRelative(item.updatedAt)}</span>
-                </SystemRow>
-                <SystemRow label="ID">
-                  <span className="min-w-0 truncate font-mono text-xs">{item.id}</span>
-                  <CopyButton value={item.id} label="Copy ID" />
-                </SystemRow>
-              </dl>
-            </div>
-            <PropertiesEditor properties={item.properties} onPatch={onPatch} />
+          // key→value pairs. The system-owned keys (read-only) and the user's
+          // own properties (editable) render as one list, told apart by the
+          // leading icon on each row rather than by separate sections. Content
+          // type and size live in the header above; these carry the rest.
+          <section className="min-w-0">
+            <PropertiesEditor
+              properties={item.properties}
+              systemRows={[
+                { key: "Status", value: <Badge variant="secondary">{item.status}</Badge> },
+                {
+                  key: "Source",
+                  title: item.source,
+                  value: (
+                    <span className="truncate" title={item.source}>
+                      {item.source}
+                    </span>
+                  ),
+                },
+                {
+                  key: "Created",
+                  value: (
+                    <span title={formatDate(item.createdAt)}>{formatRelative(item.createdAt)}</span>
+                  ),
+                },
+                {
+                  key: "Updated",
+                  value: (
+                    <span title={formatDate(item.updatedAt)}>{formatRelative(item.updatedAt)}</span>
+                  ),
+                },
+                {
+                  key: "ID",
+                  value: (
+                    <>
+                      <span className="min-w-0 truncate font-mono text-xs">{item.id}</span>
+                      <CopyButton value={item.id} label="Copy ID" />
+                    </>
+                  ),
+                },
+              ]}
+              onPatch={onPatch}
+            />
           </section>
         )}
       </div>
-    </div>
-  );
-}
-
-// A read-only system field, rendered with the same row shape as the editable
-// Custom rows (key left, value right) so the System and Custom sections read as
-// one list rather than two visual styles. The label is the friendly name; the
-// value carries no edit affordance.
-function SystemRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className={propertyRowClass}>
-      <dt className={`${propertyKeyClass} text-muted-foreground`} title={label}>
-        {label}
-      </dt>
-      <dd className={propertyValueClass}>{children}</dd>
     </div>
   );
 }
