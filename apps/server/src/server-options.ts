@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import type { CreateAppOptions } from "./app.js";
+import type { AppServiceOptions } from "./app.js";
 import * as authSchema from "./auth-schema.js";
 import {
   betterAuthSessionResolver,
@@ -26,7 +26,8 @@ export interface ServerOptionsConfig {
 const databaseAuth = (config: ServerOptionsConfig) => {
   if (!config.databaseUrl || !config.betterAuthSecret) return undefined;
 
-  const db = drizzle(postgres(config.databaseUrl), { schema: authSchema });
+  const sql = postgres(config.databaseUrl);
+  const db = drizzle(sql, { schema: authSchema });
   const auth = createBetterAuth({
     database: db,
     secret: config.betterAuthSecret,
@@ -34,10 +35,10 @@ const databaseAuth = (config: ServerOptionsConfig) => {
     ...(config.trustedOrigins ? { trustedOrigins: config.trustedOrigins } : {}),
   });
 
-  return { auth, db };
+  return { auth, db, dispose: () => sql.end({ timeout: 5 }) };
 };
 
-export const createServerOptions = (config: ServerOptionsConfig): CreateAppOptions => {
+export const createServerOptions = (config: ServerOptionsConfig): AppServiceOptions => {
   const auth = databaseAuth(config);
   const layer = makeRuntimeLayer({
     staticToken: config.staticToken,
@@ -59,6 +60,7 @@ export const createServerOptions = (config: ServerOptionsConfig): CreateAppOptio
             resolveTenant: makeUserTenantResolver(auth.db),
             connections: makeConnectionStore(auth.db),
           },
+          dispose: auth.dispose,
         }
       : {}),
   };

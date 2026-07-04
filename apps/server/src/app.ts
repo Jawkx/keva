@@ -58,7 +58,7 @@ const principalEffect = (headers: Headers) =>
     return yield* authenticator.authenticate({ headers });
   });
 
-export interface CreateAppOptions {
+export interface AppServiceOptions {
   readonly layer: Layer.Layer<AppServices>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
   // Present only when Better Auth is configured (requires a database). Enables
@@ -66,19 +66,63 @@ export interface CreateAppOptions {
   // no-DB/static-token path these routes stay unmounted, mirroring how token
   // management is unavailable without a database.
   readonly mcp?: McpDeps;
+  readonly dispose?: () => Promise<void>;
 }
 
-export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono => {
+export type CreateAppOptions =
+  | AppServiceOptions
+  | { readonly getRequestServices: (context: Context) => AppServiceOptions };
+
+interface ResolvedServices {
+  readonly runtime: ManagedRuntime.ManagedRuntime<AppServices, never>;
+  readonly authHandler?: (request: Request) => Response | Promise<Response>;
+  readonly mcp?: McpDeps;
+  readonly dispose?: () => Promise<void>;
+}
+
+const isRequestScoped = (
+  options: CreateAppOptions,
+): options is { readonly getRequestServices: (context: Context) => AppServiceOptions } =>
+  "getRequestServices" in options;
+
+const makeServices = (options: AppServiceOptions): ResolvedServices => ({
+  runtime: ManagedRuntime.make(options.layer),
+  ...(options.authHandler ? { authHandler: options.authHandler } : {}),
+  ...(options.mcp ? { mcp: options.mcp } : {}),
+  ...(options.dispose ? { dispose: options.dispose } : {}),
+});
+
+export const createApp = (options: CreateAppOptions): Hono => {
   const app = new Hono();
-  const runtime = ManagedRuntime.make(layer);
+  const getRequestServices = isRequestScoped(options) ? options.getRequestServices : undefined;
+  const fixedServices = getRequestServices ? undefined : makeServices(options as AppServiceOptions);
+  const resolveServices = (context: Context): ResolvedServices =>
+    fixedServices ?? makeServices(getRequestServices!(context));
 
-  if (authHandler) {
-    app.on(["GET", "POST"], "/api/auth/*", (context) => authHandler(context.req.raw));
-  }
+  const withServices = async (
+    context: Context,
+    handler: (services: ResolvedServices) => Response | Promise<Response>,
+  ): Promise<Response> => {
+    const services = resolveServices(context);
+    try {
+      return await handler(services);
+    } finally {
+      if (!fixedServices) {
+        await services.runtime.dispose();
+        await services.dispose?.();
+      }
+    }
+  };
 
-  if (mcp) {
-    mountMcp(app, mcp, runtime);
-  }
+  app.on(["GET", "POST"], "/api/auth/*", (context) =>
+    withServices(context, ({ authHandler }) =>
+      authHandler ? authHandler(context.req.raw) : context.notFound(),
+    ),
+  );
+
+  mountMcp(app, (context, handler) =>
+    withServices(context, ({ mcp, runtime }) => (mcp ? handler(mcp, runtime) : context.notFound())),
+  );
 
   app.get("/health", (context) => context.json({ ok: true, service: "keva" }));
 
@@ -87,96 +131,99 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
     const token = context.req.query("token") ?? "";
     const bytes = new Uint8Array(await context.req.arrayBuffer());
     const contentType = context.req.header("content-type") ?? "application/octet-stream";
-    return execute(
-      context,
-      Effect.gen(function* () {
-        const blobs = yield* BlobStore;
-        if (!blobs.devPut) {
-          return yield* new Unauthorized({ message: "Dev blob route disabled" });
-        }
-        yield* blobs.devPut(key, bytes, contentType, token);
-        return { ok: true };
-      }),
-      runtime,
+    return withServices(context, ({ runtime }) =>
+      execute(
+        context,
+        Effect.gen(function* () {
+          const blobs = yield* BlobStore;
+          if (!blobs.devPut) {
+            return yield* new Unauthorized({ message: "Dev blob route disabled" });
+          }
+          yield* blobs.devPut(key, bytes, contentType, token);
+          return { ok: true };
+        }),
+        runtime,
+      ),
     );
   });
 
   app.get("/__dev/blobs/*", async (context) => {
     const key = decodeURIComponent(context.req.path.slice("/__dev/blobs/".length));
     const token = context.req.query("token") ?? "";
-    const exit = await runtime.runPromiseExit(
-      Effect.gen(function* () {
-        const blobs = yield* BlobStore;
-        if (!blobs.devGet) {
-          return yield* new Unauthorized({ message: "Dev blob route disabled" });
-        }
-        return yield* blobs.devGet(key, token);
-      }),
-    );
-    if (Exit.isFailure(exit)) {
-      const error = failureFrom(exit.cause);
-      return context.json(error, statusFor(error) as never);
-    }
-    if (!exit.value) return context.notFound();
-    return new Response(exit.value.bytes.slice().buffer as ArrayBuffer, {
-      headers: { "content-type": exit.value.contentType },
+    return withServices(context, async ({ runtime }) => {
+      const exit = await runtime.runPromiseExit(
+        Effect.gen(function* () {
+          const blobs = yield* BlobStore;
+          if (!blobs.devGet) {
+            return yield* new Unauthorized({ message: "Dev blob route disabled" });
+          }
+          return yield* blobs.devGet(key, token);
+        }),
+      );
+      if (Exit.isFailure(exit)) {
+        const error = failureFrom(exit.cause);
+        return context.json(error, statusFor(error) as never);
+      }
+      if (!exit.value) return context.notFound();
+      return new Response(exit.value.bytes.slice().buffer as ArrayBuffer, {
+        headers: { "content-type": exit.value.contentType },
+      });
     });
   });
+
+  const runRoute = (context: Context, effect: Effect.Effect<unknown, KevaError, AppServices>) =>
+    withServices(context, ({ runtime }) => execute(context, effect, runtime));
 
   // Data routes live under /api so they never collide with the web app's
   // client-side routes (/items/:id, /query, /tokens), which share these
   // names. Auth (/api/auth/*) is already prefixed; /health and /__dev stay at
   // the root for load balancers and the dev blob shim.
   app.post("/api/items", async (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(InitiateUpload, yield* jsonBody(context));
         return yield* makeKevaEngine(principal).initiate(body);
       }),
-      runtime,
     ),
   );
 
   app.post("/api/items/:id/confirm", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
         return yield* makeKevaEngine(principal).confirm(id);
       }),
-      runtime,
     ),
   );
 
   app.get("/api/items/:id", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
         return yield* makeKevaEngine(principal).get(id);
       }),
-      runtime,
     ),
   );
 
   app.get("/api/items/:id/content", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
         return yield* makeKevaEngine(principal).download(id);
       }),
-      runtime,
     ),
   );
 
   app.patch("/api/items/:id", async (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
@@ -184,12 +231,11 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
         const body = yield* decode(ItemPatch, yield* jsonBody(context));
         return yield* makeKevaEngine(principal).patch(id, body);
       }),
-      runtime,
     ),
   );
 
   app.delete("/api/items/:id", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
@@ -197,14 +243,13 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
         yield* makeKevaEngine(principal).delete(id);
         return { ok: true };
       }),
-      runtime,
     ),
   );
 
   // Batch delete: fan out over the idempotent per-id delete, isolating each so
   // one failure (missing blob, transient store error) doesn't sink the rest.
   app.post("/api/items/delete", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
@@ -224,37 +269,34 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
           failed: results.filter((r) => r.error).map((r) => ({ id: r.id, error: r.error! })),
         };
       }),
-      runtime,
     ),
   );
 
   app.post("/api/query", async (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(Query, yield* jsonBody(context));
         return yield* makeKevaEngine(principal).query(body);
       }),
-      runtime,
     ),
   );
 
   // Autocomplete sources: distinct property keys across the tenant, and distinct
   // scalar values for one key (`?key=`). Read-scoped, like /query.
   app.get("/api/properties/keys", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         return yield* makeKevaEngine(principal).propertyKeys();
       }),
-      runtime,
     ),
   );
 
   app.get("/api/properties/values", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
@@ -264,12 +306,11 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
         }
         return yield* makeKevaEngine(principal).propertyValues(key);
       }),
-      runtime,
     ),
   );
 
   app.post("/api/tokens", async (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
@@ -278,12 +319,11 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
         const tokens = yield* ApiTokenStore;
         return yield* tokens.mint(principal.tenantId, body);
       }),
-      runtime,
     ),
   );
 
   app.get("/api/tokens", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
@@ -291,12 +331,11 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
         const tokens = yield* ApiTokenStore;
         return yield* tokens.list(principal.tenantId);
       }),
-      runtime,
     ),
   );
 
   app.delete("/api/tokens/:id", (context) =>
-    execute(
+    runRoute(
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
@@ -306,7 +345,6 @@ export const createApp = ({ layer, authHandler, mcp }: CreateAppOptions): Hono =
           revoked: yield* tokens.revoke(principal.tenantId, context.req.param("id")),
         };
       }),
-      runtime,
     ),
   );
 

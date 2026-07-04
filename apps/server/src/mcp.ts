@@ -12,6 +12,7 @@ import {
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Cause, Effect, Exit, ManagedRuntime, Option, Schema } from "effect";
 import type { Hono } from "hono";
+import type { Context } from "hono";
 import type { AppServices } from "./app.js";
 import { mcpScopesToKevaScopes } from "./auth.js";
 import type { ConnectionStore, McpAuthorizationServer } from "./better-auth.js";
@@ -107,63 +108,75 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
   };
 };
 
-const mountDiscovery = (app: Hono, authorizationServer: McpAuthorizationServer): void => {
+export type WithMcpServices = (
+  context: Context,
+  handler: (deps: McpDeps, runtime: AppRuntime) => Response | Promise<Response>,
+) => Promise<Response>;
+
+export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
   app.get("/.well-known/oauth-authorization-server", (context) =>
-    authorizationServer.authorizationServerMetadata(context.req.raw),
+    withServices(context, (deps) =>
+      deps.authorizationServer.authorizationServerMetadata(context.req.raw),
+    ),
   );
   app.get("/.well-known/oauth-protected-resource", (context) =>
-    authorizationServer.protectedResourceMetadata(context.req.raw),
+    withServices(context, (deps) =>
+      deps.authorizationServer.protectedResourceMetadata(context.req.raw),
+    ),
   );
-};
 
-export const mountMcp = (app: Hono, deps: McpDeps, runtime: AppRuntime): void => {
-  mountDiscovery(app, deps.authorizationServer);
-
-  const handle = deps.authorizationServer.withMcpAuth(async (request, session) => {
-    const tenantId = await deps.resolveTenant(session.userId);
-    if (!tenantId) {
-      return Response.json(
-        {
-          jsonrpc: "2.0",
-          error: { code: -32001, message: "No keva tenant for this account" },
-          id: null,
-        },
-        { status: 403 },
-      );
-    }
-    const principal = principalFromMcpToken(session, tenantId);
-    const engine = makeMcpEngine(principal, runtime);
-    const server = createKevaMcpServer(engine, { scopes: principal.scopes });
-    // Fresh server and transport per request keeps the MCP edge stateless.
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      enableJsonResponse: true,
-    });
-    await server.connect(transport);
-    const response = await transport.handleRequest(request);
-    void server.close();
-    return response;
-  });
-
-  app.all("/mcp", (context) => handle(context.req.raw));
+  app.all("/mcp", (context) =>
+    withServices(context, (deps, runtime) => {
+      const handle = deps.authorizationServer.withMcpAuth(async (request, session) => {
+        const tenantId = await deps.resolveTenant(session.userId);
+        if (!tenantId) {
+          return Response.json(
+            {
+              jsonrpc: "2.0",
+              error: { code: -32001, message: "No keva tenant for this account" },
+              id: null,
+            },
+            { status: 403 },
+          );
+        }
+        const principal = principalFromMcpToken(session, tenantId);
+        const engine = makeMcpEngine(principal, runtime);
+        const server = createKevaMcpServer(engine, { scopes: principal.scopes });
+        // Fresh server and transport per request keeps the MCP edge stateless.
+        const transport = new WebStandardStreamableHTTPServerTransport({
+          enableJsonResponse: true,
+        });
+        await server.connect(transport);
+        const response = await transport.handleRequest(request);
+        void server.close();
+        return response;
+      });
+      return handle(context.req.raw);
+    }),
+  );
 
   app.get("/api/connections", async (context) => {
-    const session = await deps.authorizationServer.sessionApi.getSession({
-      headers: context.req.raw.headers,
+    return withServices(context, async (deps) => {
+      const session = await deps.authorizationServer.sessionApi.getSession({
+        headers: context.req.raw.headers,
+      });
+      if (!session) {
+        return context.json({ _tag: "Unauthorized", message: "Sign in required" }, 401);
+      }
+      return context.json(await deps.connections.list(session.user.id));
     });
-    if (!session) {
-      return context.json({ _tag: "Unauthorized", message: "Sign in required" }, 401);
-    }
-    return context.json(await deps.connections.list(session.user.id));
   });
 
   app.delete("/api/connections/:id", async (context) => {
-    const session = await deps.authorizationServer.sessionApi.getSession({
-      headers: context.req.raw.headers,
+    return withServices(context, async (deps) => {
+      const session = await deps.authorizationServer.sessionApi.getSession({
+        headers: context.req.raw.headers,
+      });
+      if (!session) {
+        return context.json({ _tag: "Unauthorized", message: "Sign in required" }, 401);
+      }
+      const revoked = await deps.connections.revoke(session.user.id, context.req.param("id"));
+      return context.json({ revoked });
     });
-    if (!session) {
-      return context.json({ _tag: "Unauthorized", message: "Sign in required" }, 401);
-    }
-    const revoked = await deps.connections.revoke(session.user.id, context.req.param("id"));
-    return context.json({ revoked });
   });
 };
