@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   IconDatabase,
   IconFiles,
@@ -41,6 +42,7 @@ const NAV = [
 
 export function AppShell() {
   const { data } = authClient.useSession();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const [signingOut, setSigningOut] = useState(false);
@@ -50,6 +52,7 @@ export function AppShell() {
     try {
       await authClient.signOut();
     } finally {
+      queryClient.clear();
       navigate("/login", { replace: true });
     }
   };

@@ -18,12 +18,14 @@ items (
   name         text not null,             -- human/agent label, not a path
   -- system properties: typed, keva-owned, finite → real columns ─────────────
   content_type text not null,
+  declared_size bigint not null,           -- client-declared size at initiate
   size         bigint,                     -- null until confirmed
   etag         text,
   checksum     text,
   source       text not null,             -- 'upload' | 'integration:<x>' | 'agent:<x>'
   status       text not null,             -- 'pending' | 'ready' | 'deleting' (see lifecycle.md)
   storage_key  text not null,             -- derived final key: items/<tenant_id>/<id>
+  staging_key  text not null,             -- temporary upload key before confirm/copy
   created_at   timestamptz not null,
   updated_at   timestamptz not null,
   -- user/agent meaning: open-ended → one JSONB column ──────────────────────
@@ -106,7 +108,7 @@ Property updates are explicit, which removes the classic "does `null` mean
 delete or mean null?" ambiguity:
 
 ```
-PATCH /items/:id/properties
+PATCH /api/items/:id
 {
   "set":   { "location": "bali", "rating": 5, "tags": ["a","b"], "note": null },
   "unset": ["draft", "old_key"]

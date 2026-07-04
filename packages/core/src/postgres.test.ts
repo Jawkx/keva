@@ -180,27 +180,33 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         const eqHit = yield* engine.query({
           where: [{ key: "kind", op: "eq", value: "doc" }],
           limit: 100,
+          order: "created_at_asc",
         });
         const neqHit = yield* engine.query({
           where: [{ key: "kind", op: "neq", value: "image" }],
           limit: 100,
+          order: "created_at_asc",
         });
         const member = yield* engine.query({
           where: [{ key: "tags", op: "contains", value: "y" }],
           limit: 100,
+          order: "created_at_asc",
         });
         const range = yield* engine.query({
           where: [{ key: "rating", op: "gte", value: 5 }],
           limit: 100,
+          order: "created_at_asc",
         });
         const exists = yield* engine.query({
           where: [{ key: "kind", op: "exists" }],
           limit: 100,
+          order: "created_at_asc",
         });
         // tenant B cannot see tenant A's items
         const crossTenant = yield* makeKevaEngine(principal(tenantB)).query({
           where: [{ key: "kind", op: "eq", value: "doc" }],
           limit: 100,
+          order: "created_at_asc",
         });
         return { a, eqHit, neqHit, member, range, exists, crossTenant };
       }),
@@ -232,6 +238,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
           const res = yield* engine.query({
             where: [],
             limit: 2,
+            order: "created_at_asc",
             ...(cursor !== undefined ? { cursor } : {}),
           });
           seen.push(...res.items.map((o) => o.id));
@@ -261,18 +268,30 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         );
         yield* createReady(principal(tenantA), "plain.txt", "c");
         yield* createReady(principal(tenantB), "other-fox.txt", "d");
-        const all = yield* engine.query({ where: [], search: "fox", limit: 100 });
-        const first = yield* engine.query({ where: [], search: "fox", limit: 1 });
+        const all = yield* engine.query({
+          where: [],
+          search: "fox",
+          limit: 100,
+          order: "created_at_asc",
+        });
+        const first = yield* engine.query({
+          where: [],
+          search: "fox",
+          limit: 1,
+          order: "created_at_asc",
+        });
         const second = yield* engine.query({
           where: [],
           search: "fox",
           limit: 1,
+          order: "created_at_asc",
           cursor: first.nextCursor,
         });
         const other = yield* makeKevaEngine(principal(tenantB)).query({
           where: [],
           search: "quarterly",
           limit: 100,
+          order: "created_at_asc",
         });
         return { named, typed, all, first, second, other };
       }),

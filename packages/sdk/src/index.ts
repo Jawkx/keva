@@ -198,7 +198,9 @@ export class KevaClient {
     );
   }
 
-  query(query: QueryType = { where: [], limit: 100 }): Promise<QueryResultType> {
+  query(
+    query: QueryType = { where: [], limit: 100, order: "created_at_asc" },
+  ): Promise<QueryResultType> {
     return this.#request("POST", "/query", QueryResult, decode(Query, query));
   }
 

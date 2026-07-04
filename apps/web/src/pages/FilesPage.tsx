@@ -5,19 +5,14 @@ import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
-  getSortedRowModel,
   useReactTable,
-  type Column,
   type RowData,
   type RowSelectionState,
-  type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
 import {
   IconAlertTriangle,
   IconArrowDown,
-  IconArrowsSort,
-  IconArrowUp,
   IconCloudUpload,
   IconFiles,
   IconFilter,
@@ -90,6 +85,7 @@ declare module "@tanstack/react-table" {
 }
 
 const PAGE_SIZE = 50;
+const DEFAULT_ORDER = "created_at_desc" as const;
 
 const plural = (n: number) => (n === 1 ? "item" : "items");
 
@@ -187,7 +183,7 @@ const columns = [
     },
   }),
   columnHelper.accessor("name", {
-    header: ({ column }) => <SortButton column={column} label="Name" />,
+    header: "Name",
     cell: (ctx) => (
       <div className="flex min-w-0 items-center gap-3">
         <FileTypeIcon contentType={ctx.row.original.contentType} />
@@ -205,7 +201,7 @@ const columns = [
   }),
   columnHelper.accessor((o) => o.size ?? 0, {
     id: "size",
-    header: ({ column }) => <SortButton column={column} label="Size" />,
+    header: "Size",
     cell: (ctx) => (
       <span className="text-muted-foreground tabular-nums">
         {formatBytes(ctx.row.original.size)}
@@ -214,7 +210,7 @@ const columns = [
   }),
   columnHelper.accessor((o) => new Date(o.createdAt).getTime(), {
     id: "createdAt",
-    header: ({ column }) => <SortButton column={column} label="Created" />,
+    header: () => <SortButton label="Created" />,
     cell: (ctx) => (
       <span className="text-muted-foreground">{formatRelative(ctx.row.original.createdAt)}</span>
     ),
@@ -255,8 +251,6 @@ export function FilesPage() {
   // set state after the page is gone.
   const searchTimer = useRef<number | undefined>(undefined);
   useMountEffect(() => () => window.clearTimeout(searchTimer.current));
-  const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
-
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
 
@@ -273,12 +267,13 @@ export function FilesPage() {
   const dragDepth = useRef(0);
 
   const itemsQuery = useInfiniteQuery({
-    queryKey: itemsQueryKey(activeSearch, activeWhere),
+    queryKey: itemsQueryKey(activeSearch, activeWhere, DEFAULT_ORDER),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       keva.query({
         where: activeWhere,
         ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
+        order: DEFAULT_ORDER,
         limit: PAGE_SIZE,
         ...(pageParam ? { cursor: pageParam } : {}),
       }),
@@ -324,8 +319,9 @@ export function FilesPage() {
         if (activeSearch.trim() || activeWhere.length > 0) {
           void queryClient.invalidateQueries({ queryKey: ["items"] });
         } else {
-          queryClient.setQueryData<ItemsCache>(itemsQueryKey(activeSearch, activeWhere), (old) =>
-            old ? prependItemToPages(old, item) : old,
+          queryClient.setQueryData<ItemsCache>(
+            itemsQueryKey(activeSearch, activeWhere, DEFAULT_ORDER),
+            (old) => (old ? prependItemToPages(old, item) : old),
           );
         }
         setUploads((prev) => prev.filter((r) => r.id !== id));
@@ -364,15 +360,13 @@ export function FilesPage() {
   const table = useReactTable({
     data: tableData,
     columns,
-    state: { sorting, columnVisibility, rowSelection },
+    state: { columnVisibility, rowSelection },
     getRowId: (row) => row.id,
     // In-flight / failed uploads aren't real items yet, so they can't be
     // selected or bulk-deleted.
     enableRowSelection: (row) => !row.original.upload,
-    onSortingChange: setSorting,
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     meta: { selectMode, onRetryUpload: retryUpload },
   });
 
@@ -740,25 +734,11 @@ export function FilesPage() {
   );
 }
 
-function SortButton({ column, label }: { column: Column<FileRow, unknown>; label: string }) {
-  const sorted = column.getIsSorted();
+function SortButton({ label }: { label: string }) {
   return (
-    <button
-      type="button"
-      onClick={column.getToggleSortingHandler()}
-      className={cn(
-        "-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 hover:text-foreground",
-        sorted && "text-foreground",
-      )}
-    >
+    <span className="-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-foreground">
       {label}
-      {sorted === "asc" ? (
-        <IconArrowUp className="size-3.5" />
-      ) : sorted === "desc" ? (
-        <IconArrowDown className="size-3.5" />
-      ) : (
-        <IconArrowsSort className="size-3.5 opacity-50" />
-      )}
-    </button>
+      <IconArrowDown className="size-3.5" />
+    </span>
   );
 }

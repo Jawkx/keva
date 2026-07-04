@@ -12,6 +12,7 @@ describe("schema", () => {
     expect(Schema.decodeUnknownSync(Query)({})).toEqual({
       where: [],
       limit: 100,
+      order: "created_at_asc",
     });
     expect(() =>
       Schema.decodeUnknownSync(Query)({
@@ -30,8 +31,16 @@ describe("schema", () => {
       where: [],
       search: "fox",
       limit: 100,
+      order: "created_at_asc",
     });
     expect(() => Schema.decodeUnknownSync(Query)({ search: "x".repeat(257) })).toThrow();
+  });
+
+  it("validates explicit query ordering", () => {
+    expect(Schema.decodeUnknownSync(Query)({ order: "created_at_desc" })).toMatchObject({
+      order: "created_at_desc",
+    });
+    expect(() => Schema.decodeUnknownSync(Query)({ order: "name_desc" })).toThrow();
   });
 
   it("validates item ids at API boundaries", () => {

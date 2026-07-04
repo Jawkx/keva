@@ -53,12 +53,12 @@ full state machine, idempotency, and crash-recovery rules are in
 1. **Initiate** — `POST /items` with `{ name, contentType, size }`. The server
    authorizes (scope `write`), creates a `pending` record, and returns
    `{ id, uploadUrl, expiresAt }`. The presigned PUT targets
-   `staging/<tenantId>/<id>`, signed for an **exact `Content-Length` = `size`**,
-   short TTL.
+   `staging/<tenantId>/<id>` with a short TTL. The response includes only
+   browser-settable headers such as `content-type`; size is validated later.
 2. **Upload** — the client `PUT`s the bytes directly to the staging key via
-   `uploadUrl`, sending exactly that `Content-Length`. (Requires a one-time
-   bucket CORS rule allowing `PUT` from the app origin — owned by the operator.)
-3. **Confirm** — `POST /items/:id/confirm`. The server `HEAD`s the staging
+   `uploadUrl`. (Requires a one-time bucket CORS rule allowing `PUT` and the
+   returned request headers from the app origin — owned by the operator.)
+3. **Confirm** — `POST /api/items/:id/confirm`. The server `HEAD`s the staging
    item, validates declared vs. real `size`/`etag`, **`CopyObject`s staging →
    `items/<tenantId>/<id>`** (the immutable final key, never presigned for
    write), atomically flips the record to `ready`, and deletes staging. Confirm
@@ -83,19 +83,23 @@ egress through the worker; free on R2).
 
 ## Endpoint surface (v0)
 
-Every route authenticates to a `Principal` and is scoped by its prefix + scopes.
+Every data-plane route authenticates to a `Principal`, is scoped by its prefix +
+scopes, and is mounted under `/api` in `apps/server`.
 
 | Method & path                        | Scope  | Purpose                                                                                        |
 | ------------------------------------ | ------ | ---------------------------------------------------------------------------------------------- |
-| `POST /items`                        | write  | initiate: create `pending` record, return presigned PUT                                        |
-| `POST /items/:id/confirm`            | write  | HEAD-confirm, flip to `ready`                                                                  |
-| `GET /items/:id`                     | read   | fetch the item's metadata                                                                      |
-| `GET /items/:id/content`             | read   | presigned GET for the bytes                                                                    |
-| `PATCH /items/:id/properties`        | write  | `set` / `unset` user properties (see [`data-model.md`](./data-model.md))                       |
-| `DELETE /items/:id`                  | delete | two-phase delete: record intent, then remove blob + row (see [`lifecycle.md`](./lifecycle.md)) |
-| `POST /query`                        | read   | query items by property conditions                                                             |
-| `POST /tokens`                       | admin  | mint an API token (session-only in practice)                                                   |
-| `GET /tokens` · `DELETE /tokens/:id` | admin  | list / revoke tokens                                                                           |
+| `POST /api/items`                    | write  | initiate: create `pending` record, return presigned PUT                                        |
+| `POST /api/items/:id/confirm`        | write  | HEAD-confirm, flip to `ready`                                                                  |
+| `GET /api/items/:id`                 | read   | fetch the item's metadata                                                                      |
+| `GET /api/items/:id/content`         | read   | presigned GET for the bytes                                                                    |
+| `PATCH /api/items/:id`               | write  | `set` / `unset` user properties and writable fields (see [`data-model.md`](./data-model.md))   |
+| `DELETE /api/items/:id`              | delete | two-phase delete: record intent, then remove blob + row (see [`lifecycle.md`](./lifecycle.md)) |
+| `POST /api/items/delete`             | delete | batch delete items, isolating per-item failures                                                |
+| `POST /api/query`                    | read   | query items by property conditions                                                             |
+| `GET /api/properties/keys`           | read   | list distinct property keys for autocomplete                                                   |
+| `GET /api/properties/values?key=...` | read   | list distinct scalar values for one property key                                               |
+| `POST /api/tokens`                   | admin  | mint an API token (session-only in practice)                                                   |
+| `GET /api/tokens` · `DELETE /api/tokens/:id` | admin | list / revoke tokens                                                                    |
 | `GET /health`                        | —      | liveness                                                                                       |
 
 ## MCP surface (OAuth 2.1)

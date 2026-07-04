@@ -77,7 +77,6 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
   return {
     presignUpload: (key, size, contentType) =>
       presign(key, "PUT", config.uploadTtlSeconds ?? 900, {
-        "content-length": String(size),
         "content-type": contentType,
       }),
     presignDownload: (key) => presign(key, "GET", config.downloadTtlSeconds ?? 300),

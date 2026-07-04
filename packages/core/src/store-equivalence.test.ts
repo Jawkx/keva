@@ -1,4 +1,4 @@
-import type { Principal, Query } from "@keva/schema";
+import type { KevaItem, Principal, Query, QueryOrder } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -26,34 +26,52 @@ const SEED: ReadonlyArray<[string, string, Record<string, unknown>]> = [
 ];
 
 const QUERIES: Record<string, Query> = {
-  eqString: { where: [{ key: "kind", op: "eq", value: "doc" }], limit: 100 },
-  neqString: { where: [{ key: "kind", op: "neq", value: "image" }], limit: 100 },
+  eqString: {
+    where: [{ key: "kind", op: "eq", value: "doc" }],
+    limit: 100,
+    order: "created_at_asc",
+  },
+  neqString: {
+    where: [{ key: "kind", op: "neq", value: "image" }],
+    limit: 100,
+    order: "created_at_asc",
+  },
   arrayMember: {
     where: [{ key: "tags", op: "contains", value: "y" }],
     limit: 100,
+    order: "created_at_asc",
   },
   substring: {
     where: [{ key: "note", op: "contains", value: "world" }],
     limit: 100,
+    order: "created_at_asc",
   },
-  rangeNumber: { where: [{ key: "rating", op: "gte", value: 5 }], limit: 100 },
-  existsKey: { where: [{ key: "label", op: "exists" }], limit: 100 },
-  eqNull: { where: [{ key: "label", op: "eq", value: null }], limit: 100 },
+  rangeNumber: {
+    where: [{ key: "rating", op: "gte", value: 5 }],
+    limit: 100,
+    order: "created_at_asc",
+  },
+  existsKey: { where: [{ key: "label", op: "exists" }], limit: 100, order: "created_at_asc" },
+  eqNull: { where: [{ key: "label", op: "eq", value: null }], limit: 100, order: "created_at_asc" },
   neqPropTypeMismatch: {
     where: [{ key: "rating", op: "neq", value: "5" }],
     limit: 100,
+    order: "created_at_asc",
   },
   sysContentTypeEq: {
     where: [{ key: "system.content_type", op: "eq", value: "image/png" }],
     limit: 100,
+    order: "created_at_asc",
   },
   sysContentTypeNeq: {
     where: [{ key: "system.content_type", op: "neq", value: "image/png" }],
     limit: 100,
+    order: "created_at_asc",
   },
   sysSizeNeqTypeMismatch: {
     where: [{ key: "system.size", op: "neq", value: "x" }],
     limit: 100,
+    order: "created_at_asc",
   },
 };
 
@@ -85,6 +103,69 @@ const applyMigrations = async (sql: Sql): Promise<void> => {
       await sql.unsafe(statement);
     }
   }
+};
+
+const orderedItem = (tenantId: string, id: string, name: string, createdAt: string): KevaItem => ({
+  id,
+  tenantId,
+  name,
+  contentType: "text/plain",
+  declaredSize: 1,
+  size: 1,
+  etag: null,
+  checksum: null,
+  source: "upload",
+  status: "ready",
+  storageKey: `items/${tenantId}/${id}`,
+  stagingKey: `staging/${tenantId}/${id}`,
+  createdAt,
+  updatedAt: createdAt,
+  properties: {},
+});
+
+const collectPaginatedOrder = async (
+  store: MetadataStoreService,
+  order: QueryOrder,
+): Promise<{ names: string[]; pageCursors: boolean[] }> => {
+  const tenant = crypto.randomUUID();
+  const rows = [
+    orderedItem(
+      tenant,
+      "00000000-0000-4000-8000-000000000001",
+      "alpha",
+      "2026-01-01T00:00:00.000Z",
+    ),
+    orderedItem(
+      tenant,
+      "00000000-0000-4000-8000-000000000002",
+      "bravo",
+      "2026-01-01T00:02:00.000Z",
+    ),
+    orderedItem(
+      tenant,
+      "00000000-0000-4000-8000-000000000003",
+      "carol",
+      "2026-01-01T00:01:00.000Z",
+    ),
+  ];
+
+  for (const row of rows) {
+    await Effect.runPromise(store.insert(row));
+  }
+
+  const names: string[] = [];
+  const pageCursors: boolean[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await Effect.runPromise(
+      store.query(tenant, { where: [], limit: 1, order, cursor }),
+    );
+    names.push(...page.items.map((item) => item.name));
+    pageCursors.push(Boolean(page.nextCursor));
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return { names, pageCursors };
 };
 
 const seedAndRun = async (store: MetadataStoreService): Promise<Record<string, string[]>> => {
@@ -132,6 +213,21 @@ describe("store query equivalence", () => {
     expect(got).toEqual(EXPECTED);
   });
 
+  it("the in-memory store paginates explicit created-time orders", async () => {
+    await expect(
+      collectPaginatedOrder(makeMemoryMetadataStore(), "created_at_asc"),
+    ).resolves.toEqual({
+      names: ["alpha", "carol", "bravo"],
+      pageCursors: [true, true, false],
+    });
+    await expect(
+      collectPaginatedOrder(makeMemoryMetadataStore(), "created_at_desc"),
+    ).resolves.toEqual({
+      names: ["bravo", "carol", "alpha"],
+      pageCursors: [true, true, false],
+    });
+  });
+
   describe.skipIf(!DATABASE_URL)("postgres equals memory", () => {
     let sql: Sql;
 
@@ -149,6 +245,14 @@ describe("store query equivalence", () => {
       const pg = await seedAndRun(makePostgresMetadataStore(sql));
       expect(pg).toEqual(memory);
       expect(pg).toEqual(EXPECTED);
+    });
+
+    it("matches memory pagination for explicit created-time orders", async () => {
+      for (const order of ["created_at_asc", "created_at_desc"] as const) {
+        const memory = await collectPaginatedOrder(makeMemoryMetadataStore(), order);
+        const pg = await collectPaginatedOrder(makePostgresMetadataStore(sql), order);
+        expect(pg).toEqual(memory);
+      }
     });
   });
 });

@@ -57,6 +57,7 @@ describe("KevaClient", () => {
   it("passes upload bodies directly to fetch", async () => {
     const body = new Blob(["hello"], { type: "text/plain" });
     const uploadBodies: unknown[] = [];
+    const uploadHeaders: unknown[] = [];
     const client = new KevaClient({
       baseUrl: "https://keva.invalid/api",
       token: "test",
@@ -72,6 +73,7 @@ describe("KevaClient", () => {
         }
         if (url === "https://blob.invalid/upload") {
           uploadBodies.push(init?.body);
+          uploadHeaders.push(init?.headers);
           return new Response(null, { status: 200 });
         }
         if (url.endsWith(`/items/${item.id}/confirm`)) {
@@ -94,6 +96,7 @@ describe("KevaClient", () => {
       ),
     ).resolves.toMatchObject({ id: item.id });
     expect(uploadBodies).toEqual([body]);
+    expect(uploadHeaders).toEqual([{ "content-type": "text/plain" }]);
   });
 
   it("returns download URLs without fetching blob bytes", async () => {

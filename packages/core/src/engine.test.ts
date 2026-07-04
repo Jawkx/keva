@@ -40,10 +40,12 @@ describe("KevaEngine", () => {
       const own = yield* makeKevaEngine(principal("tenant-a")).query({
         where: [{ key: "name", op: "eq", value: "hello.txt" }],
         limit: 100,
+        order: "created_at_asc",
       });
       const other = yield* makeKevaEngine(principal("tenant-b")).query({
         where: [],
         limit: 100,
+        order: "created_at_asc",
       });
       return { item, own, other };
     }).pipe(Effect.provide(layer));
@@ -78,18 +80,30 @@ describe("KevaEngine", () => {
       yield* upload("tenant-a", "plain.txt", new TextEncoder().encode("three"));
       yield* upload("tenant-b", "other-fox.txt", new TextEncoder().encode("four"));
 
-      const all = yield* tenant.query({ where: [], search: "fox", limit: 100 });
-      const firstPage = yield* tenant.query({ where: [], search: "fox", limit: 1 });
+      const all = yield* tenant.query({
+        where: [],
+        search: "fox",
+        limit: 100,
+        order: "created_at_asc",
+      });
+      const firstPage = yield* tenant.query({
+        where: [],
+        search: "fox",
+        limit: 1,
+        order: "created_at_asc",
+      });
       const secondPage = yield* tenant.query({
         where: [],
         search: "fox",
         limit: 1,
+        order: "created_at_asc",
         cursor: firstPage.nextCursor,
       });
       const otherTenant = yield* makeKevaEngine(principal("tenant-b")).query({
         where: [],
         search: "quarterly",
         limit: 100,
+        order: "created_at_asc",
       });
       return { named, contentTypeMatch, all, firstPage, secondPage, otherTenant };
     }).pipe(Effect.provide(layer));
@@ -245,10 +259,12 @@ describe("KevaEngine", () => {
       const byLocation = yield* engine.query({
         where: [{ key: "location", op: "eq", value: "bali" }],
         limit: 100,
+        order: "created_at_asc",
       });
       const byTag = yield* engine.query({
         where: [{ key: "tags", op: "contains", value: "diving" }],
         limit: 100,
+        order: "created_at_asc",
       });
       const fetched = yield* engine.get(item.id);
       return { byLocation, byTag, fetched };

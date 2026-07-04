@@ -119,6 +119,9 @@ export const QueryCondition = Schema.Struct({
 );
 export type QueryCondition = typeof QueryCondition.Type;
 
+export const QueryOrder = Schema.Literal("created_at_asc", "created_at_desc");
+export type QueryOrder = typeof QueryOrder.Type;
+
 export const Query = Schema.Struct({
   where: Schema.optionalWith(Schema.Array(QueryCondition), {
     default: () => [],
@@ -128,6 +131,9 @@ export const Query = Schema.Struct({
     default: () => 100,
   }),
   cursor: Schema.optional(Schema.String),
+  order: Schema.optionalWith(QueryOrder, {
+    default: () => "created_at_asc",
+  }),
 });
 export type Query = typeof Query.Type;
 

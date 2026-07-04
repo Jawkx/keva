@@ -7,6 +7,7 @@ import {
   type KevaItem,
   type PropertyScalar,
   type QueryCondition,
+  type QueryOrder,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
@@ -89,6 +90,7 @@ const decodeCursor = (cursor: string): Effect.Effect<readonly [string, string], 
   });
 
 type Fragment = ReturnType<Sql["unsafe"]>;
+type CursorPredicate = (cursor: readonly [string, string]) => Fragment;
 
 // A query key backed by a real column (declared in the schema field registry),
 // as opposed to a key that lives inside the `properties` JSONB blob.
@@ -165,6 +167,22 @@ const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
 
 const escapeLikePattern = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+
+const queryOrder = (
+  sql: Sql,
+  order: QueryOrder,
+): { readonly by: Fragment; readonly afterCursor: CursorPredicate } =>
+  order === "created_at_desc"
+    ? {
+        by: sql`created_at desc, id desc`,
+        afterCursor: (cursor) =>
+          sql`(created_at, id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
+      }
+    : {
+        by: sql`created_at asc, id asc`,
+        afterCursor: (cursor) =>
+          sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
+      };
 
 export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   insert: (item) =>
@@ -254,6 +272,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   query: (tenantId, query) =>
     Effect.gen(function* () {
+      const order = query.order ?? "created_at_asc";
       const predicates: Fragment[] = [
         sql`tenant_id = ${tenantId}`,
         sql`status = 'ready'`,
@@ -268,15 +287,16 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       }
       if (query.cursor) {
         const cursor = yield* decodeCursor(query.cursor);
-        predicates.push(sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`);
+        predicates.push(queryOrder(sql, order).afterCursor(cursor));
       }
+      const orderSql = queryOrder(sql, order);
       const where = predicates.reduce((left, right) => sql`${left} and ${right}`);
       const rows = yield* attempt(
         () =>
           sql<ItemRow[]>`
           select * from items
           where ${where}
-          order by created_at asc, id asc
+          order by ${orderSql.by}
           limit ${query.limit + 1}
         `,
       );

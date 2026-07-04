@@ -1,5 +1,5 @@
 import type { InfiniteData } from "@tanstack/react-query";
-import type { QueryCondition } from "@keva/schema";
+import type { QueryCondition, QueryOrder } from "@keva/schema";
 import type { KevaItem, QueryResult } from "@keva/sdk";
 
 // Helpers for editing the cached item list in place after a mutation, so the
@@ -8,8 +8,11 @@ import type { KevaItem, QueryResult } from "@keva/sdk";
 // sees the change.
 export type ItemsCache = InfiniteData<QueryResult, string | undefined>;
 
-export const itemsQueryKey = (search: string, where: readonly QueryCondition[]) =>
-  ["items", { search, where }] as const;
+export const itemsQueryKey = (
+  search: string,
+  where: readonly QueryCondition[],
+  order: QueryOrder,
+) => ["items", { search, where, order }] as const;
 
 export function removeItemsFromPages(data: ItemsCache, ids: Iterable<string>): ItemsCache {
   const drop = new Set(ids);

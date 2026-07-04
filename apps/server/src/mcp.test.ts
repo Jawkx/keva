@@ -62,12 +62,12 @@ describe("mcpScopesToKevaScopes", () => {
   });
 
   it("ignores OIDC and unknown scopes", () => {
-    expect(mcpScopesToKevaScopes("openid profile email")).toEqual(["read"]);
+    expect(mcpScopesToKevaScopes("openid profile email")).toEqual([]);
     expect(mcpScopesToKevaScopes("keva:admin keva:read")).toEqual(["read"]);
   });
 
-  it("falls back to least-privilege read when no keva scope is granted", () => {
-    expect(mcpScopesToKevaScopes("")).toEqual(["read"]);
+  it("grants no keva permissions when no keva scope is granted", () => {
+    expect(mcpScopesToKevaScopes("")).toEqual([]);
   });
 
   it("deduplicates", () => {
@@ -82,6 +82,11 @@ describe("principalFromMcpToken", () => {
       "tenant-a",
     );
     expect(principal).toEqual({ tenantId: "tenant-a", scopes: ["read", "write"], via: "token" });
+  });
+
+  it("preserves an empty granted keva scope set", () => {
+    const principal = principalFromMcpToken({ userId: "u1", scopes: "" }, "tenant-a");
+    expect(principal).toEqual({ tenantId: "tenant-a", scopes: [], via: "token" });
   });
 });
 

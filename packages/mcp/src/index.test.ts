@@ -42,6 +42,10 @@ const textOf = (result: { content: Array<{ type: string; text?: string }> }): st
     .join("");
 
 describe("createKevaMcpServer tool registration", () => {
+  it("exposes no keva tools for an empty scope set", async () => {
+    expect(await toolNames([])).toEqual([]);
+  });
+
   it("exposes only read tools for a read-only principal", async () => {
     expect(await toolNames(["read"])).toEqual([
       "get_content_url",

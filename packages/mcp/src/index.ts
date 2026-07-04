@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 // keva exposes its read/query/property surface to agents over MCP. This package
@@ -108,10 +108,15 @@ export const createKevaMcpServer = (
   engine: McpEngine,
   options: KevaMcpServerOptions,
 ): McpServer => {
-  const server = new McpServer({
-    name: options.serverName ?? "keva",
-    version: options.serverVersion ?? "0.0.0",
-  });
+  const server = new McpServer(
+    {
+      name: options.serverName ?? "keva",
+      version: options.serverVersion ?? "0.0.0",
+    },
+    {
+      capabilities: { tools: {} },
+    },
+  );
   const can = (scope: string): boolean => options.scopes.includes(scope);
 
   if (can("read")) {
@@ -203,6 +208,10 @@ export const createKevaMcpServer = (
           return `Deleted item ${id}`;
         }),
     );
+  }
+
+  if (!can("read") && !can("write") && !can("delete")) {
+    server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
   }
 
   return server;

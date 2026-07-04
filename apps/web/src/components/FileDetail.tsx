@@ -129,9 +129,9 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   });
   const previewLoading = contentQuery.isLoading;
 
-  // Derive the preview from cached bytes. `objectUrlFor` is idempotent per id,
-  // so reading it during render is safe (no leak under StrictMode); the URL is
-  // revoked on unmount below. Best-effort: content errors are ignored here.
+  // Derive the preview from cached bytes. `objectUrlFor` is an LRU keyed by id,
+  // so reading it during render reuses the same URL; entries are revoked on LRU
+  // eviction or explicit delete. Best-effort: content errors are ignored here.
   const preview = useMemo<Preview | null>(() => {
     if (!item || !contentQuery.data) return null;
     const { bytes, blob } = contentQuery.data;
@@ -213,7 +213,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
 
   const busy = downloadMutation.isPending || deleteMutation.isPending;
 
-  // PropertiesEditor awaits this and reverts its own UI if it rejects.
   const onPatch = async (set: Record<string, PropertyValue>, unset: string[]) => {
     await patchMutation.mutateAsync({ set, unset });
   };

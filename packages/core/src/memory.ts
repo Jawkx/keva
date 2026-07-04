@@ -6,6 +6,7 @@ import {
   type PropertyValue,
   type KevaItem,
   type QueryCondition,
+  type QueryOrder,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import {
@@ -114,6 +115,19 @@ const decodeCursor = (cursor: string): readonly [string, string] | null => {
   }
 };
 
+const compareCreated =
+  (order: QueryOrder) =>
+  (a: KevaItem, b: KevaItem): number => {
+    const direction = order === "created_at_desc" ? -1 : 1;
+    const byCreatedAt = a.createdAt.localeCompare(b.createdAt);
+    return (byCreatedAt === 0 ? a.id.localeCompare(b.id) : byCreatedAt) * direction;
+  };
+
+const isAfterCursor = (order: QueryOrder, item: KevaItem, cursor: readonly [string, string]) =>
+  order === "created_at_desc"
+    ? item.createdAt < cursor[0] || (item.createdAt === cursor[0] && item.id < cursor[1])
+    : item.createdAt > cursor[0] || (item.createdAt === cursor[0] && item.id > cursor[1]);
+
 export const makeMemoryMetadataStore = (): MetadataStoreService => {
   const items = new Map<string, KevaItem>();
   const mapKey = (tenantId: string, id: string) => `${tenantId}\0${id}`;
@@ -172,21 +186,15 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
       }),
     query: (tenantId, query) =>
       Effect.sync(() => {
+        const order = query.order ?? "created_at_asc";
         const cursor = query.cursor ? decodeCursor(query.cursor) : null;
         let rows = [...items.values()]
           .filter((item) => item.tenantId === tenantId && item.status === "ready")
           .filter((item) => matchesSearch(item, query.search))
           .filter((item) => query.where.every((condition) => matches(item, condition)))
-          .sort((a, b) =>
-            a.createdAt === b.createdAt
-              ? a.id.localeCompare(b.id)
-              : a.createdAt.localeCompare(b.createdAt),
-          );
+          .sort(compareCreated(order));
         if (cursor) {
-          rows = rows.filter(
-            (item) =>
-              item.createdAt > cursor[0] || (item.createdAt === cursor[0] && item.id > cursor[1]),
-          );
+          rows = rows.filter((item) => isAfterCursor(order, item, cursor));
         }
         const page = rows.slice(0, query.limit + 1);
         const hasMore = page.length > query.limit;
@@ -282,7 +290,6 @@ export const makeMemoryBlobStore = (options: MemoryBlobStoreOptions = {}): BlobS
         headers:
           method === "PUT"
             ? {
-                "content-length": String(size ?? 0),
                 "content-type": contentType ?? "application/octet-stream",
               }
             : {},

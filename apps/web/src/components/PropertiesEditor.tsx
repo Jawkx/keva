@@ -157,8 +157,6 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
   );
 }
 
-/* ----------------------------- Shared row chrome -------------------------- */
-
 // One row of the unified list: leading icon | key | value | trailing action.
 // System and custom rows share it so they line up as a single list.
 function PropRow({
@@ -341,8 +339,6 @@ function ScalarValue({
   );
 }
 
-/* -------------------------------- Rows view ------------------------------- */
-
 // One editable custom row. Set values read like a system row (clean text via a
 // ghost input); the leading type icon changes type; edits persist on blur,
 // Enter, a type change, or a bool flip — but only when the value actually
@@ -524,8 +520,6 @@ function RowsField({
     </div>
   );
 }
-
-/* ------------------------------- JSON view ------------------------------- */
 
 function JsonView({
   properties,
