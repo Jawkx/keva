@@ -75,9 +75,7 @@ export function AppShell() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" render={<Link to="/" />}>
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <IconDatabase className="size-5" />
-                </div>
+                <img src="/android-chrome-192x192.png" alt="" className="size-8 object-contain" />
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-heading font-semibold">keva</span>
                   <span className="text-xs text-muted-foreground">structured storage</span>

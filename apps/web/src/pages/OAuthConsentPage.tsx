@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconAlertTriangle, IconDatabase, IconPlugConnected } from "@tabler/icons-react";
+import { IconAlertTriangle, IconPlugConnected } from "@tabler/icons-react";
 import { parseConsentRequest, SCOPE_DESCRIPTIONS, submitConsent } from "../lib/oauth";
 import { useMountEffect } from "../lib/useMountEffect";
 import { Alert, AlertTitle } from "@/components/ui/alert";
@@ -37,9 +37,7 @@ export function OAuthConsentPage() {
     <div className="flex min-h-svh items-center justify-center bg-muted/30 p-6">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex items-center justify-center gap-2 font-heading text-lg font-semibold">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <IconDatabase className="size-5" />
-          </div>
+          <img src="/android-chrome-192x192.png" alt="" className="size-8 object-contain" />
           keva
         </div>
         <Card>
