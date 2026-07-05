@@ -13,6 +13,7 @@ import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
 import { ModeToggle } from "./ModeToggle";
+import { Wordmark } from "./Wordmark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,20 +75,8 @@ export function AppShell() {
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              {/*
-                Wordmark: the logo PNG is a big "K"; "eva" is rendered as text so the
-                pair reads as "Keva". The icon has ~15% transparent padding baked in,
-                so the glyph's visual right edge stops short of its box — `-ml-1` pulls
-                "eva" back over that padding so the two kern as one word instead of
-                floating apart. `translate-y-px` lands the text baseline on the glyph's
-                visual bottom (which sits a couple px above the box bottom). Both nudges
-                are tuned to this icon's padding; re-check them if the logo asset changes.
-              */}
-              <SidebarMenuButton size="lg" className="items-end gap-0" render={<Link to="/" />}>
-                <img src="/android-chrome-192x192.png" alt="K" className="size-8 object-contain" />
-                <span className="-ml-1 translate-y-px font-heading text-[1.8rem] font-semibold leading-none text-primary">
-                  eva
-                </span>
+              <SidebarMenuButton size="lg" render={<Link to="/" />}>
+                <Wordmark textClassName="group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
