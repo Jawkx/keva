@@ -5,6 +5,8 @@ import { ApiTokenStore, mcpScopesToKevaScopes, StaticTokenAuthLive } from "./aut
 import { createApp } from "./app.js";
 import type { McpAuthorizationServer } from "./better-auth.js";
 import { type McpDeps, principalFromMcpToken } from "./mcp.js";
+import { ShareGrantStore } from "./shares.js";
+import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 
 const baseLayer = () =>
   Layer.mergeAll(
@@ -17,6 +19,7 @@ const baseLayer = () =>
       list: () => Effect.succeed([]),
       revoke: () => Effect.succeed(false),
     }),
+    Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
   );
 
 const stubAuthorizationServer = (overrides: {

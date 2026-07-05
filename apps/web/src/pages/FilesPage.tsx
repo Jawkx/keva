@@ -18,6 +18,7 @@ import {
   IconFilter,
   IconLoader2,
   IconSearch,
+  IconShare3,
   IconTrash,
   IconUpload,
   IconX,
@@ -28,6 +29,7 @@ import type { KevaItem } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { FilterPanel } from "../components/FilterPanel";
+import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { UploadModal } from "../components/UploadModal";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatContentType, formatRelative } from "../lib/format";
@@ -263,6 +265,14 @@ export function FilesPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadKey, setUploadKey] = useState(0);
+  // Share dialog. Remounted by key so it re-snapshots the current filters
+  // (activeWhere) and resets its form each time it opens.
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareKey, setShareKey] = useState(0);
+  const openShare = () => {
+    setShareKey((k) => k + 1);
+    setShareOpen(true);
+  };
 
   const [pageDragging, setPageDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -600,7 +610,11 @@ export function FilesPage() {
                 Clear
               </Button>
             )}
-            <Button className="sm:ml-auto" onClick={() => openUpload([])}>
+            <Button variant="outline" className="sm:ml-auto" onClick={openShare}>
+              <IconShare3 data-icon="inline-start" />
+              Share
+            </Button>
+            <Button onClick={() => openUpload([])}>
               <IconUpload data-icon="inline-start" />
               Upload
             </Button>
@@ -735,6 +749,13 @@ export function FilesPage() {
         onOpenChange={setUploadOpen}
         initialFiles={pendingFiles}
         onUpload={startUploads}
+      />
+
+      <ShareCreateDialog
+        key={shareKey}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        conditions={activeWhere}
       />
     </div>
   );

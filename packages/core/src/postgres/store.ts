@@ -333,6 +333,20 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       });
       return { itemCount, totalBytes, byType };
     }),
+  sourceUsage: (tenantId, source) =>
+    attempt(async () => {
+      // Served by items_tenant_source_idx. count/sum arrive as bigint strings
+      // from postgres.js; cast like usage does.
+      const rows = await sql<{ count: string; bytes: string }[]>`
+        select count(*)::bigint as count,
+               coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
+        from items
+        where tenant_id = ${tenantId} and source = ${source}
+          and status in ('pending', 'ready')
+      `;
+      const row = rows[0];
+      return { count: Number(row?.count ?? 0), bytes: Number(row?.bytes ?? 0) };
+    }),
   propertyKeys: (tenantId) =>
     attempt(async () => {
       // Fan out each item's top-level property keys, then dedupe across the

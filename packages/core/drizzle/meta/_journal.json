@@ -22,6 +22,13 @@
       "when": 1782837707996,
       "tag": "0002_worthless_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783252415155,
+      "tag": "0003_new_black_panther",
+      "breakpoints": true
     }
   ]
 }

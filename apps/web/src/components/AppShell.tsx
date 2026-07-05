@@ -8,6 +8,7 @@ import {
   IconPlugConnected,
   IconSelector,
   IconSettings,
+  IconShare3,
 } from "@tabler/icons-react";
 import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
@@ -40,6 +41,7 @@ import {
 
 const NAV = [
   { title: "Files", url: "/", icon: IconFiles, exact: true },
+  { title: "Share", url: "/shares", icon: IconShare3, exact: false },
   { title: "Connection", url: "/connection", icon: IconPlugConnected, exact: false },
 ] as const;
 

@@ -2,22 +2,33 @@ import { BlobStore, makeKevaEngine, MetadataStore } from "@keva/core";
 import {
   ItemPatch,
   BatchDelete,
+  CreateShareGrant,
   ItemId,
   InitiateUpload,
   Internal,
   KevaError,
   MintToken,
+  NotFound,
   Query,
+  toSharedItem,
   Unauthorized,
   ValidationError,
   statusFor,
+  type KevaItem,
+  type Principal,
 } from "@keva/schema";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { Hono, type Context } from "hono";
 import { ApiTokenStore, Authenticator, requireAdminSession } from "./auth.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
+import { ShareGrantStore } from "./shares.js";
 
-export type AppServices = Authenticator | BlobStore | MetadataStore | ApiTokenStore;
+export type AppServices =
+  | Authenticator
+  | BlobStore
+  | MetadataStore
+  | ApiTokenStore
+  | ShareGrantStore;
 
 const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
   Schema.decodeUnknown(schema)(value).pipe(
@@ -57,6 +68,12 @@ const principalEffect = (headers: Headers) =>
     const authenticator = yield* Authenticator;
     return yield* authenticator.authenticate({ headers });
   });
+
+// Share visitors never receive the tenant-internal storage fields. Redaction
+// happens here at the boundary (not in the engine) so internal callers keep the
+// full KevaItem shape and only the wire response is trimmed.
+const redactItem = (principal: Principal, item: KevaItem) =>
+  principal.via === "share" ? toSharedItem(item) : item;
 
 export interface AppServiceOptions {
   readonly layer: Layer.Layer<AppServices>;
@@ -184,7 +201,8 @@ export const createApp = (options: CreateAppOptions): Hono => {
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(InitiateUpload, yield* jsonBody(context));
-        return yield* makeKevaEngine(principal).initiate(body);
+        const result = yield* makeKevaEngine(principal).initiate(body);
+        return { ...result, item: redactItem(principal, result.item) };
       }),
     ),
   );
@@ -195,7 +213,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
-        return yield* makeKevaEngine(principal).confirm(id);
+        return redactItem(principal, yield* makeKevaEngine(principal).confirm(id));
       }),
     ),
   );
@@ -206,7 +224,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
-        return yield* makeKevaEngine(principal).get(id);
+        return redactItem(principal, yield* makeKevaEngine(principal).get(id));
       }),
     ),
   );
@@ -278,7 +296,10 @@ export const createApp = (options: CreateAppOptions): Hono => {
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(Query, yield* jsonBody(context));
-        return yield* makeKevaEngine(principal).query(body);
+        const result = yield* makeKevaEngine(principal).query(body);
+        return principal.via === "share"
+          ? { ...result, items: result.items.map(toSharedItem) }
+          : result;
       }),
     ),
   );
@@ -355,6 +376,88 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const tokens = yield* ApiTokenStore;
         return {
           revoked: yield* tokens.revoke(principal.tenantId, context.req.param("id")),
+        };
+      }),
+    ),
+  );
+
+  // Share management: create/list/revoke, all admin-session-only like tokens.
+  app.post("/api/shares", async (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const body = yield* decode(CreateShareGrant, yield* jsonBody(context));
+        const shares = yield* ShareGrantStore;
+        return yield* shares.create(principal.tenantId, body);
+      }),
+    ),
+  );
+
+  app.get("/api/shares", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const shares = yield* ShareGrantStore;
+        return yield* shares.list(principal.tenantId);
+      }),
+    ),
+  );
+
+  app.delete("/api/shares/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const shares = yield* ShareGrantStore;
+        return {
+          revoked: yield* shares.revoke(principal.tenantId, context.req.param("id")),
+        };
+      }),
+    ),
+  );
+
+  // Public self-descriptor for a share link: the visitor sees the share name,
+  // its scopes, expiry, and (for write shares) upload limits + current usage.
+  // Conditions and the write stamp are deliberately withheld.
+  app.get("/api/shares/self", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const share = principal.via === "share" ? principal.share : undefined;
+        if (!share) {
+          return yield* new NotFound({ message: "Not a share" });
+        }
+        const shares = yield* ShareGrantStore;
+        // Re-read the grant so a mid-session revocation surfaces (the resolved
+        // principal is a snapshot from token-resolution time).
+        const grant = yield* shares.get(principal.tenantId, share.grantId);
+        if (!grant) {
+          return yield* new NotFound({ message: "Share not found" });
+        }
+        const canWrite = grant.scopes.includes("write");
+        const metadata = yield* MetadataStore;
+        const used = canWrite
+          ? yield* metadata.sourceUsage(principal.tenantId, `share:${grant.id}`)
+          : { count: 0, bytes: 0 };
+        return {
+          name: grant.name,
+          scopes: grant.scopes,
+          expiresAt: grant.expiresAt,
+          upload: canWrite
+            ? {
+                maxItemBytes: grant.maxItemBytes,
+                maxTotalBytes: grant.maxTotalBytes,
+                maxItems: grant.maxItems,
+                usedBytes: used.bytes,
+                usedItems: used.count,
+              }
+            : null,
         };
       }),
     ),

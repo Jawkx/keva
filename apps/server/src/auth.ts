@@ -10,6 +10,7 @@ import {
 } from "@keva/schema";
 import { Context, Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
+import { ShareGrantStore, shareStrategy } from "./shares.js";
 
 export interface AuthRequest {
   readonly headers: Headers;
@@ -26,9 +27,11 @@ export class Authenticator extends Context.Tag("@keva/server/Authenticator")<
   AuthenticatorService
 >() {}
 
-type AuthStrategy = (request: AuthRequest) => Effect.Effect<Principal | null, StorageUnavailable>;
+export type AuthStrategy = (
+  request: AuthRequest,
+) => Effect.Effect<Principal | null, StorageUnavailable>;
 
-const secureEqual = (left: string, right: string): boolean => {
+export const secureEqual = (left: string, right: string): boolean => {
   const leftBytes = new TextEncoder().encode(left);
   const rightBytes = new TextEncoder().encode(right);
   if (leftBytes.byteLength !== rightBytes.byteLength) return false;
@@ -121,7 +124,7 @@ export const parseTokenParts = (token: string): { id: string; secret: string } |
   return match ? { id: match[1]!, secret: match[2]! } : null;
 };
 
-const hashSecret = async (secret: string): Promise<string> => {
+export const hashSecret = async (secret: string): Promise<string> => {
   const bytes = new TextEncoder().encode(secret);
   const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -283,13 +286,18 @@ export const TokenAndStaticAuthFromStoreLive = (config: {
   readonly staticToken: string;
   readonly tenantId: string;
   readonly sessionResolver?: SessionResolver;
-}): Layer.Layer<Authenticator, never, ApiTokenStore> =>
+}): Layer.Layer<Authenticator, never, ApiTokenStore | ShareGrantStore> =>
   Layer.effect(
     Authenticator,
     Effect.gen(function* () {
       const store = yield* ApiTokenStore;
+      const shares = yield* ShareGrantStore;
+      // Order matters: `keva_sk_` and `keva_sh_` strategies short-circuit on
+      // their own prefix, session needs a cookie, and the static token is the
+      // final fallback. Share resolution sits alongside the API-token strategy.
       const strategies = [
         tokenStrategy(store),
+        shareStrategy(shares),
         ...(config.sessionResolver ? [sessionStrategy(config.sessionResolver)] : []),
         staticTokenStrategy({
           token: config.staticToken,

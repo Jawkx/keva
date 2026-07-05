@@ -10,6 +10,8 @@ import {
   TokenAndStaticAuthFromStoreLive,
   type SessionResolver,
 } from "./auth.js";
+import { ShareGrantStore } from "./shares.js";
+import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 
 /**
  * Server-level token subsystem. In the merged implementation, token management
@@ -86,13 +88,14 @@ const sessionResolver = async (headers: Headers) =>
 const makeApp = (resolver: SessionResolver = sessionResolver) => {
   const tokenStore = makeInMemoryTokenStore();
   const tokens = Layer.succeed(ApiTokenStore, tokenStore);
+  const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore());
   const auth = TokenAndStaticAuthFromStoreLive({
     staticToken: STATIC,
     tenantId: TENANT,
     sessionResolver: resolver,
-  }).pipe(Layer.provide(tokens));
+  }).pipe(Layer.provide(Layer.merge(tokens, shares)));
   return createApp({
-    layer: Layer.mergeAll(MemoryMetadataStoreLive, MemoryBlobStoreLive(), tokens, auth),
+    layer: Layer.mergeAll(MemoryMetadataStoreLive, MemoryBlobStoreLive(), tokens, shares, auth),
   });
 };
 

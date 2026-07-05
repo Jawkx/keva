@@ -3,6 +3,8 @@ import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
+import { ShareGrantStore } from "./shares.js";
+import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 
 /**
  * Server-level acceptance: the full create → upload (loopback) → confirm →
@@ -29,6 +31,7 @@ const makeApp = () =>
         list: () => Effect.succeed([]),
         revoke: () => Effect.succeed(false),
       }),
+      Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
     ),
   });
 

@@ -11,6 +11,49 @@ const principal = (tenantId: string): Principal => ({
   via: "token",
 });
 
+type ShareOptions = {
+  readonly scopes?: Principal["scopes"];
+  readonly grantId?: string;
+  readonly conditions?: NonNullable<Principal["share"]>["conditions"];
+  readonly writeStamp?: NonNullable<Principal["share"]>["writeStamp"];
+  readonly limits?: NonNullable<Principal["share"]>["limits"];
+};
+
+const sharePrincipal = (tenantId: string, options: ShareOptions = {}): Principal => ({
+  tenantId,
+  scopes: options.scopes ?? ["read"],
+  via: "share",
+  share: {
+    grantId: options.grantId ?? "grant-1",
+    conditions: options.conditions ?? [{ key: "project", op: "eq", value: "alpha" }],
+    ...(options.writeStamp === undefined ? {} : { writeStamp: options.writeStamp }),
+    ...(options.limits === undefined ? {} : { limits: options.limits }),
+  },
+});
+
+// Upload through a share principal (initiate → devPut → confirm), returning the
+// confirmed item. Mirrors `upload` but drives the share write path.
+const shareUpload = (p: Principal, name: string, bytes: Uint8Array) =>
+  Effect.gen(function* () {
+    const engine = makeKevaEngine(p);
+    const initiated = yield* engine.initiate({
+      name,
+      contentType: "text/plain",
+      size: bytes.byteLength,
+      source: "upload",
+      properties: {},
+    });
+    const url = new URL(initiated.uploadUrl);
+    const blobs = yield* BlobStore;
+    yield* blobs.devPut!(
+      initiated.item.stagingKey,
+      bytes,
+      "text/plain",
+      url.searchParams.get("token")!,
+    );
+    return yield* engine.confirm(initiated.item.id);
+  });
+
 const upload = (tenantId: string, name: string, bytes: Uint8Array) =>
   Effect.gen(function* () {
     const engine = makeKevaEngine(principal(tenantId));
@@ -314,5 +357,268 @@ describe("KevaEngine", () => {
     expect(result.ratings).toEqual({ values: [5] });
     // Array-valued properties are excluded — they can't seed a single-line input.
     expect(result.tags).toEqual({ values: [] });
+  });
+});
+
+describe("KevaEngine share access", () => {
+  const layer = () => Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
+
+  // Seed two ready items in tenant-a, tagged project=alpha and project=beta.
+  const seedTagged = () =>
+    Effect.gen(function* () {
+      const owner = makeKevaEngine(principal("tenant-a"));
+      const alpha = yield* upload("tenant-a", "alpha.txt", new TextEncoder().encode("a"));
+      const beta = yield* upload("tenant-a", "beta.txt", new TextEncoder().encode("b"));
+      yield* owner.patch(alpha.id, { set: { project: "alpha" }, unset: [] });
+      yield* owner.patch(beta.id, { set: { project: "beta" }, unset: [] });
+      return { alpha, beta };
+    });
+
+  it("scopes a share query to the grant conditions and never widens it", async () => {
+    const program = Effect.gen(function* () {
+      yield* seedTagged();
+      const share = makeKevaEngine(sharePrincipal("tenant-a"));
+      const all = yield* share.query({ where: [], limit: 100, order: "created_at_asc" });
+      // A visitor condition only narrows further within the shared view.
+      const widen = yield* share.query({
+        where: [{ key: "project", op: "eq", value: "beta" }],
+        limit: 100,
+        order: "created_at_asc",
+      });
+      return { all, widen };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.all.items.map((item) => item.name)).toEqual(["alpha.txt"]);
+    expect(result.widen.items).toHaveLength(0);
+  });
+
+  it("with empty conditions, a share sees every item in the tenant", async () => {
+    const program = Effect.gen(function* () {
+      yield* seedTagged();
+      const share = makeKevaEngine(sharePrincipal("tenant-a", { conditions: [] }));
+      const all = yield* share.query({ where: [], limit: 100, order: "created_at_asc" });
+      return all.items.map((item) => item.name).sort();
+    }).pipe(Effect.provide(layer()));
+
+    expect(await Effect.runPromise(program)).toEqual(["alpha.txt", "beta.txt"]);
+  });
+
+  it("returns NotFound for get/download of an item outside the grant", async () => {
+    const program = Effect.gen(function* () {
+      const { alpha, beta } = yield* seedTagged();
+      const share = makeKevaEngine(sharePrincipal("tenant-a"));
+      const getMatch = yield* share.get(alpha.id);
+      const getOutside = yield* Effect.either(share.get(beta.id));
+      const downloadMatch = yield* Effect.either(share.download(alpha.id));
+      const downloadOutside = yield* Effect.either(share.download(beta.id));
+      return { getMatch, getOutside, downloadMatch, downloadOutside };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.getMatch.id).toBeDefined();
+    expect(result.getOutside._tag).toBe("Left");
+    if (result.getOutside._tag === "Left") expect(result.getOutside.left._tag).toBe("NotFound");
+    expect(result.downloadMatch._tag).toBe("Right");
+    expect(result.downloadOutside._tag).toBe("Left");
+    if (result.downloadOutside._tag === "Left")
+      expect(result.downloadOutside.left._tag).toBe("NotFound");
+  });
+
+  it("force-applies the write stamp and share source, ignoring caller input", async () => {
+    const program = Effect.gen(function* () {
+      const p = sharePrincipal("tenant-a", {
+        scopes: ["read", "write"],
+        writeStamp: { project: "alpha" },
+      });
+      const item = yield* shareUpload(p, "drop.txt", new TextEncoder().encode("x"));
+      // The stamped item is visible back through the same grant.
+      const listed = yield* makeKevaEngine(p).query({
+        where: [],
+        limit: 100,
+        order: "created_at_asc",
+      });
+      return { item, listed };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.item.source).toBe("share:grant-1");
+    expect(result.item.properties).toEqual({ project: "alpha" });
+    expect(result.listed.items.map((i) => i.id)).toContain(result.item.id);
+  });
+
+  it("rejects caller-supplied properties or source on a share upload", async () => {
+    const program = Effect.gen(function* () {
+      const p = sharePrincipal("tenant-a", {
+        scopes: ["read", "write"],
+        writeStamp: { project: "alpha" },
+      });
+      const withProps = yield* Effect.either(
+        makeKevaEngine(p).initiate({
+          name: "x",
+          contentType: "text/plain",
+          size: 1,
+          source: "upload",
+          properties: { sneaky: "yes" },
+        }),
+      );
+      const withSource = yield* Effect.either(
+        makeKevaEngine(p).initiate({
+          name: "x",
+          contentType: "text/plain",
+          size: 1,
+          source: "elsewhere",
+          properties: {},
+        }),
+      );
+      return { withProps, withSource };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.withProps._tag).toBe("Left");
+    if (result.withProps._tag === "Left")
+      expect(result.withProps.left._tag).toBe("ValidationError");
+    expect(result.withSource._tag).toBe("Left");
+    if (result.withSource._tag === "Left")
+      expect(result.withSource.left._tag).toBe("ValidationError");
+  });
+
+  it("rejects a non-share caller reusing the reserved share: source prefix", async () => {
+    const program = Effect.either(
+      makeKevaEngine(principal("tenant-a")).initiate({
+        name: "x",
+        contentType: "text/plain",
+        size: 1,
+        source: "share:grant-1",
+        properties: {},
+      }),
+    ).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") expect(result.left._tag).toBe("ValidationError");
+  });
+
+  it("enforces the per-file, item-count, and total-byte quotas", async () => {
+    const stamp = { project: "alpha" } as const;
+    const perFile = Effect.gen(function* () {
+      const p = sharePrincipal("tenant-a", {
+        scopes: ["read", "write"],
+        writeStamp: stamp,
+        limits: { maxItemBytes: 3, maxTotalBytes: null, maxItems: null },
+      });
+      return yield* Effect.either(
+        makeKevaEngine(p).initiate({
+          name: "big",
+          contentType: "text/plain",
+          size: 5,
+          source: "upload",
+          properties: {},
+        }),
+      );
+    }).pipe(Effect.provide(layer()));
+
+    // maxItems=1: a single *pending* (unconfirmed) initiate must already exhaust
+    // the count quota, proving pending items count toward usage.
+    const itemCount = Effect.gen(function* () {
+      const p = sharePrincipal("tenant-a", {
+        scopes: ["read", "write"],
+        writeStamp: stamp,
+        limits: { maxItemBytes: null, maxTotalBytes: null, maxItems: 1 },
+      });
+      const engine = makeKevaEngine(p);
+      yield* engine.initiate({
+        name: "one",
+        contentType: "text/plain",
+        size: 1,
+        source: "upload",
+        properties: {},
+      });
+      return yield* Effect.either(
+        engine.initiate({
+          name: "two",
+          contentType: "text/plain",
+          size: 1,
+          source: "upload",
+          properties: {},
+        }),
+      );
+    }).pipe(Effect.provide(layer()));
+
+    const totalBytes = Effect.gen(function* () {
+      const p = sharePrincipal("tenant-a", {
+        scopes: ["read", "write"],
+        writeStamp: stamp,
+        limits: { maxItemBytes: null, maxTotalBytes: 5, maxItems: null },
+      });
+      yield* shareUpload(p, "three.txt", new TextEncoder().encode("abc")); // 3 bytes ready
+      return yield* Effect.either(
+        makeKevaEngine(p).initiate({
+          name: "more",
+          contentType: "text/plain",
+          size: 3, // 3 + 3 > 5
+          source: "upload",
+          properties: {},
+        }),
+      );
+    }).pipe(Effect.provide(layer()));
+
+    for (const outcome of await Promise.all([
+      Effect.runPromise(perFile),
+      Effect.runPromise(itemCount),
+      Effect.runPromise(totalBytes),
+    ])) {
+      expect(outcome._tag).toBe("Left");
+      if (outcome._tag === "Left") expect(outcome.left._tag).toBe("QuotaExceeded");
+    }
+  });
+
+  it("hides items from other grants when confirming", async () => {
+    const program = Effect.gen(function* () {
+      const grant1 = sharePrincipal("tenant-a", {
+        scopes: ["read", "write"],
+        grantId: "grant-1",
+        writeStamp: { project: "alpha" },
+      });
+      // grant-1 initiates but does not confirm — item is pending, source share:grant-1.
+      const initiated = yield* makeKevaEngine(grant1).initiate({
+        name: "pending.txt",
+        contentType: "text/plain",
+        size: 1,
+        source: "upload",
+        properties: {},
+      });
+      const grant2 = sharePrincipal("tenant-a", {
+        scopes: ["read", "write"],
+        grantId: "grant-2",
+        writeStamp: { project: "alpha" },
+      });
+      return yield* Effect.either(makeKevaEngine(grant2).confirm(initiated.item.id));
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") expect(result.left._tag).toBe("NotFound");
+  });
+
+  it("forbids patch, delete, usage, and property autocomplete for shares", async () => {
+    const program = Effect.gen(function* () {
+      const { alpha } = yield* seedTagged();
+      const p = sharePrincipal("tenant-a", { scopes: ["read", "write", "delete"] });
+      const engine = makeKevaEngine(p);
+      return {
+        patch: yield* Effect.either(engine.patch(alpha.id, { set: { x: 1 }, unset: [] })),
+        del: yield* Effect.either(engine.delete(alpha.id)),
+        usage: yield* Effect.either(engine.usage()),
+        keys: yield* Effect.either(engine.propertyKeys()),
+        values: yield* Effect.either(engine.propertyValues("project")),
+      };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    for (const outcome of Object.values(result)) {
+      expect(outcome._tag).toBe("Left");
+      if (outcome._tag === "Left") expect(outcome.left._tag).toBe("Forbidden");
+    }
   });
 });

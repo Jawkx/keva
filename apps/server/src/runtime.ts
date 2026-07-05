@@ -14,6 +14,11 @@ import {
   type ApiTokenStoreService,
   type SessionResolver,
 } from "./auth.js";
+import {
+  PostgresShareGrantStoreLive,
+  ShareGrantStore,
+  type ShareGrantStoreService,
+} from "./shares.js";
 
 // Without Postgres there is no token store. `resolve` simply finds no token (so
 // auth falls through to the static token); the mutating ops fail with a typed
@@ -27,6 +32,20 @@ const unavailableTokenStore: ApiTokenStoreService = {
   mint: tokensNeedDatabase,
   list: tokensNeedDatabase,
   revoke: tokensNeedDatabase,
+};
+
+// Same rationale for share grants: no Postgres means `resolve` finds nothing
+// (a `keva_sh_` token 401s) and management ops surface StorageUnavailable.
+// Unreachable in practice — share management requires an admin session (a DB).
+const sharesNeedDatabase = () =>
+  Effect.fail(new StorageUnavailable({ message: "Share grants require a database" }));
+
+const unavailableShareStore: ShareGrantStoreService = {
+  resolve: () => Effect.succeed(null),
+  create: sharesNeedDatabase,
+  list: sharesNeedDatabase,
+  get: sharesNeedDatabase,
+  revoke: sharesNeedDatabase,
 };
 
 export interface RuntimeConfig {
@@ -64,21 +83,24 @@ export const makeRuntimeLayer = (config: RuntimeConfig) => {
   const tokens = config.databaseUrl
     ? PostgresApiTokenStoreLive(config.databaseUrl)
     : Layer.succeed(ApiTokenStore, unavailableTokenStore);
-  const authAndTokens = config.databaseUrl
+  const shares = config.databaseUrl
+    ? PostgresShareGrantStoreLive(config.databaseUrl)
+    : Layer.succeed(ShareGrantStore, unavailableShareStore);
+  const authAndStores = config.databaseUrl
     ? Layer.provideMerge(
         TokenAndStaticAuthFromStoreLive({
           staticToken: config.staticToken,
           tenantId: config.tenantId,
           ...(config.sessionResolver ? { sessionResolver: config.sessionResolver } : {}),
         }),
-        tokens,
+        Layer.merge(tokens, shares),
       )
     : Layer.merge(
-        tokens,
+        Layer.merge(tokens, shares),
         StaticTokenAuthLive({
           token: config.staticToken,
           tenantId: config.tenantId,
         }),
       );
-  return Layer.mergeAll(metadata, blobs, authAndTokens);
+  return Layer.mergeAll(metadata, blobs, authAndStores);
 };

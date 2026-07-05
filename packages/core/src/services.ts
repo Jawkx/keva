@@ -92,6 +92,15 @@ export interface MetadataStoreService {
   readonly query: (tenantId: string, query: Query) => Effect.Effect<QueryResult, KevaError>;
   // Storage totals + per-content-type breakdown across a tenant's ready items.
   readonly usage: (tenantId: string) => Effect.Effect<UsageResult, KevaError>;
+  // Count + byte-sum of a tenant's items attributed to one `source`, across
+  // pending AND ready (pending counts so concurrent share initiates can't blow
+  // a quota; reapPending releases abandoned holds after the pending TTL).
+  // bytes = sum(size ?? declaredSize) — declared size is the honest floor before
+  // confirm verifies actual bytes. Powers per-share upload quotas.
+  readonly sourceUsage: (
+    tenantId: string,
+    source: string,
+  ) => Effect.Effect<{ readonly count: number; readonly bytes: number }, KevaError>;
   // Distinct property keys across a tenant's ready items, for key autocomplete.
   readonly propertyKeys: (tenantId: string) => Effect.Effect<ReadonlyArray<string>, KevaError>;
   // Distinct scalar values seen for one property key, for value autocomplete.

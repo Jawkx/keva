@@ -14,6 +14,14 @@ const hasTag = (value: unknown): value is TaggedError =>
 export const isUnauthorized = (error: unknown): boolean =>
   hasTag(error) && error._tag === "Unauthorized";
 
+// A share link is "gone" when the token no longer grants access: revoked or
+// expired (Unauthorized), the grant vanished (NotFound), or it lost the scope
+// the page relies on (Forbidden). The share page swaps to a friendly
+// "link no longer available" state instead of the global login redirect.
+export const isShareGone = (error: unknown): boolean =>
+  hasTag(error) &&
+  (error._tag === "Unauthorized" || error._tag === "NotFound" || error._tag === "Forbidden");
+
 export const errorMessage = (error: unknown): string => {
   if (hasTag(error)) {
     const tag = error._tag;

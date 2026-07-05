@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KevaClient, KevaProtocolError } from "./index.js";
+import { isShareToken, KevaClient, KevaProtocolError, ShareClient, shareClient } from "./index.js";
 
 describe("KevaClient", () => {
   const item = {
@@ -162,6 +162,129 @@ describe("KevaClient", () => {
     expect(calls).toEqual([
       `https://keva.invalid/api/items/${item.id}/content`,
       "https://blob.invalid/download",
+    ]);
+  });
+
+  it("creates and revokes shares over the owner session", async () => {
+    const record = {
+      id: "grant1",
+      tenantId: "tenant",
+      name: "Alpha",
+      scopes: ["read", "write"] as const,
+      conditions: [{ key: "project", op: "eq" as const, value: "alpha" }],
+      writeStamp: { project: "alpha" },
+      maxItemBytes: null,
+      maxTotalBytes: null,
+      maxItems: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: null,
+      lastUsedAt: null,
+    };
+    const seen: { path: string; body: unknown }[] = [];
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      fetch: async (input, init) => {
+        const url = String(input);
+        seen.push({ path: url, body: init?.body });
+        if (url.endsWith("/shares") && init?.method === "POST") {
+          return Response.json({ token: "keva_sh_abc_def", record });
+        }
+        if (url.endsWith("/shares/grant1") && init?.method === "DELETE") {
+          return Response.json({ revoked: true });
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+
+    const created = await client.createShare({
+      name: "Alpha",
+      scopes: ["read", "write"],
+      conditions: [{ key: "project", op: "eq", value: "alpha" }],
+      writeStamp: { project: "alpha" },
+    });
+    expect(created.token).toBe("keva_sh_abc_def");
+    expect(created.record.id).toBe("grant1");
+    await expect(client.revokeShare("grant1")).resolves.toEqual({ revoked: true });
+  });
+
+  it("recognizes share tokens by prefix", () => {
+    expect(isShareToken("keva_sh_a_b")).toBe(true);
+    expect(isShareToken("keva_sk_a_b")).toBe(false);
+  });
+});
+
+describe("ShareClient", () => {
+  const sharedItem = {
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "shared.txt",
+    contentType: "text/plain",
+    declaredSize: 5,
+    size: 5,
+    etag: "etag",
+    checksum: null,
+    source: "share:grant1",
+    status: "ready" as const,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    properties: { project: "alpha" },
+  };
+
+  it("sends the share bearer token and decodes redacted items", async () => {
+    const authHeaders: unknown[] = [];
+    const client = shareClient("https://keva.invalid/api", "keva_sh_abc_def");
+    const withFetch = new ShareClient({
+      baseUrl: "https://keva.invalid/api",
+      shareToken: "keva_sh_abc_def",
+      fetch: async (input, init) => {
+        const url = String(input);
+        authHeaders.push((init?.headers as Record<string, string>)?.authorization);
+        if (url.endsWith("/query")) return Response.json({ items: [sharedItem] });
+        if (url.endsWith("/shares/self"))
+          return Response.json({ name: "Alpha", scopes: ["read"], expiresAt: null, upload: null });
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    expect(client).toBeInstanceOf(ShareClient);
+
+    const result = await withFetch.query();
+    expect(result.items[0]!.name).toBe("shared.txt");
+    // SharedItem has no tenant-internal fields.
+    expect(result.items[0]).not.toHaveProperty("storageKey");
+    await withFetch.self();
+    expect(authHeaders).toEqual(["Bearer keva_sh_abc_def", "Bearer keva_sh_abc_def"]);
+  });
+
+  it("uploads a file: initiate → PUT → confirm, returning a SharedItem", async () => {
+    const calls: string[] = [];
+    const client = new ShareClient({
+      baseUrl: "https://keva.invalid/api",
+      shareToken: "keva_sh_abc_def",
+      fetch: async (input, init) => {
+        const url = String(input);
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (url.endsWith("/items") && init?.method === "POST") {
+          return Response.json({
+            item: sharedItem,
+            uploadUrl: "https://blob.invalid/upload",
+            expiresAt: "2026-01-01T00:15:00.000Z",
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (url === "https://blob.invalid/upload") return new Response(null, { status: 200 });
+        if (url.endsWith(`/items/${sharedItem.id}/confirm`)) return Response.json(sharedItem);
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+
+    const file = new File(["hello"], "shared.txt", { type: "text/plain" });
+    await expect(client.uploadFile(file)).resolves.toMatchObject({
+      id: sharedItem.id,
+      properties: { project: "alpha" },
+    });
+    expect(calls).toEqual([
+      "POST https://keva.invalid/api/items",
+      "PUT https://blob.invalid/upload",
+      `POST https://keva.invalid/api/items/${sharedItem.id}/confirm`,
     ]);
   });
 });

@@ -1,7 +1,9 @@
 import { Schema } from "effect";
+import { propertiesMatchCondition } from "./conditions.js";
 import { isPropertyKey, isQueryKey, PROPERTY_LIMITS } from "./fields.js";
 
 export * from "./fields.js";
+export * from "./conditions.js";
 
 const encodedBytes = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -56,12 +58,8 @@ export type Properties = typeof Properties.Type;
 export const Scope = Schema.Literal("read", "write", "delete", "admin");
 export type Scope = typeof Scope.Type;
 
-export const Principal = Schema.Struct({
-  tenantId: Schema.NonEmptyString,
-  scopes: Schema.Array(Scope),
-  via: Schema.Literal("session", "token"),
-});
-export type Principal = typeof Principal.Type;
+// Principal is defined below, after QueryCondition — a share principal carries
+// the grant's conditions, which reuse the QueryCondition schema.
 
 export const ItemStatus = Schema.Literal("pending", "ready", "deleting");
 export type ItemStatus = typeof ItemStatus.Type;
@@ -118,6 +116,39 @@ export const QueryCondition = Schema.Struct({
   ),
 );
 export type QueryCondition = typeof QueryCondition.Type;
+
+// The two scopes a share grant can carry. Distinct from the tenant-wide `Scope`
+// (which includes delete/admin) — a share is only ever read and/or write.
+export const ShareScope = Schema.Literal("read", "write");
+export type ShareScope = typeof ShareScope.Type;
+
+// The slice of a resolved share grant the engine needs to enforce access. Built
+// by the auth layer at token-resolution time and carried on the Principal, so
+// the engine never re-queries the grant row. `limits` are the raw quota values
+// (null = unlimited); the engine reads current usage separately.
+export const ShareGrantContext = Schema.Struct({
+  grantId: Schema.NonEmptyString,
+  conditions: Schema.Array(QueryCondition),
+  writeStamp: Schema.optional(Properties),
+  limits: Schema.optional(
+    Schema.Struct({
+      maxItemBytes: Schema.NullOr(Schema.Number),
+      maxTotalBytes: Schema.NullOr(Schema.Number),
+      maxItems: Schema.NullOr(Schema.Number),
+    }),
+  ),
+});
+export type ShareGrantContext = typeof ShareGrantContext.Type;
+
+// `share` is present iff `via === "share"`; the engine treats its presence, not
+// the discriminant alone, as the switch for share-scoped enforcement.
+export const Principal = Schema.Struct({
+  tenantId: Schema.NonEmptyString,
+  scopes: Schema.Array(Scope),
+  via: Schema.Literal("session", "token", "share"),
+  share: Schema.optional(ShareGrantContext),
+});
+export type Principal = typeof Principal.Type;
 
 export const QueryOrder = Schema.Literal("created_at_asc", "created_at_desc");
 export type QueryOrder = typeof QueryOrder.Type;
@@ -251,6 +282,140 @@ export const MintTokenResult = Schema.Struct({
   record: TokenRecord,
 });
 export type MintTokenResult = typeof MintTokenResult.Type;
+
+// ── Sharing ──────────────────────────────────────────────────────────────
+
+// A stored share grant as returned to its owner. Never includes the secret.
+// Nullable fields serialize as `null` (not absent) so the frontend can rely on
+// their presence.
+export const ShareGrantRecord = Schema.Struct({
+  id: Schema.String,
+  tenantId: Schema.String,
+  name: Schema.NonEmptyString,
+  scopes: Schema.Array(ShareScope),
+  conditions: Schema.Array(QueryCondition),
+  writeStamp: Schema.NullOr(Properties),
+  maxItemBytes: Schema.NullOr(Schema.Number),
+  maxTotalBytes: Schema.NullOr(Schema.Number),
+  maxItems: Schema.NullOr(Schema.Number),
+  createdAt: Schema.String,
+  expiresAt: Schema.NullOr(Schema.String),
+  lastUsedAt: Schema.NullOr(Schema.String),
+});
+export type ShareGrantRecord = typeof ShareGrantRecord.Type;
+
+const PositiveInt = Schema.Number.pipe(Schema.int(), Schema.greaterThan(0));
+
+// Owner request to mint a share grant. Three cross-field invariants keep write
+// grants sound: a write grant must carry a writeStamp; its conditions may only
+// reference plain property keys (a system-field condition like `system.size`
+// can't be guaranteed for a future upload, but a property-key condition is
+// provable against the stamp); and the stamp must satisfy every condition, so
+// every upload is readable back through the same grant. Read-only grants keep
+// full condition expressiveness (including system fields).
+export const CreateShareGrant = Schema.Struct({
+  name: Schema.NonEmptyString,
+  scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
+  // Empty conditions are allowed and mean "share every file" — the dialog warns
+  // about this. The engine appends conditions to a visitor's query, so `[]`
+  // simply adds no narrowing; get/download point-checks and writeStamp
+  // validation both treat "matches every condition in []" as trivially true.
+  conditions: Schema.Array(QueryCondition),
+  writeStamp: Schema.optional(Properties),
+  maxItemBytes: Schema.optional(PositiveInt),
+  maxTotalBytes: Schema.optional(PositiveInt),
+  maxItems: Schema.optional(PositiveInt),
+  expiresAt: Schema.optional(Schema.String), // parity with MintToken: no future-date check
+}).pipe(
+  Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
+    message: () => "Write grants require a writeStamp",
+  }),
+  Schema.filter(
+    (grant) =>
+      !grant.scopes.includes("write") || grant.conditions.every((c) => isPropertyKey(c.key)),
+    { message: () => "Write grants may only condition on plain property keys" },
+  ),
+  Schema.filter(
+    (grant) =>
+      grant.writeStamp === undefined ||
+      grant.conditions.every((c) => propertiesMatchCondition(grant.writeStamp!, c)),
+    { message: () => "writeStamp must satisfy every grant condition" },
+  ),
+);
+export type CreateShareGrant = typeof CreateShareGrant.Type;
+
+export const CreateShareGrantResult = Schema.Struct({
+  token: Schema.String, // one-time plaintext keva_sh_{id}_{secret}
+  record: ShareGrantRecord,
+});
+export type CreateShareGrantResult = typeof CreateShareGrantResult.Type;
+
+// Public self-description a share visitor sees. Conditions and writeStamp are
+// deliberately withheld (they may encode private tenant taxonomy). `upload` is
+// null unless the grant carries write scope.
+export const ShareSelf = Schema.Struct({
+  name: Schema.NonEmptyString,
+  scopes: Schema.Array(ShareScope),
+  expiresAt: Schema.NullOr(Schema.String),
+  upload: Schema.NullOr(
+    Schema.Struct({
+      maxItemBytes: Schema.NullOr(Schema.Number),
+      maxTotalBytes: Schema.NullOr(Schema.Number),
+      maxItems: Schema.NullOr(Schema.Number),
+      usedBytes: Schema.Number,
+      usedItems: Schema.Number,
+    }),
+  ),
+});
+export type ShareSelf = typeof ShareSelf.Type;
+
+// A KevaItem with the tenant-internal storage fields (tenantId, storageKey,
+// stagingKey) removed. Everything a share visitor receives is redacted to this
+// shape at the route boundary.
+export const SharedItem = Schema.Struct({
+  id: ItemId,
+  name: Schema.NonEmptyString,
+  contentType: Schema.NonEmptyString,
+  declaredSize: Schema.Number,
+  size: Schema.NullOr(Schema.Number),
+  etag: Schema.NullOr(Schema.String),
+  checksum: Schema.NullOr(Schema.String),
+  source: Schema.NonEmptyString,
+  status: ItemStatus,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  properties: Properties,
+});
+export type SharedItem = typeof SharedItem.Type;
+
+export const toSharedItem = (item: KevaItem): SharedItem => ({
+  id: item.id,
+  name: item.name,
+  contentType: item.contentType,
+  declaredSize: item.declaredSize,
+  size: item.size,
+  etag: item.etag,
+  checksum: item.checksum,
+  source: item.source,
+  status: item.status,
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+  properties: item.properties,
+});
+
+export const SharedQueryResult = Schema.Struct({
+  items: Schema.Array(SharedItem),
+  nextCursor: Schema.optional(Schema.String),
+});
+export type SharedQueryResult = typeof SharedQueryResult.Type;
+
+export const SharedInitiateUploadResult = Schema.Struct({
+  item: SharedItem,
+  uploadUrl: Schema.String,
+  expiresAt: Schema.String,
+  headers: Schema.Record({ key: Schema.String, value: Schema.String }),
+});
+export type SharedInitiateUploadResult = typeof SharedInitiateUploadResult.Type;
 
 export class ValidationError extends Schema.TaggedError<ValidationError>()("ValidationError", {
   message: Schema.String,

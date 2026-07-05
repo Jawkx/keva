@@ -2,10 +2,10 @@ import {
   Conflict,
   FIELD_BY_KEY,
   Internal,
+  itemMatchesCondition,
   type PropertyScalar,
   type PropertyValue,
   type KevaItem,
-  type QueryCondition,
   type QueryOrder,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
@@ -28,70 +28,6 @@ const cloneItem = (item: KevaItem): KevaItem => structuredClone(item);
 
 const isScalar = (value: PropertyValue | undefined): value is PropertyScalar =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-
-const valueAt = (
-  item: KevaItem,
-  key: string,
-): { exists: boolean; value: PropertyValue | string | number | null } => {
-  // Declared fields (id, name, system.*) read from their column accessor;
-  // every other key resolves against the property blob.
-  const field = FIELD_BY_KEY.get(key);
-  if (field) {
-    const value = item[field.itemField] as PropertyValue | string | number | null;
-    return { exists: true, value: value ?? null };
-  }
-  return Object.prototype.hasOwnProperty.call(item.properties, key)
-    ? { exists: true, value: item.properties[key] ?? null }
-    : { exists: false, value: null };
-};
-
-const equals = (left: unknown, right: unknown): boolean =>
-  typeof left === typeof right && Object.is(left, right);
-
-const matches = (item: KevaItem, condition: QueryCondition): boolean => {
-  const candidate = valueAt(item, condition.key);
-  if (condition.op === "exists") return candidate.exists;
-  if (!candidate.exists) return false;
-  const operand = condition.value;
-  switch (condition.op) {
-    case "eq":
-      return equals(candidate.value, operand);
-    case "neq":
-      return !equals(candidate.value, operand);
-    case "gt":
-    case "gte":
-    case "lt":
-    case "lte": {
-      if (
-        typeof candidate.value !== typeof operand ||
-        (typeof candidate.value !== "number" && typeof candidate.value !== "string")
-      )
-        return false;
-      const left = candidate.value;
-      const right = operand as number | string;
-      if (typeof left === "number" && typeof right === "number") {
-        if (condition.op === "gt") return left > right;
-        if (condition.op === "gte") return left >= right;
-        if (condition.op === "lt") return left < right;
-        return left <= right;
-      }
-      if (typeof left === "string" && typeof right === "string") {
-        if (condition.op === "gt") return left > right;
-        if (condition.op === "gte") return left >= right;
-        if (condition.op === "lt") return left < right;
-        return left <= right;
-      }
-      return false;
-    }
-    case "contains":
-      if (typeof candidate.value === "string" && typeof operand === "string") {
-        return candidate.value.includes(operand);
-      }
-      return (
-        Array.isArray(candidate.value) && candidate.value.some((item) => equals(item, operand))
-      );
-  }
-};
 
 const matchesSearch = (item: KevaItem, search: string | undefined): boolean => {
   const term = search?.trim().toLowerCase();
@@ -191,7 +127,7 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         let rows = [...items.values()]
           .filter((item) => item.tenantId === tenantId && item.status === "ready")
           .filter((item) => matchesSearch(item, query.search))
-          .filter((item) => query.where.every((condition) => matches(item, condition)))
+          .filter((item) => query.where.every((condition) => itemMatchesCondition(item, condition)))
           .sort(compareCreated(order));
         if (cursor) {
           rows = rows.filter((item) => isAfterCursor(order, item, cursor));
@@ -227,6 +163,22 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
             .map(([contentType, value]) => ({ contentType, ...value }))
             .sort((a, b) => b.bytes - a.bytes || a.contentType.localeCompare(b.contentType)),
         };
+      }),
+    sourceUsage: (tenantId, source) =>
+      Effect.sync(() => {
+        let count = 0;
+        let bytes = 0;
+        for (const item of items.values()) {
+          if (
+            item.tenantId !== tenantId ||
+            item.source !== source ||
+            (item.status !== "pending" && item.status !== "ready")
+          )
+            continue;
+          count += 1;
+          bytes += item.size ?? item.declaredSize;
+        }
+        return { count, bytes };
       }),
     propertyKeys: (tenantId) =>
       Effect.sync(() => {

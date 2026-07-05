@@ -229,6 +229,44 @@ const EXPECTED_USAGE = {
   ],
 };
 
+// Insert a mix of tenants/sources/statuses/sizes directly (bypassing the
+// engine) and report sourceUsage for one (tenant, source). Only pending+ready
+// rows of the matching tenant AND source count; bytes use size ?? declaredSize.
+const seedAndSourceUsage = async (store: MetadataStoreService) => {
+  const tenant = crypto.randomUUID();
+  const other = crypto.randomUUID();
+  const row = (
+    idSuffix: string,
+    tenantId: string,
+    source: string,
+    status: KevaItem["status"],
+    declaredSize: number,
+    size: number | null,
+  ): KevaItem => ({
+    ...orderedItem(
+      tenantId,
+      `00000000-0000-4000-8000-0000000000${idSuffix}`,
+      idSuffix,
+      "2026-01-01T00:00:00.000Z",
+    ),
+    source,
+    status,
+    declaredSize,
+    size,
+  });
+  const rows: KevaItem[] = [
+    row("11", tenant, "share:g1", "ready", 100, 100), // counts
+    row("12", tenant, "share:g1", "pending", 200, null), // counts (declaredSize)
+    row("13", tenant, "share:g1", "deleting", 400, 400), // excluded (status)
+    row("14", tenant, "share:g2", "ready", 800, 800), // excluded (source)
+    row("15", other, "share:g1", "ready", 1600, 1600), // excluded (tenant)
+  ];
+  for (const item of rows) await Effect.runPromise(store.insert(item));
+  return Effect.runPromise(store.sourceUsage(tenant, "share:g1"));
+};
+
+const EXPECTED_SOURCE_USAGE = { count: 2, bytes: 300 };
+
 describe("store query equivalence", () => {
   it("the in-memory store matches the specified semantics", async () => {
     const got = await seedAndRun(makeMemoryMetadataStore());
@@ -238,6 +276,11 @@ describe("store query equivalence", () => {
   it("the in-memory store reports usage totals and a per-type breakdown", async () => {
     const usage = await seedAndUsage(makeMemoryMetadataStore());
     expect(usage).toEqual(EXPECTED_USAGE);
+  });
+
+  it("the in-memory store sums source usage over pending+ready of one tenant/source", async () => {
+    const usage = await seedAndSourceUsage(makeMemoryMetadataStore());
+    expect(usage).toEqual(EXPECTED_SOURCE_USAGE);
   });
 
   it("the in-memory store paginates explicit created-time orders", async () => {
@@ -279,6 +322,13 @@ describe("store query equivalence", () => {
       const pg = await seedAndUsage(makePostgresMetadataStore(sql));
       expect(pg).toEqual(memory);
       expect(pg).toEqual(EXPECTED_USAGE);
+    });
+
+    it("returns identical source usage to memory", async () => {
+      const memory = await seedAndSourceUsage(makeMemoryMetadataStore());
+      const pg = await seedAndSourceUsage(makePostgresMetadataStore(sql));
+      expect(pg).toEqual(memory);
+      expect(pg).toEqual(EXPECTED_SOURCE_USAGE);
     });
 
     it("matches memory pagination for explicit created-time orders", async () => {

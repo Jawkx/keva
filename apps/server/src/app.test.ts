@@ -3,6 +3,8 @@ import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
 import { createApp } from "./app.js";
+import { ShareGrantStore } from "./shares.js";
+import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 
 const layer = Layer.mergeAll(
   MemoryMetadataStoreLive,
@@ -14,6 +16,7 @@ const layer = Layer.mergeAll(
     list: () => Effect.succeed([]),
     revoke: () => Effect.succeed(false),
   }),
+  Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
 );
 
 const auth = { authorization: "Bearer test-secret" };
