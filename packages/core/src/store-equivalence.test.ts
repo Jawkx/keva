@@ -168,7 +168,7 @@ const collectPaginatedOrder = async (
   return { names, pageCursors };
 };
 
-const seedAndRun = async (store: MetadataStoreService): Promise<Record<string, string[]>> => {
+const seedStore = async (store: MetadataStoreService) => {
   const tenant = crypto.randomUUID();
   const p = principal(tenant);
   const layer = Layer.merge(Layer.succeed(MetadataStore, store), MemoryBlobStoreLive());
@@ -199,6 +199,11 @@ const seedAndRun = async (store: MetadataStoreService): Promise<Record<string, s
     );
   }
 
+  return { p, run };
+};
+
+const seedAndRun = async (store: MetadataStoreService): Promise<Record<string, string[]>> => {
+  const { p, run } = await seedStore(store);
   const results: Record<string, string[]> = {};
   for (const [label, query] of Object.entries(QUERIES)) {
     const res = await run(makeKevaEngine(p).query(query));
@@ -207,10 +212,32 @@ const seedAndRun = async (store: MetadataStoreService): Promise<Record<string, s
   return results;
 };
 
+const seedAndUsage = async (store: MetadataStoreService) => {
+  const { p, run } = await seedStore(store);
+  return run(makeKevaEngine(p).usage());
+};
+
+// Every seed name is 5 bytes; each content type appears once. Ordering is
+// bytes desc then contentType asc, so equal-sized types sort alphabetically.
+const EXPECTED_USAGE = {
+  itemCount: 3,
+  totalBytes: 15,
+  byType: [
+    { contentType: "application/pdf", count: 1, bytes: 5 },
+    { contentType: "image/png", count: 1, bytes: 5 },
+    { contentType: "text/plain", count: 1, bytes: 5 },
+  ],
+};
+
 describe("store query equivalence", () => {
   it("the in-memory store matches the specified semantics", async () => {
     const got = await seedAndRun(makeMemoryMetadataStore());
     expect(got).toEqual(EXPECTED);
+  });
+
+  it("the in-memory store reports usage totals and a per-type breakdown", async () => {
+    const usage = await seedAndUsage(makeMemoryMetadataStore());
+    expect(usage).toEqual(EXPECTED_USAGE);
   });
 
   it("the in-memory store paginates explicit created-time orders", async () => {
@@ -245,6 +272,13 @@ describe("store query equivalence", () => {
       const pg = await seedAndRun(makePostgresMetadataStore(sql));
       expect(pg).toEqual(memory);
       expect(pg).toEqual(EXPECTED);
+    });
+
+    it("returns identical usage totals and breakdown to memory", async () => {
+      const memory = await seedAndUsage(makeMemoryMetadataStore());
+      const pg = await seedAndUsage(makePostgresMetadataStore(sql));
+      expect(pg).toEqual(memory);
+      expect(pg).toEqual(EXPECTED_USAGE);
     });
 
     it("matches memory pagination for explicit created-time orders", async () => {

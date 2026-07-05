@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { BatchDelete, ItemId, Properties, Query } from "./index.js";
+import { BatchDelete, ItemId, Properties, Query, UsageResult } from "./index.js";
 
 describe("schema", () => {
   it("rejects mixed arrays and reserved keys", () => {
@@ -49,5 +49,18 @@ describe("schema", () => {
     );
     expect(() => Schema.decodeUnknownSync(ItemId)("not-a-uuid")).toThrow();
     expect(() => Schema.decodeUnknownSync(BatchDelete)({ ids: ["not-a-uuid"] })).toThrow();
+  });
+
+  it("round-trips a usage result", () => {
+    const usage = {
+      itemCount: 3,
+      totalBytes: 4096,
+      byType: [
+        { contentType: "image/png", count: 2, bytes: 3072 },
+        { contentType: "text/plain", count: 1, bytes: 1024 },
+      ],
+    };
+    expect(Schema.decodeUnknownSync(UsageResult)(usage)).toEqual(usage);
+    expect(() => Schema.decodeUnknownSync(UsageResult)({ itemCount: 0, totalBytes: 0 })).toThrow();
   });
 });

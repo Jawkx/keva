@@ -308,6 +308,31 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           : {}),
       };
     }),
+  usage: (tenantId) =>
+    attempt(async () => {
+      // One grouped aggregate over the tenant's ready items. count/sum come back
+      // as strings from postgres.js (bigint), so cast like mapRow does. Ordering
+      // matches the memory store so store-equivalence stays exact.
+      const rows = await sql<{ content_type: string; count: string; bytes: string }[]>`
+        select content_type,
+               count(*)::bigint as count,
+               coalesce(sum(size), 0)::bigint as bytes
+        from items
+        where tenant_id = ${tenantId} and status = 'ready'
+        group by content_type
+        order by bytes desc, content_type asc
+      `;
+      let itemCount = 0;
+      let totalBytes = 0;
+      const byType = rows.map((row) => {
+        const count = Number(row.count);
+        const bytes = Number(row.bytes);
+        itemCount += count;
+        totalBytes += bytes;
+        return { contentType: row.content_type, count, bytes };
+      });
+      return { itemCount, totalBytes, byType };
+    }),
   propertyKeys: (tenantId) =>
     attempt(async () => {
       // Fan out each item's top-level property keys, then dedupe across the

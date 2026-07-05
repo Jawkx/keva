@@ -10,6 +10,8 @@ import {
   IconSettings,
 } from "@tabler/icons-react";
 import { authClient } from "../lib/auth";
+import { formatBytes } from "../lib/format";
+import { useUsage } from "../lib/use-usage";
 import { ModeToggle } from "./ModeToggle";
 import {
   DropdownMenu,
@@ -42,6 +44,7 @@ const NAV = [
 
 export function AppShell() {
   const { data } = authClient.useSession();
+  const { data: usage } = useUsage();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -106,6 +109,18 @@ export function AppShell() {
         </SidebarContent>
 
         <SidebarFooter>
+          {usage && usage.itemCount > 0 && (
+            <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+              <IconDatabase className="size-3.5 shrink-0" />
+              <span className="truncate">
+                <span className="font-medium text-foreground tabular-nums">
+                  {formatBytes(usage.totalBytes)}
+                </span>{" "}
+                used · <span className="tabular-nums">{usage.itemCount.toLocaleString()}</span>{" "}
+                {usage.itemCount === 1 ? "item" : "items"}
+              </span>
+            </div>
+          )}
           <SidebarMenu>
             <SidebarMenuItem>
               <DropdownMenu>

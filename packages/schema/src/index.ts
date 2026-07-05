@@ -160,6 +160,23 @@ export const PropertyValuesResult = Schema.Struct({
 });
 export type PropertyValuesResult = typeof PropertyValuesResult.Type;
 
+// Storage usage for a tenant: totals plus a per-content-type breakdown. Derived
+// live from `ready` items, so `sum(byType.bytes) === totalBytes` and
+// `sum(byType.count) === itemCount` always hold.
+export const ContentTypeUsage = Schema.Struct({
+  contentType: Schema.String,
+  count: Schema.Number,
+  bytes: Schema.Number,
+});
+export type ContentTypeUsage = typeof ContentTypeUsage.Type;
+
+export const UsageResult = Schema.Struct({
+  itemCount: Schema.Number,
+  totalBytes: Schema.Number,
+  byType: Schema.Array(ContentTypeUsage),
+});
+export type UsageResult = typeof UsageResult.Type;
+
 export const BatchDelete = Schema.Struct({
   ids: Schema.Array(ItemId).pipe(Schema.minItems(1), Schema.maxItems(1000)),
 });

@@ -6,6 +6,7 @@ import type {
   ItemStatus,
   Query,
   QueryResult,
+  UsageResult,
 } from "@keva/schema";
 import { Context, type Effect } from "effect";
 
@@ -89,6 +90,8 @@ export interface MetadataStoreService {
     expectedStatus: ItemStatus,
   ) => Effect.Effect<boolean, KevaError>;
   readonly query: (tenantId: string, query: Query) => Effect.Effect<QueryResult, KevaError>;
+  // Storage totals + per-content-type breakdown across a tenant's ready items.
+  readonly usage: (tenantId: string) => Effect.Effect<UsageResult, KevaError>;
   // Distinct property keys across a tenant's ready items, for key autocomplete.
   readonly propertyKeys: (tenantId: string) => Effect.Effect<ReadonlyArray<string>, KevaError>;
   // Distinct scalar values seen for one property key, for value autocomplete.

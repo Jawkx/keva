@@ -11,6 +11,7 @@ import {
   PropertyValuesResult,
   Query,
   QueryResult,
+  UsageResult,
   type PropertyScalar as PropertyScalarType,
   type ItemPatch as ItemPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
@@ -20,6 +21,7 @@ import {
   type KevaItem as KevaItemType,
   type Query as QueryType,
   type QueryResult as QueryResultType,
+  type UsageResult as UsageResultType,
 } from "@keva/schema";
 import { Schema } from "effect";
 
@@ -33,6 +35,7 @@ export type {
   QueryResultType as QueryResult,
   DownloadResultType as DownloadResult,
   PropertyScalarType as PropertyScalar,
+  UsageResultType as UsageResult,
 };
 
 export type UploadBody = BodyInit;
@@ -202,6 +205,11 @@ export class KevaClient {
     query: QueryType = { where: [], limit: 100, order: "created_at_asc" },
   ): Promise<QueryResultType> {
     return this.#request("POST", "/query", QueryResult, decode(Query, query));
+  }
+
+  // Storage usage: totals + per-content-type breakdown for the tenant.
+  usage(): Promise<UsageResultType> {
+    return this.#request("GET", "/usage", UsageResult);
   }
 
   // Distinct property keys across the tenant, for key autocomplete.

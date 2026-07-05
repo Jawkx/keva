@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { authClient } from "../lib/auth";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordInput } from "../components/PasswordInput";
+import { StorageUsageCard } from "../components/StorageUsageCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -65,6 +66,8 @@ export function SettingsPage() {
       <PageHeader title="Settings" description="Manage your account." />
 
       <div className="flex flex-col gap-6">
+        <StorageUsageCard />
+
         <Card>
           <CardHeader>
             <CardTitle>Profile</CardTitle>

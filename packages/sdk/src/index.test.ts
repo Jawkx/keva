@@ -120,6 +120,26 @@ describe("KevaClient", () => {
     expect(calls).toEqual([`https://keva.invalid/api/items/${item.id}/content`]);
   });
 
+  it("fetches usage from GET /usage", async () => {
+    const calls: string[] = [];
+    const payload = {
+      itemCount: 3,
+      totalBytes: 15,
+      byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
+    };
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async (input) => {
+        calls.push(String(input));
+        return Response.json(payload);
+      },
+    });
+
+    await expect(client.usage()).resolves.toEqual(payload);
+    expect(calls).toEqual(["https://keva.invalid/api/usage"]);
+  });
+
   it("buffers downloads only through downloadBytes", async () => {
     const calls: string[] = [];
     const client = new KevaClient({

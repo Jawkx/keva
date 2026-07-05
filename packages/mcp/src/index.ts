@@ -69,6 +69,7 @@ export interface McpEngine {
   readonly queryItems: (input: QueryToolInput) => Promise<unknown>;
   readonly getItem: (id: string) => Promise<unknown>;
   readonly getContentUrl: (id: string) => Promise<unknown>;
+  readonly getUsage: () => Promise<unknown>;
   readonly listPropertyKeys: () => Promise<unknown>;
   readonly listPropertyValues: (input: PropertyValuesToolInput) => Promise<unknown>;
   readonly setProperties: (input: SetPropertiesToolInput) => Promise<unknown>;
@@ -152,6 +153,18 @@ export const createKevaMcpServer = (
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ id }) => run(() => engine.getContentUrl(id)),
+    );
+
+    server.registerTool(
+      "get_usage",
+      {
+        title: "Get storage usage",
+        description:
+          "Get total storage usage: item count, total bytes, and a per-content-type breakdown.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      () => run(() => engine.getUsage()),
     );
 
     server.registerTool(

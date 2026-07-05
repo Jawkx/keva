@@ -39,6 +39,7 @@ import {
   type ItemsCache,
 } from "../lib/items-cache";
 import { keva } from "../lib/keva";
+import { usageQueryKey } from "../lib/use-usage";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useMountEffect } from "../lib/useMountEffect";
 import {
@@ -324,6 +325,8 @@ export function FilesPage() {
             (old) => (old ? prependItemToPages(old, item) : old),
           );
         }
+        // A confirmed upload changes storage usage regardless of the list path.
+        void queryClient.invalidateQueries({ queryKey: usageQueryKey });
         setUploads((prev) => prev.filter((r) => r.id !== id));
       } catch (err) {
         const error = errorMessage(err);
@@ -409,6 +412,9 @@ export function FilesPage() {
       queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
         old ? removeItemsFromPages(old, result.deleted) : old,
       );
+      if (result.deleted.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: usageQueryKey });
+      }
       setRowSelection({});
       // The open detail may have been one of the deleted rows.
       if (selectedId && ids.includes(selectedId)) navigate("/");

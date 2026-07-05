@@ -204,6 +204,30 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           ...(hasMore && result.at(-1) ? { nextCursor: encodeCursor(result.at(-1)!) } : {}),
         };
       }),
+    usage: (tenantId) =>
+      Effect.sync(() => {
+        let itemCount = 0;
+        let totalBytes = 0;
+        const byType = new Map<string, { count: number; bytes: number }>();
+        for (const item of items.values()) {
+          if (item.tenantId !== tenantId || item.status !== "ready") continue;
+          const bytes = item.size ?? 0;
+          itemCount += 1;
+          totalBytes += bytes;
+          const entry = byType.get(item.contentType) ?? { count: 0, bytes: 0 };
+          entry.count += 1;
+          entry.bytes += bytes;
+          byType.set(item.contentType, entry);
+        }
+        return {
+          itemCount,
+          totalBytes,
+          // Match the postgres store's ordering for store-equivalence.
+          byType: [...byType.entries()]
+            .map(([contentType, value]) => ({ contentType, ...value }))
+            .sort((a, b) => b.bytes - a.bytes || a.contentType.localeCompare(b.contentType)),
+        };
+      }),
     propertyKeys: (tenantId) =>
       Effect.sync(() => {
         const keys = new Set<string>();

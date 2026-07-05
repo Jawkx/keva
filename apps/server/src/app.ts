@@ -283,6 +283,18 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
+  // Storage usage: totals + per-content-type breakdown for the tenant.
+  // Read-scoped, like /query.
+  app.get("/api/usage", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        return yield* makeKevaEngine(principal).usage();
+      }),
+    ),
+  );
+
   // Autocomplete sources: distinct property keys across the tenant, and distinct
   // scalar values for one key (`?key=`). Read-scoped, like /query.
   app.get("/api/properties/keys", (context) =>

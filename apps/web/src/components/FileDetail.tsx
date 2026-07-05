@@ -16,6 +16,7 @@ import { formatBytes, formatDate, formatRelative } from "../lib/format";
 import { removeItemsFromPages, replaceItemInPages, type ItemsCache } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { objectUrlFor, revokeObjectUrl } from "../lib/object-url-cache";
+import { usageQueryKey } from "../lib/use-usage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -192,6 +193,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
       queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
         old ? removeItemsFromPages(old, [itemId]) : old,
       );
+      void queryClient.invalidateQueries({ queryKey: usageQueryKey });
       revokeObjectUrl(itemId);
       onDeleted();
     },

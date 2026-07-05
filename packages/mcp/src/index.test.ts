@@ -7,6 +7,7 @@ const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   queryItems: async () => ({ items: [] }),
   getItem: async () => ({ id: "item-1", name: "a.txt" }),
   getContentUrl: async () => ({ url: "https://blob/x", expiresAt: "2030-01-01T00:00:00Z" }),
+  getUsage: async () => ({ itemCount: 0, totalBytes: 0, byType: [] }),
   listPropertyKeys: async () => ({ keys: ["tag"] }),
   listPropertyValues: async () => ({ values: ["x"] }),
   setProperties: async () => ({ id: "item-1", properties: { tag: "x" } }),
@@ -50,6 +51,7 @@ describe("createKevaMcpServer tool registration", () => {
     expect(await toolNames(["read"])).toEqual([
       "get_content_url",
       "get_item",
+      "get_usage",
       "list_property_keys",
       "list_property_values",
       "query_items",
@@ -131,6 +133,26 @@ describe("createKevaMcpServer tool execution", () => {
     expect(listPropertyValues).toHaveBeenCalledWith({ key: "location" });
     expect(result.isError).toBeFalsy();
     expect(JSON.parse(textOf(result as never))).toEqual({ values: ["bali", "tokyo"] });
+    await close();
+  });
+
+  it("delegates get_usage and serializes the breakdown", async () => {
+    const getUsage = vi.fn(async () => ({
+      itemCount: 3,
+      totalBytes: 15,
+      byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
+    }));
+    const { client, close } = await connect(stubEngine({ getUsage }), ["read"]);
+
+    const result = await client.callTool({ name: "get_usage", arguments: {} });
+
+    expect(getUsage).toHaveBeenCalled();
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(textOf(result as never))).toEqual({
+      itemCount: 3,
+      totalBytes: 15,
+      byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
+    });
     await close();
   });
 
