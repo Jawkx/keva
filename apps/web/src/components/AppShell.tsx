@@ -14,7 +14,7 @@ import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
 import { ModeToggle } from "./ModeToggle";
-import { Wordmark } from "./Wordmark";
+import { SidebarWordmark } from "./SidebarWordmark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,8 +77,8 @@ export function AppShell() {
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg" render={<Link to="/" />}>
-                <Wordmark textClassName="group-data-[collapsible=icon]:hidden" />
+              <SidebarMenuButton size="lg" className="items-end gap-0" render={<Link to="/" />}>
+                <SidebarWordmark />
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
