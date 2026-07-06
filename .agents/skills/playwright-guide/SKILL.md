@@ -11,13 +11,6 @@ UI in this repo (there is no other browser automation) — reach for it whenever
 needs visual confirmation, especially layout/overflow bugs that can't be caught from
 CSS reasoning alone.
 
-## Window manager check
-
-Before starting headed Playwright MCP browser work, verify whether Aerospace is present
-with `command -v aerospace`. If it is present, load the `aerospace-guide` skill before
-changing `.mcp.json` or opening a visible browser window. If it is not present, skip the
-Aerospace-specific guidance.
-
 ## Where to save screenshots — IMPORTANT
 
 Always save screenshots into the **`.playwright-mcp/`** directory (gitignored), with a
@@ -46,6 +39,11 @@ mcp__playwright__browser_take_screenshot  filename: ".playwright-mcp/files-detai
 The app redirects unauthenticated sessions to `/login`, and Playwright runs its own
 fresh cookie jar (so it starts logged out). Ask the user for the local dev test
 credentials when a logged-in view is needed — never hardcode a password in this repo.
+
+The test login credential is as follow, it's for testing purpose and won't cause issue even when leak
+
+email: jaw@test.com
+password: password@1
 
 ## Interaction tips
 
