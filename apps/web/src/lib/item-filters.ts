@@ -12,6 +12,19 @@ export const FILTER_OPERATORS = [
   "exists",
 ] as const satisfies readonly Operator[];
 
+// Human-readable labels for the operator dropdown; the wire value stays `eq`
+// etc. so the query API is unchanged.
+export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
+  eq: "is",
+  neq: "is not",
+  gt: "greater than",
+  gte: "greater than or equal",
+  lt: "less than",
+  lte: "less than or equal",
+  contains: "contains",
+  exists: "exists",
+};
+
 export const FILTER_VALUE_TYPES = ["string", "number", "boolean"] as const;
 export type FilterValueType = (typeof FILTER_VALUE_TYPES)[number];
 

@@ -6,6 +6,7 @@ import { CodeBlock } from "./CodeBlock";
 import {
   addConditionDraft,
   buildFilterWhere,
+  FILTER_OPERATOR_LABELS,
   FILTER_OPERATORS,
   FILTER_VALUE_TYPES,
   KIND_FACETS,
@@ -20,8 +21,9 @@ import {
   type KindFacetId,
   type SizeFacetId,
 } from "../lib/item-filters";
+import { usePropertyKeys, usePropertyValues } from "../lib/use-property-suggestions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Select,
   SelectContent,
@@ -86,30 +88,42 @@ function FacetChips<Id extends string>({
 
 function ConditionRow({
   row,
+  keyOptions,
   onUpdate,
   onRemove,
 }: {
   row: ConditionDraft;
+  keyOptions: string[];
   onUpdate: (patch: ConditionDraftPatch) => void;
   onRemove: () => void;
 }) {
+  // Only fetch value suggestions once the key names a known property and the
+  // condition actually takes a scalar value (booleans use a fixed dropdown).
+  const trimmedKey = row.key.trim();
+  const valuesEnabled =
+    row.op !== "exists" && row.valueType !== "boolean" && keyOptions.includes(trimmedKey);
+  const valueOptions = usePropertyValues(trimmedKey, valuesEnabled);
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Input
+      <Combobox
+        aria-label="Condition key"
         placeholder="key"
         className="w-44"
+        options={keyOptions}
+        emptyText="No matching keys"
         value={row.key}
-        onChange={(event) => onUpdate({ key: event.target.value })}
+        onValueChange={(next) => onUpdate({ key: next })}
       />
       <Select value={row.op} onValueChange={(next) => onUpdate({ op: next as Operator })}>
-        <SelectTrigger className="w-28">
-          <SelectValue />
+        <SelectTrigger className="w-40">
+          <SelectValue>{(op: Operator) => FILTER_OPERATOR_LABELS[op]}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
             {FILTER_OPERATORS.map((op) => (
               <SelectItem key={op} value={op}>
-                {op}
+                {FILTER_OPERATOR_LABELS[op]}
               </SelectItem>
             ))}
           </SelectGroup>
@@ -153,12 +167,16 @@ function ConditionRow({
               </SelectContent>
             </Select>
           ) : (
-            <Input
+            <Combobox
+              aria-label="Condition value"
               placeholder="value"
               className="w-44"
+              options={valueOptions}
+              emptyText="No matching values"
               type={row.valueType === "number" ? "number" : "text"}
+              inputMode={row.valueType === "number" ? "decimal" : undefined}
               value={row.value}
-              onChange={(event) => onUpdate({ value: event.target.value })}
+              onValueChange={(next) => onUpdate({ value: next })}
             />
           )}
         </>
@@ -207,6 +225,7 @@ export function FilterPanel({
   onClose,
 }: FilterPanelProps) {
   const [showApi, setShowApi] = useState(false);
+  const keyOptions = usePropertyKeys();
 
   const where = useMemo(() => buildFilterWhere(draft), [draft]);
   const snippets = useMemo(
@@ -287,6 +306,7 @@ export function FilterPanel({
               <ConditionRow
                 key={row.id}
                 row={row}
+                keyOptions={keyOptions}
                 onUpdate={(patch) => updateRow(row.id, patch)}
                 onRemove={() => onDraftChange(removeConditionDraft(draft, row.id))}
               />
