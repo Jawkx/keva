@@ -1,5 +1,4 @@
 import { Schema } from "effect";
-import { propertiesMatchCondition } from "./conditions.js";
 import { isPropertyKey, isQueryKey, PROPERTY_LIMITS } from "./fields.js";
 
 export * from "./fields.js";
@@ -283,6 +282,35 @@ export const MintTokenResult = Schema.Struct({
 });
 export type MintTokenResult = typeof MintTokenResult.Type;
 
+// ── Views ────────────────────────────────────────────────────────────────
+
+// A named, saved filter — the owner's first-class navigation object. `conditions`
+// reuse the QueryCondition schema; a share grant references a view and reads its
+// conditions live, so editing a view updates any link built on it.
+export const ViewRecord = Schema.Struct({
+  id: Schema.String,
+  tenantId: Schema.String,
+  name: Schema.NonEmptyString,
+  conditions: Schema.Array(QueryCondition),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export type ViewRecord = typeof ViewRecord.Type;
+
+export const CreateView = Schema.Struct({
+  name: Schema.NonEmptyString,
+  conditions: Schema.Array(QueryCondition),
+});
+export type CreateView = typeof CreateView.Type;
+
+// Both fields optional so a caller can rename or re-filter independently. An
+// empty patch is a no-op the store tolerates.
+export const UpdateView = Schema.Struct({
+  name: Schema.optional(Schema.NonEmptyString),
+  conditions: Schema.optional(Schema.Array(QueryCondition)),
+});
+export type UpdateView = typeof UpdateView.Type;
+
 // ── Sharing ──────────────────────────────────────────────────────────────
 
 // A stored share grant as returned to its owner. Never includes the secret.
@@ -291,8 +319,11 @@ export type MintTokenResult = typeof MintTokenResult.Type;
 export const ShareGrantRecord = Schema.Struct({
   id: Schema.String,
   tenantId: Schema.String,
+  viewId: Schema.String,
   name: Schema.NonEmptyString,
   scopes: Schema.Array(ShareScope),
+  // Read live from the referenced view (not stored on the grant), so the owner
+  // UI can render what the link exposes and it tracks view edits.
   conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.NullOr(Properties),
   maxItemBytes: Schema.NullOr(Schema.Number),
@@ -306,21 +337,16 @@ export type ShareGrantRecord = typeof ShareGrantRecord.Type;
 
 const PositiveInt = Schema.Number.pipe(Schema.int(), Schema.greaterThan(0));
 
-// Owner request to mint a share grant. Three cross-field invariants keep write
-// grants sound: a write grant must carry a writeStamp; its conditions may only
-// reference plain property keys (a system-field condition like `system.size`
-// can't be guaranteed for a future upload, but a property-key condition is
-// provable against the stamp); and the stamp must satisfy every condition, so
-// every upload is readable back through the same grant. Read-only grants keep
-// full condition expressiveness (including system fields).
+// Owner request to mint a share grant on an existing view (`viewId`). One
+// cross-field invariant is checkable here — a write grant must carry a
+// writeStamp. The other two write-soundness invariants (conditions may only
+// reference plain property keys, and the stamp must satisfy every condition)
+// depend on the view's conditions, which aren't in this payload; the server
+// loads the view and enforces them in ShareGrantStore.create.
 export const CreateShareGrant = Schema.Struct({
   name: Schema.NonEmptyString,
+  viewId: Schema.String,
   scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
-  // Empty conditions are allowed and mean "share every file" — the dialog warns
-  // about this. The engine appends conditions to a visitor's query, so `[]`
-  // simply adds no narrowing; get/download point-checks and writeStamp
-  // validation both treat "matches every condition in []" as trivially true.
-  conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.optional(Properties),
   maxItemBytes: Schema.optional(PositiveInt),
   maxTotalBytes: Schema.optional(PositiveInt),
@@ -330,17 +356,6 @@ export const CreateShareGrant = Schema.Struct({
   Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
     message: () => "Write grants require a writeStamp",
   }),
-  Schema.filter(
-    (grant) =>
-      !grant.scopes.includes("write") || grant.conditions.every((c) => isPropertyKey(c.key)),
-    { message: () => "Write grants may only condition on plain property keys" },
-  ),
-  Schema.filter(
-    (grant) =>
-      grant.writeStamp === undefined ||
-      grant.conditions.every((c) => propertiesMatchCondition(grant.writeStamp!, c)),
-    { message: () => "writeStamp must satisfy every grant condition" },
-  ),
 );
 export type CreateShareGrant = typeof CreateShareGrant.Type;
 

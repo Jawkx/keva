@@ -63,21 +63,35 @@ const FILES: MockFile[] = [
     name: "annual-report.pdf",
     meta: "PDF · 2.4 MB",
     Icon: IconFileTypePdf,
-    chips: [["category=finance", false], ["year=2026", true]],
+    chips: [
+      ["category=finance", false],
+      ["year=2026", true],
+    ],
   },
-  { name: "brand-logo.svg", meta: "SVG · 12 KB", Icon: IconFileTypeSvg, chips: [["project=brand", false]] },
+  {
+    name: "brand-logo.svg",
+    meta: "SVG · 12 KB",
+    Icon: IconFileTypeSvg,
+    chips: [["project=brand", false]],
+  },
   {
     name: "q2-budget.xlsx",
     meta: "XLSX · 88 KB",
     Icon: IconFileSpreadsheet,
-    chips: [["category=finance", false], ["status=final", true]],
+    chips: [
+      ["category=finance", false],
+      ["status=final", true],
+    ],
   },
   { name: "rooftop.jpg", meta: "JPEG · 3.1 MB", Icon: IconPhoto, chips: [["album=travel", false]] },
   {
     name: "contract.pdf",
     meta: "PDF · 480 KB",
     Icon: IconFileText,
-    chips: [["type=legal", false], ["signed=true", true]],
+    chips: [
+      ["type=legal", false],
+      ["signed=true", true],
+    ],
   },
   { name: "notes.md", meta: "MD · 4 KB", Icon: IconMarkdown, chips: [["pinned=true", false]] },
 ];
@@ -126,9 +140,7 @@ function BrandPanel() {
           </div>
 
           {/* Full-bleed marquee: break out of the panel padding, fade both edges. */}
-          <div
-            className="-mx-14 [mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)]"
-          >
+          <div className="-mx-14 [mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)]">
             <div className="flex w-max animate-[marquee-x_50s_linear_infinite] motion-reduce:animate-none">
               <FileRow />
               <FileRow ariaHidden />

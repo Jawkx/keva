@@ -76,7 +76,8 @@ const evaluate = (candidate: Candidate, condition: QueryCondition): boolean => {
         return candidate.value.includes(operand);
       }
       return (
-        Array.isArray(candidate.value) && candidate.value.some((element) => equals(element, operand))
+        Array.isArray(candidate.value) &&
+        candidate.value.some((element) => equals(element, operand))
       );
   }
 };

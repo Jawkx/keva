@@ -169,6 +169,7 @@ describe("KevaClient", () => {
     const record = {
       id: "grant1",
       tenantId: "tenant",
+      viewId: "view1",
       name: "Alpha",
       scopes: ["read", "write"] as const,
       conditions: [{ key: "project", op: "eq" as const, value: "alpha" }],
@@ -198,8 +199,8 @@ describe("KevaClient", () => {
 
     const created = await client.createShare({
       name: "Alpha",
+      viewId: "view1",
       scopes: ["read", "write"],
-      conditions: [{ key: "project", op: "eq", value: "alpha" }],
       writeStamp: { project: "alpha" },
     });
     expect(created.token).toBe("keva_sh_abc_def");

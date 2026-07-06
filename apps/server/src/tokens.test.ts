@@ -12,6 +12,8 @@ import {
 } from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
+import { makeInMemoryViewStore } from "./test/view-store.js";
+import { ViewStore } from "./views.js";
 
 /**
  * Server-level token subsystem. In the merged implementation, token management
@@ -86,13 +88,21 @@ const makeApp = (resolver: SessionResolver = sessionResolver) => {
   const tokenStore = makeInMemoryTokenStore();
   const tokens = Layer.succeed(ApiTokenStore, tokenStore);
   const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore());
+  const views = Layer.succeed(ViewStore, makeInMemoryViewStore());
   const auth = TokenAndStaticAuthFromStoreLive({
     staticToken: STATIC,
     tenantId: TENANT,
     sessionResolver: resolver,
   }).pipe(Layer.provide(Layer.merge(tokens, shares)));
   return createApp({
-    layer: Layer.mergeAll(MemoryMetadataStoreLive, MemoryBlobStoreLive(), tokens, shares, auth),
+    layer: Layer.mergeAll(
+      MemoryMetadataStoreLive,
+      MemoryBlobStoreLive(),
+      tokens,
+      shares,
+      views,
+      auth,
+    ),
   });
 };
 

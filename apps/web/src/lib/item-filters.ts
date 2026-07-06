@@ -1,5 +1,5 @@
 import type { Operator, QueryCondition } from "@keva/schema";
-import { coerceScalar } from "./properties";
+import { coerceScalar, scalarToInput, valueType } from "./properties";
 
 export const FILTER_OPERATORS = [
   "eq",
@@ -150,3 +150,31 @@ export const buildFilterWhere = (draft: FilterDraft): QueryCondition[] => [
   ...sizeConditions(draft.size),
   ...rowConditions(draft.rows),
 ];
+
+// Inverse of buildFilterWhere for seeding the panel from a saved view. Every
+// condition becomes a plain row (the kind/size quick facets are just UI sugar
+// over the same conditions, so a facet-derived view shows as raw rows but
+// round-trips identically). Array/null values fall back to an empty string
+// input — edit those through JSON if needed.
+const FILTER_VALUE_TYPE_SET = new Set<string>(FILTER_VALUE_TYPES);
+
+const rowValueType = (condition: QueryCondition): FilterValueType => {
+  if (condition.value === undefined) return "string";
+  const type = valueType(condition.value);
+  return FILTER_VALUE_TYPE_SET.has(type) ? (type as FilterValueType) : "string";
+};
+
+export const draftFromConditions = (conditions: readonly QueryCondition[]): FilterDraft => ({
+  kind: "all",
+  size: "any",
+  rows:
+    conditions.length > 0
+      ? conditions.map((condition) => ({
+          ...createConditionDraft(),
+          key: condition.key,
+          op: condition.op,
+          valueType: rowValueType(condition),
+          value: condition.value === undefined ? "" : scalarToInput(condition.value),
+        }))
+      : [createConditionDraft()],
+});

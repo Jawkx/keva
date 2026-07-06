@@ -43,13 +43,17 @@ export class ShareGrantStore extends Context.Tag("@keva/server/ShareGrantStore")
   ShareGrantStoreService
 >() {}
 
+// `view_conditions` is joined in from the referenced view (share_grants no
+// longer stores its own conditions) — read live, so the record and the resolved
+// principal always reflect the current view filter.
 interface ShareRow {
   readonly id: string;
   readonly tenant_id: string;
+  readonly view_id: string;
   readonly name: string;
   readonly secret_hash: string;
   readonly scopes: ReadonlyArray<ShareScope>;
-  readonly conditions: ReadonlyArray<QueryCondition>;
+  readonly view_conditions: ReadonlyArray<QueryCondition>;
   readonly write_stamp: Properties | null;
   // bigint columns arrive as strings from postgres.js; integer as a number.
   readonly max_item_bytes: number | string | null;
@@ -73,9 +77,10 @@ const numOrNull = (value: number | string | null): number | null =>
 const shareRecord = (row: ShareRow): ShareGrantRecord => ({
   id: row.id,
   tenantId: row.tenant_id,
+  viewId: row.view_id,
   name: row.name,
   scopes: [...row.scopes],
-  conditions: [...row.conditions],
+  conditions: [...row.view_conditions],
   writeStamp: row.write_stamp ?? null,
   maxItemBytes: numOrNull(row.max_item_bytes),
   maxTotalBytes: numOrNull(row.max_total_bytes),
@@ -93,7 +98,7 @@ const shareGrantPrincipal = (row: ShareRow): Principal => ({
   via: "share",
   share: {
     grantId: row.id,
-    conditions: [...row.conditions],
+    conditions: [...row.view_conditions],
     ...(row.write_stamp ? { writeStamp: row.write_stamp } : {}),
     limits: {
       maxItemBytes: numOrNull(row.max_item_bytes),
@@ -115,7 +120,11 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
         const parsed = parseShareTokenParts(token);
         if (!parsed) return null;
         const rows = await sql<ShareRow[]>`
-          select * from share_grants where id = ${parsed.id} limit 1
+          select g.*, v.conditions as view_conditions
+          from share_grants g
+          join views v on v.id = g.view_id
+          where g.id = ${parsed.id}
+          limit 1
         `;
         const row = rows[0];
         if (!row || (row.expires_at && new Date(row.expires_at) <= new Date())) {
@@ -140,18 +149,25 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
         const secret = randomTokenPart(32);
         const plaintext = `keva_sh_${id}_${secret}`;
         const secretHash = await hashSecret(secret);
+        // Insert then join the referenced view back in, so the returned record
+        // carries the live view conditions in one round trip. The view_id FK
+        // guarantees the view exists (the route also pre-checks tenant ownership).
         const rows = await sql<ShareRow[]>`
-          insert into share_grants (
-            id, tenant_id, name, secret_hash, scopes, conditions, write_stamp,
-            max_item_bytes, max_total_bytes, max_items, created_at, expires_at
-          ) values (
-            ${id}, ${tenantId}, ${input.name}, ${secretHash},
-            ${sql.json(input.scopes)}, ${sql.json(input.conditions)},
-            ${input.writeStamp ? sql.json(input.writeStamp) : null},
-            ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},
-            ${input.maxItems ?? null}, now(), ${input.expiresAt ?? null}
+          with g as (
+            insert into share_grants (
+              id, tenant_id, view_id, name, secret_hash, scopes, write_stamp,
+              max_item_bytes, max_total_bytes, max_items, created_at, expires_at
+            ) values (
+              ${id}, ${tenantId}, ${input.viewId}, ${input.name}, ${secretHash},
+              ${sql.json(input.scopes)},
+              ${input.writeStamp ? sql.json(input.writeStamp) : null},
+              ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},
+              ${input.maxItems ?? null}, now(), ${input.expiresAt ?? null}
+            )
+            returning *
           )
-          returning *
+          select g.*, v.conditions as view_conditions
+          from g join views v on v.id = g.view_id
         `;
         return { token: plaintext, record: shareRecord(rows[0]!) };
       },
@@ -161,9 +177,11 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
     Effect.tryPromise({
       try: async () => {
         const rows = await sql<ShareRow[]>`
-          select * from share_grants
-          where tenant_id = ${tenantId}
-          order by created_at desc
+          select g.*, v.conditions as view_conditions
+          from share_grants g
+          join views v on v.id = g.view_id
+          where g.tenant_id = ${tenantId}
+          order by g.created_at desc
         `;
         return rows.map(shareRecord);
       },
@@ -173,8 +191,10 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
     Effect.tryPromise({
       try: async () => {
         const rows = await sql<ShareRow[]>`
-          select * from share_grants
-          where tenant_id = ${tenantId} and id = ${id}
+          select g.*, v.conditions as view_conditions
+          from share_grants g
+          join views v on v.id = g.view_id
+          where g.tenant_id = ${tenantId} and g.id = ${id}
           limit 1
         `;
         return rows[0] ? shareRecord(rows[0]) : null;

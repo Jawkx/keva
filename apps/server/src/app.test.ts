@@ -5,6 +5,8 @@ import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
 import { createApp } from "./app.js";
 import { ShareGrantStore } from "./shares.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
+import { makeInMemoryViewStore } from "./test/view-store.js";
+import { ViewStore } from "./views.js";
 
 const layer = Layer.mergeAll(
   MemoryMetadataStoreLive,
@@ -17,6 +19,7 @@ const layer = Layer.mergeAll(
     revoke: () => Effect.succeed(false),
   }),
   Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
+  Layer.succeed(ViewStore, makeInMemoryViewStore()),
 );
 
 const auth = { authorization: "Bearer test-secret" };

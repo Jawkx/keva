@@ -4,6 +4,7 @@ import {
   BatchDeleteResult,
   CreateShareGrant,
   CreateShareGrantResult,
+  CreateView,
   DownloadResult,
   InitiateUpload,
   InitiateUploadResult,
@@ -18,12 +19,15 @@ import {
   SharedInitiateUploadResult,
   SharedItem,
   SharedQueryResult,
+  UpdateView,
   UsageResult,
+  ViewRecord,
   type PropertyScalar as PropertyScalarType,
   type ItemPatch as ItemPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
   type CreateShareGrant as CreateShareGrantType,
   type CreateShareGrantResult as CreateShareGrantResultType,
+  type CreateView as CreateViewType,
   type DownloadResult as DownloadResultType,
   type InitiateUpload as InitiateUploadType,
   type KevaError as KevaErrorType,
@@ -34,7 +38,9 @@ import {
   type ShareSelf as ShareSelfType,
   type SharedItem as SharedItemType,
   type SharedQueryResult as SharedQueryResultType,
+  type UpdateView as UpdateViewType,
   type UsageResult as UsageResultType,
+  type ViewRecord as ViewRecordType,
 } from "@keva/schema";
 import { Schema } from "effect";
 
@@ -43,6 +49,9 @@ export type {
   BatchDeleteResultType as BatchDeleteResult,
   CreateShareGrantType as CreateShareGrant,
   CreateShareGrantResultType as CreateShareGrantResult,
+  CreateViewType as CreateView,
+  UpdateViewType as UpdateView,
+  ViewRecordType as ViewRecord,
   InitiateUploadType as InitiateUpload,
   KevaErrorType as KevaError,
   KevaItemType as KevaItem,
@@ -305,6 +314,36 @@ export class KevaClient {
       "DELETE",
       `/shares/${encodeURIComponent(id)}`,
       Schema.Struct({ revoked: Schema.Boolean }),
+    );
+  }
+
+  createView(input: CreateViewType): Promise<ViewRecordType> {
+    return this.#request("POST", "/views", ViewRecord, decode(CreateView, input));
+  }
+
+  async listViews(): Promise<ViewRecordType[]> {
+    const records = await this.#request("GET", "/views", Schema.Array(ViewRecord));
+    return [...records];
+  }
+
+  getView(id: string): Promise<ViewRecordType> {
+    return this.#request("GET", `/views/${encodeURIComponent(id)}`, ViewRecord);
+  }
+
+  updateView(id: string, input: UpdateViewType): Promise<ViewRecordType> {
+    return this.#request(
+      "PATCH",
+      `/views/${encodeURIComponent(id)}`,
+      ViewRecord,
+      decode(UpdateView, input),
+    );
+  }
+
+  async deleteView(id: string): Promise<{ deleted: boolean }> {
+    return this.#request(
+      "DELETE",
+      `/views/${encodeURIComponent(id)}`,
+      Schema.Struct({ deleted: Schema.Boolean }),
     );
   }
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   BatchDelete,
   CreateShareGrant,
+  CreateView,
   ItemId,
   itemMatchesCondition,
   type KevaItem,
@@ -11,6 +12,7 @@ import {
   propertiesMatchCondition,
   Query,
   toSharedItem,
+  UpdateView,
   UsageResult,
 } from "./index.js";
 
@@ -120,25 +122,33 @@ describe("condition evaluator", () => {
 
   it("evaluates property-blob conditions without an item", () => {
     const stamp = { project: "alpha" };
-    expect(propertiesMatchCondition(stamp, { key: "project", op: "eq", value: "alpha" })).toBe(true);
+    expect(propertiesMatchCondition(stamp, { key: "project", op: "eq", value: "alpha" })).toBe(
+      true,
+    );
     expect(propertiesMatchCondition(stamp, { key: "project", op: "exists" })).toBe(true);
     expect(propertiesMatchCondition(stamp, { key: "other", op: "exists" })).toBe(false);
   });
 });
 
+// A grant now references a view by id; conditions live on the view, so the two
+// condition-dependent write invariants are enforced server-side (see the app
+// test). The schema keeps only what it can check from the payload alone.
 describe("CreateShareGrant", () => {
   const base = {
     name: "Client drop",
-    conditions: [{ key: "project", op: "eq", value: "alpha" }],
+    viewId: "v1",
   };
 
-  it("accepts a read-only grant with system-field conditions", () => {
-    const grant = Schema.decodeUnknownSync(CreateShareGrant)({
-      ...base,
-      scopes: ["read"],
-      conditions: [{ key: "system.size", op: "gt", value: 0 }],
-    });
+  it("accepts a read-only grant", () => {
+    const grant = Schema.decodeUnknownSync(CreateShareGrant)({ ...base, scopes: ["read"] });
     expect(grant.scopes).toEqual(["read"]);
+    expect(grant.viewId).toBe("v1");
+  });
+
+  it("requires a viewId", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(CreateShareGrant)({ name: "x", scopes: ["read"] }),
+    ).toThrow();
   });
 
   it("requires a writeStamp for write grants", () => {
@@ -147,28 +157,7 @@ describe("CreateShareGrant", () => {
     ).toThrow();
   });
 
-  it("rejects write grants conditioning on system fields", () => {
-    expect(() =>
-      Schema.decodeUnknownSync(CreateShareGrant)({
-        ...base,
-        scopes: ["read", "write"],
-        conditions: [{ key: "system.size", op: "gt", value: 0 }],
-        writeStamp: { project: "alpha" },
-      }),
-    ).toThrow();
-  });
-
-  it("rejects a writeStamp that does not satisfy the conditions", () => {
-    expect(() =>
-      Schema.decodeUnknownSync(CreateShareGrant)({
-        ...base,
-        scopes: ["read", "write"],
-        writeStamp: { project: "beta" },
-      }),
-    ).toThrow();
-  });
-
-  it("accepts a write grant whose stamp satisfies every condition", () => {
+  it("accepts a write grant that carries a writeStamp", () => {
     const grant = Schema.decodeUnknownSync(CreateShareGrant)({
       ...base,
       scopes: ["read", "write"],
@@ -184,14 +173,19 @@ describe("CreateShareGrant", () => {
       Schema.decodeUnknownSync(CreateShareGrant)({ ...base, scopes: ["read"], maxItems: 0 }),
     ).toThrow();
   });
+});
 
-  it("allows empty conditions (a share-everything grant)", () => {
-    const grant = Schema.decodeUnknownSync(CreateShareGrant)({
-      ...base,
-      scopes: ["read"],
-      conditions: [],
+describe("CreateView / UpdateView", () => {
+  it("decodes a view with conditions", () => {
+    const view = Schema.decodeUnknownSync(CreateView)({
+      name: "Diving",
+      conditions: [{ key: "trip", op: "eq", value: "iceland" }],
     });
-    expect(grant.conditions).toEqual([]);
+    expect(view.conditions).toHaveLength(1);
+  });
+
+  it("accepts an empty UpdateView (no-op patch)", () => {
+    expect(Schema.decodeUnknownSync(UpdateView)({})).toEqual({});
   });
 });
 

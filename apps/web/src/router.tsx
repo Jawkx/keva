@@ -32,6 +32,9 @@ export const router = createBrowserRouter([
     children: [
       { path: "/", element: <FilesPage /> },
       { path: "/items/:id", element: <FilesPage /> },
+      // A saved view: same Files screen, seeded from the view's filter.
+      { path: "/v/:viewId", element: <FilesPage /> },
+      { path: "/v/:viewId/items/:id", element: <FilesPage /> },
       // The former Query page is now the Files filter panel; keep the path as a
       // redirect so old links/bookmarks don't 404.
       { path: "/query", element: <Navigate to="/" replace /> },

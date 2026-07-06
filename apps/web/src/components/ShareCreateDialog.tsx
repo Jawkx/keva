@@ -46,6 +46,9 @@ interface StampRow {
 interface ShareCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // The view this link is built on. Conditions live on the view; the grant
+  // references it by id (they're read live server-side).
+  viewId: string;
   conditions: QueryCondition[];
 }
 
@@ -87,7 +90,12 @@ const seedStamp = (conditions: QueryCondition[]): StampRow[] =>
       };
     });
 
-export function ShareCreateDialog({ open, onOpenChange, conditions }: ShareCreateDialogProps) {
+export function ShareCreateDialog({
+  open,
+  onOpenChange,
+  viewId,
+  conditions,
+}: ShareCreateDialogProps) {
   const handleError = useApiError();
   const queryClient = useQueryClient();
 
@@ -100,7 +108,9 @@ export function ShareCreateDialog({ open, onOpenChange, conditions }: ShareCreat
   const [expiry, setExpiry] = useState<(typeof EXPIRY_PRESETS)[number]["id"]>("never");
   const [link, setLink] = useState<string | null>(null);
 
-  const blockingKeys = [...new Set(conditions.filter((c) => !isStampableKey(c.key)).map((c) => c.key))];
+  const blockingKeys = [
+    ...new Set(conditions.filter((c) => !isStampableKey(c.key)).map((c) => c.key)),
+  ];
   const writeBlocked = blockingKeys.length > 0;
 
   const mutation = useMutation({
@@ -133,8 +143,8 @@ export function ShareCreateDialog({ open, onOpenChange, conditions }: ShareCreat
     if (!name.trim() || scopes.length === 0) return;
     const payload: CreateShareGrant = {
       name: name.trim(),
+      viewId,
       scopes,
-      conditions,
     };
     if (scopes.includes("write")) {
       const built = buildWriteStamp();
@@ -197,177 +207,184 @@ export function ShareCreateDialog({ open, onOpenChange, conditions }: ShareCreat
               </DialogDescription>
             </DialogHeader>
             <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">
-            <Field>
-              <FieldLabel htmlFor="share-name">Name</FieldLabel>
-              <Input
-                id="share-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Client drop"
-                required
-              />
-            </Field>
+              <Field>
+                <FieldLabel htmlFor="share-name">Name</FieldLabel>
+                <Input
+                  id="share-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Client drop"
+                  required
+                />
+              </Field>
 
-            <Field>
-              <FieldLabel>Shared files</FieldLabel>
-              <ConditionChips conditions={conditions} />
-              {conditions.length === 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-500">
-                  No filters applied — this link shares all of your files.
-                </p>
-              )}
-            </Field>
-
-            <FieldSet>
-              <FieldLegend variant="label">Access</FieldLegend>
-              <div className="flex flex-col gap-3">
-                <Field orientation="horizontal" className="w-auto">
-                  <Checkbox
-                    id="share-read"
-                    checked={canRead}
-                    onCheckedChange={(v) => setCanRead(Boolean(v))}
-                  />
-                  <FieldLabel htmlFor="share-read" className="font-normal">
-                    Can view & download
-                  </FieldLabel>
-                </Field>
-                <Field orientation="horizontal" className="w-auto">
-                  <Checkbox
-                    id="share-write"
-                    checked={canWrite}
-                    disabled={writeBlocked}
-                    onCheckedChange={(v) => setCanWrite(Boolean(v))}
-                  />
-                  <FieldLabel htmlFor="share-write" className="font-normal">
-                    Can upload
-                  </FieldLabel>
-                </Field>
-                {writeBlocked && (
-                  <p className="text-xs text-muted-foreground">
-                    Uploads are only available when filtering by custom properties (not{" "}
-                    {blockingKeys.join(", ")}).
+              <Field>
+                <FieldLabel>Shared files</FieldLabel>
+                <ConditionChips conditions={conditions} />
+                {conditions.length === 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    No filters applied — this link shares all of your files.
                   </p>
                 )}
-              </div>
-            </FieldSet>
+              </Field>
 
-            {canWrite && !writeBlocked && (
               <FieldSet>
-                <FieldLegend variant="label">Applied to uploads</FieldLegend>
-                <p className="text-xs text-muted-foreground">
-                  These properties are stamped on every uploaded file so it appears in this share.
-                </p>
-                <div className="flex flex-col gap-2">
-                  {stamp.map((row) => (
-                    <div key={row.id} className="flex flex-wrap items-center gap-2">
-                      <Input
-                        placeholder="key"
-                        className="w-40"
-                        value={row.key}
-                        onChange={(e) =>
-                          setStamp((prev) =>
-                            prev.map((r) => (r.id === row.id ? { ...r, key: e.target.value } : r)),
-                          )
-                        }
-                      />
-                      <Select
-                        value={row.type}
-                        onValueChange={(next) =>
-                          setStamp((prev) =>
-                            prev.map((r) =>
-                              r.id === row.id ? { ...r, type: next as StampRow["type"] } : r,
-                            ),
-                          )
-                        }
-                      >
-                        <SelectTrigger className="w-28">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {STAMP_TYPES.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {t}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        placeholder="value"
-                        className="w-40"
-                        value={row.value}
-                        onChange={(e) =>
-                          setStamp((prev) =>
-                            prev.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)),
-                          )
-                        }
-                      />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setStamp((prev) => prev.filter((r) => r.id !== row.id))}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-fit"
-                    onClick={() =>
-                      setStamp((prev) => [...prev, { id: nextId(), key: "", type: "string", value: "" }])
-                    }
-                  >
-                    Add property
-                  </Button>
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-4">
-                  <Field className="w-40">
-                    <FieldLabel htmlFor="share-max-items">Max uploads</FieldLabel>
-                    <Input
-                      id="share-max-items"
-                      type="number"
-                      min={1}
-                      placeholder="unlimited"
-                      value={maxItems}
-                      onChange={(e) => setMaxItems(e.target.value)}
+                <FieldLegend variant="label">Access</FieldLegend>
+                <div className="flex flex-col gap-3">
+                  <Field orientation="horizontal" className="w-auto">
+                    <Checkbox
+                      id="share-read"
+                      checked={canRead}
+                      onCheckedChange={(v) => setCanRead(Boolean(v))}
                     />
+                    <FieldLabel htmlFor="share-read" className="font-normal">
+                      Can view & download
+                    </FieldLabel>
                   </Field>
-                  <Field className="w-40">
-                    <FieldLabel htmlFor="share-max-mb">Max total (MB)</FieldLabel>
-                    <Input
-                      id="share-max-mb"
-                      type="number"
-                      min={1}
-                      placeholder="unlimited"
-                      value={maxTotalMb}
-                      onChange={(e) => setMaxTotalMb(e.target.value)}
+                  <Field orientation="horizontal" className="w-auto">
+                    <Checkbox
+                      id="share-write"
+                      checked={canWrite}
+                      disabled={writeBlocked}
+                      onCheckedChange={(v) => setCanWrite(Boolean(v))}
                     />
+                    <FieldLabel htmlFor="share-write" className="font-normal">
+                      Can upload
+                    </FieldLabel>
                   </Field>
+                  {writeBlocked && (
+                    <p className="text-xs text-muted-foreground">
+                      Uploads are only available when filtering by custom properties (not{" "}
+                      {blockingKeys.join(", ")}).
+                    </p>
+                  )}
                 </div>
               </FieldSet>
-            )}
 
-            <Field className="w-48">
-              <FieldLabel>Expires</FieldLabel>
-              <Select value={expiry} onValueChange={(v) => setExpiry(v as typeof expiry)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {EXPIRY_PRESETS.map((preset) => (
-                      <SelectItem key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </SelectItem>
+              {canWrite && !writeBlocked && (
+                <FieldSet>
+                  <FieldLegend variant="label">Applied to uploads</FieldLegend>
+                  <p className="text-xs text-muted-foreground">
+                    These properties are stamped on every uploaded file so it appears in this share.
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {stamp.map((row) => (
+                      <div key={row.id} className="flex flex-wrap items-center gap-2">
+                        <Input
+                          placeholder="key"
+                          className="w-40"
+                          value={row.key}
+                          onChange={(e) =>
+                            setStamp((prev) =>
+                              prev.map((r) =>
+                                r.id === row.id ? { ...r, key: e.target.value } : r,
+                              ),
+                            )
+                          }
+                        />
+                        <Select
+                          value={row.type}
+                          onValueChange={(next) =>
+                            setStamp((prev) =>
+                              prev.map((r) =>
+                                r.id === row.id ? { ...r, type: next as StampRow["type"] } : r,
+                              ),
+                            )
+                          }
+                        >
+                          <SelectTrigger className="w-28">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {STAMP_TYPES.map((t) => (
+                                <SelectItem key={t} value={t}>
+                                  {t}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          placeholder="value"
+                          className="w-40"
+                          value={row.value}
+                          onChange={(e) =>
+                            setStamp((prev) =>
+                              prev.map((r) =>
+                                r.id === row.id ? { ...r, value: e.target.value } : r,
+                              ),
+                            )
+                          }
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setStamp((prev) => prev.filter((r) => r.id !== row.id))}
+                        >
+                          Remove
+                        </Button>
+                      </div>
                     ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-fit"
+                      onClick={() =>
+                        setStamp((prev) => [
+                          ...prev,
+                          { id: nextId(), key: "", type: "string", value: "" },
+                        ])
+                      }
+                    >
+                      Add property
+                    </Button>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-4">
+                    <Field className="w-40">
+                      <FieldLabel htmlFor="share-max-items">Max uploads</FieldLabel>
+                      <Input
+                        id="share-max-items"
+                        type="number"
+                        min={1}
+                        placeholder="unlimited"
+                        value={maxItems}
+                        onChange={(e) => setMaxItems(e.target.value)}
+                      />
+                    </Field>
+                    <Field className="w-40">
+                      <FieldLabel htmlFor="share-max-mb">Max total (MB)</FieldLabel>
+                      <Input
+                        id="share-max-mb"
+                        type="number"
+                        min={1}
+                        placeholder="unlimited"
+                        value={maxTotalMb}
+                        onChange={(e) => setMaxTotalMb(e.target.value)}
+                      />
+                    </Field>
+                  </div>
+                </FieldSet>
+              )}
+
+              <Field className="w-48">
+                <FieldLabel>Expires</FieldLabel>
+                <Select value={expiry} onValueChange={(v) => setExpiry(v as typeof expiry)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {EXPIRY_PRESETS.map((preset) => (
+                        <SelectItem key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
 
             <DialogFooter>

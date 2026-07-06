@@ -5,6 +5,8 @@ import { createApp } from "./app.js";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
+import { makeInMemoryViewStore } from "./test/view-store.js";
+import { ViewStore } from "./views.js";
 
 /**
  * Server-level acceptance: the full create → upload (loopback) → confirm →
@@ -32,6 +34,7 @@ const makeApp = () =>
         revoke: () => Effect.succeed(false),
       }),
       Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
+      Layer.succeed(ViewStore, makeInMemoryViewStore()),
     ),
   });
 

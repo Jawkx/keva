@@ -1,5 +1,5 @@
 import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
-import type { CreateShareGrantResult } from "@keva/schema";
+import type { CreateShareGrantResult, QueryCondition, ViewRecord } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
@@ -10,6 +10,8 @@ import {
 } from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
+import { makeInMemoryViewStore } from "./test/view-store.js";
+import { ViewStore } from "./views.js";
 
 const STATIC = "static-token";
 const TENANT = "acme";
@@ -28,15 +30,26 @@ const sessionResolver = async (headers: Headers) =>
     : null;
 
 const makeApp = () => {
+  // Views and shares share one map so a grant reads its conditions live from the
+  // view it references (mirrors the Postgres JOIN).
+  const views = new Map<string, ViewRecord>();
   const tokens = Layer.succeed(ApiTokenStore, emptyTokenStore);
-  const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore());
+  const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore(views));
+  const viewsLayer = Layer.succeed(ViewStore, makeInMemoryViewStore(views));
   const auth = TokenAndStaticAuthFromStoreLive({
     staticToken: STATIC,
     tenantId: TENANT,
     sessionResolver,
   }).pipe(Layer.provide(Layer.merge(tokens, shares)));
   return createApp({
-    layer: Layer.mergeAll(MemoryMetadataStoreLive, MemoryBlobStoreLive(), tokens, shares, auth),
+    layer: Layer.mergeAll(
+      MemoryMetadataStoreLive,
+      MemoryBlobStoreLive(),
+      tokens,
+      shares,
+      viewsLayer,
+      auth,
+    ),
   });
 };
 
@@ -75,6 +88,19 @@ const seedItem = async (app: ReturnType<typeof makeApp>, name: string, propertie
   return initiated.item.id;
 };
 
+const createView = async (
+  app: ReturnType<typeof makeApp>,
+  conditions: QueryCondition[],
+  name = "Alpha view",
+) => {
+  const response = await app.request("/api/views", {
+    method: "POST",
+    headers: admin,
+    body: JSON.stringify({ name, conditions }),
+  });
+  return { status: response.status, view: (await response.json()) as ViewRecord };
+};
+
 const createShare = async (app: ReturnType<typeof makeApp>, body: object) => {
   const response = await app.request("/api/shares", {
     method: "POST",
@@ -84,11 +110,18 @@ const createShare = async (app: ReturnType<typeof makeApp>, body: object) => {
   return { status: response.status, body: (await response.json()) as CreateShareGrantResult };
 };
 
-const readWriteGrant = {
-  name: "Alpha share",
-  scopes: ["read", "write"],
-  conditions: [{ key: "project", op: "eq", value: "alpha" }],
-  writeStamp: { project: "alpha" },
+const ALPHA: QueryCondition[] = [{ key: "project", op: "eq", value: "alpha" }];
+
+// Create the alpha view, then a read+write grant on it. Returns the share.
+const shareAlpha = async (app: ReturnType<typeof makeApp>, overrides: object = {}) => {
+  const { view } = await createView(app, ALPHA);
+  return createShare(app, {
+    name: "Alpha share",
+    viewId: view.id,
+    scopes: ["read", "write"],
+    writeStamp: { project: "alpha" },
+    ...overrides,
+  });
 };
 
 describe("server share subsystem", () => {
@@ -97,17 +130,62 @@ describe("server share subsystem", () => {
     const response = await app.request("/api/shares", {
       method: "POST",
       headers: staticAuth,
-      body: JSON.stringify(readWriteGrant),
+      body: JSON.stringify({ name: "x", viewId: "v", scopes: ["read"] }),
     });
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ _tag: "Forbidden" });
   });
 
-  it("scopes reads to the grant conditions and redacts internal fields", async () => {
+  it("rejects a grant referencing a missing view", async () => {
+    const app = makeApp();
+    const { status, body } = await createShare(app, {
+      name: "Bad",
+      viewId: "nope",
+      scopes: ["read"],
+    });
+    expect(status).toBe(404);
+    expect(body).toMatchObject({ _tag: "NotFound" });
+  });
+
+  it("rejects a write grant whose view conditions aren't plain property keys", async () => {
+    const app = makeApp();
+    const { view } = await createView(app, [{ key: "system.size", op: "gt", value: 0 }]);
+    const response = await app.request("/api/shares", {
+      method: "POST",
+      headers: admin,
+      body: JSON.stringify({
+        name: "Bad write",
+        viewId: view.id,
+        scopes: ["read", "write"],
+        writeStamp: { project: "alpha" },
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
+  });
+
+  it("rejects a writeStamp that doesn't satisfy the view conditions", async () => {
+    const app = makeApp();
+    const { view } = await createView(app, ALPHA);
+    const response = await app.request("/api/shares", {
+      method: "POST",
+      headers: admin,
+      body: JSON.stringify({
+        name: "Bad stamp",
+        viewId: view.id,
+        scopes: ["read", "write"],
+        writeStamp: { project: "beta" },
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
+  });
+
+  it("scopes reads to the view conditions and redacts internal fields", async () => {
     const app = makeApp();
     await seedItem(app, "in.txt", { project: "alpha" });
     await seedItem(app, "out.txt", { project: "beta" });
-    const { status, body } = await createShare(app, readWriteGrant);
+    const { status, body } = await shareAlpha(app);
     expect(status).toBe(200);
     expect(body.token).toMatch(/^keva_sh_/);
 
@@ -127,9 +205,41 @@ describe("server share subsystem", () => {
     }
   });
 
+  it("reflects a live view edit in the share's visible items", async () => {
+    const app = makeApp();
+    await seedItem(app, "in.txt", { project: "alpha" });
+    await seedItem(app, "later.txt", { project: "beta" });
+    const { view } = await createView(app, ALPHA);
+    const { body } = await createShare(app, {
+      name: "Alpha share",
+      viewId: view.id,
+      scopes: ["read"],
+    });
+
+    const namesVia = async () => {
+      const res = await app.request("/api/query", {
+        method: "POST",
+        headers: { ...bearer(body.token), "content-type": "application/json" },
+        body: JSON.stringify({ where: [] }),
+      });
+      return ((await res.json()) as { items: { name: string }[] }).items.map((i) => i.name).sort();
+    };
+
+    expect(await namesVia()).toEqual(["in.txt"]);
+
+    // Edit the view to match beta instead; the same link now shows the other file.
+    const patched = await app.request(`/api/views/${view.id}`, {
+      method: "PATCH",
+      headers: admin,
+      body: JSON.stringify({ conditions: [{ key: "project", op: "eq", value: "beta" }] }),
+    });
+    expect(patched.status).toBe(200);
+    expect(await namesVia()).toEqual(["later.txt"]);
+  });
+
   it("stamps share uploads and reports them back through the grant", async () => {
     const app = makeApp();
-    const { body } = await createShare(app, readWriteGrant);
+    const { body } = await shareAlpha(app);
     const token = body.token;
     const bytes = new TextEncoder().encode("dropped");
 
@@ -177,7 +287,7 @@ describe("server share subsystem", () => {
 
   it("rejects caller-supplied properties on a share upload", async () => {
     const app = makeApp();
-    const { body } = await createShare(app, readWriteGrant);
+    const { body } = await shareAlpha(app);
     const response = await app.request("/api/items", {
       method: "POST",
       headers: { ...bearer(body.token), "content-type": "application/json" },
@@ -195,7 +305,7 @@ describe("server share subsystem", () => {
   it("forbids mutation, usage, and autocomplete routes for share tokens", async () => {
     const app = makeApp();
     const id = await seedItem(app, "in.txt", { project: "alpha" });
-    const { body } = await createShare(app, readWriteGrant);
+    const { body } = await shareAlpha(app);
     const token = body.token;
 
     const patch = await app.request(`/api/items/${id}`, {
@@ -220,11 +330,7 @@ describe("server share subsystem", () => {
 
   it("describes itself via /api/shares/self including upload usage", async () => {
     const app = makeApp();
-    const { body } = await createShare(app, {
-      ...readWriteGrant,
-      maxItems: 5,
-      maxTotalBytes: 1000,
-    });
+    const { body } = await shareAlpha(app, { maxItems: 5, maxTotalBytes: 1000 });
     const response = await app.request("/api/shares/self", { headers: bearer(body.token) });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -236,10 +342,11 @@ describe("server share subsystem", () => {
 
   it("returns null upload block for a read-only share", async () => {
     const app = makeApp();
+    const { view } = await createView(app, ALPHA);
     const { body } = await createShare(app, {
       name: "Read only",
+      viewId: view.id,
       scopes: ["read"],
-      conditions: [{ key: "project", op: "eq", value: "alpha" }],
     });
     const response = await app.request("/api/shares/self", { headers: bearer(body.token) });
     expect(await response.json()).toMatchObject({ scopes: ["read"], upload: null });
@@ -247,7 +354,7 @@ describe("server share subsystem", () => {
 
   it("enforces the item-count quota", async () => {
     const app = makeApp();
-    const { body } = await createShare(app, { ...readWriteGrant, maxItems: 1 });
+    const { body } = await shareAlpha(app, { maxItems: 1 });
     const token = body.token;
     // First initiate consumes the single allowed slot (pending counts).
     await app.request("/api/items", {
@@ -266,7 +373,7 @@ describe("server share subsystem", () => {
 
   it("revokes a share; the token and /self stop working", async () => {
     const app = makeApp();
-    const { body } = await createShare(app, readWriteGrant);
+    const { body } = await shareAlpha(app);
     const token = body.token;
 
     const revoked = await app.request(`/api/shares/${body.record.id}`, {
@@ -287,8 +394,7 @@ describe("server share subsystem", () => {
 
   it("rejects an expired share token", async () => {
     const app = makeApp();
-    const { body } = await createShare(app, {
-      ...readWriteGrant,
+    const { body } = await shareAlpha(app, {
       expiresAt: new Date(Date.now() - 1000).toISOString(),
     });
     const response = await app.request("/api/shares/self", { headers: bearer(body.token) });

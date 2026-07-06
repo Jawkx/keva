@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconAlertTriangle, IconShare3 } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowRight, IconShare3 } from "@tabler/icons-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ConditionChips } from "../../components/ConditionChips";
 import { formatDate } from "../../lib/format";
@@ -89,6 +90,7 @@ export function SharesSection() {
             <TableHead>Name</TableHead>
             <TableHead>Access</TableHead>
             <TableHead>Shared files</TableHead>
+            <TableHead>View</TableHead>
             <TableHead>Created</TableHead>
             <TableHead>Expires</TableHead>
             <TableHead>Last used</TableHead>
@@ -110,6 +112,15 @@ export function SharesSection() {
               </TableCell>
               <TableCell>
                 <ConditionChips conditions={share.conditions} />
+              </TableCell>
+              <TableCell>
+                <Link
+                  to={`/v/${share.viewId}`}
+                  className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Open
+                  <IconArrowRight className="size-3.5" />
+                </Link>
               </TableCell>
               <TableCell className="text-muted-foreground">{formatDate(share.createdAt)}</TableCell>
               <TableCell className="text-muted-foreground">

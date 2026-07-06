@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconDatabase,
   IconFiles,
+  IconFilter,
   IconLogout,
   IconPlugConnected,
   IconSelector,
@@ -13,6 +14,7 @@ import {
 import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
+import { listViews, viewsQueryKey } from "../lib/views";
 import { ModeToggle } from "./ModeToggle";
 import { SidebarWordmark } from "./SidebarWordmark";
 import {
@@ -30,6 +32,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -39,8 +42,9 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 
+// "Files" now lives in the Views group as the default "All" entry (Linear-style,
+// where the all-items list is itself a view), so it's dropped from this static nav.
 const NAV = [
-  { title: "Files", url: "/", icon: IconFiles, exact: true },
   { title: "Share", url: "/shares", icon: IconShare3, exact: false },
   { title: "Connection", url: "/connection", icon: IconPlugConnected, exact: false },
 ] as const;
@@ -48,6 +52,7 @@ const NAV = [
 export function AppShell() {
   const { data } = authClient.useSession();
   const { data: usage } = useUsage();
+  const { data: views } = useQuery({ queryKey: viewsQueryKey, queryFn: listViews });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -69,7 +74,10 @@ export function AppShell() {
     exact ? location.pathname === url : location.pathname.startsWith(url);
   // The Files screen owns its own full-height, edge-to-edge master/detail
   // layout; every other page gets the centered, padded container.
-  const fullBleed = location.pathname === "/" || location.pathname.startsWith("/items/");
+  const fullBleed =
+    location.pathname === "/" ||
+    location.pathname.startsWith("/items/") ||
+    location.pathname.startsWith("/v/");
 
   return (
     <SidebarProvider>
@@ -85,6 +93,38 @@ export function AppShell() {
         </SidebarHeader>
 
         <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Views</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {/* Default "All" — the unfiltered file list at the root. Active in
+                    root mode (`/` or `/items/*`), i.e. whenever no view is open. */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={isActive("/", true) || location.pathname.startsWith("/items/")}
+                    tooltip="All files"
+                    render={<Link to="/" />}
+                  >
+                    <IconFiles />
+                    <span>All</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                {views?.map((view) => (
+                  <SidebarMenuItem key={view.id}>
+                    <SidebarMenuButton
+                      isActive={location.pathname.startsWith(`/v/${view.id}`)}
+                      tooltip={view.name}
+                      render={<Link to={`/v/${view.id}`} />}
+                    >
+                      <IconFilter />
+                      <span>{view.name}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>

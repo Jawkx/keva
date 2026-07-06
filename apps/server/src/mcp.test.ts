@@ -7,6 +7,8 @@ import type { McpAuthorizationServer } from "./better-auth.js";
 import { type McpDeps, principalFromMcpToken } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
+import { makeInMemoryViewStore } from "./test/view-store.js";
+import { ViewStore } from "./views.js";
 
 const baseLayer = () =>
   Layer.mergeAll(
@@ -20,6 +22,7 @@ const baseLayer = () =>
       revoke: () => Effect.succeed(false),
     }),
     Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
+    Layer.succeed(ViewStore, makeInMemoryViewStore()),
   );
 
 const stubAuthorizationServer = (overrides: {

@@ -255,9 +255,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       // ANDed onto whatever the visitor asked for, so a visitor can only ever
       // filter further within the shared view, never widen it.
       const share = shareOf(principal);
-      const scoped = share
-        ? { ...query, where: [...query.where, ...share.conditions] }
-        : query;
+      const scoped = share ? { ...query, where: [...query.where, ...share.conditions] } : query;
       return yield* metadata.query(principal.tenantId, scoped);
     }),
 

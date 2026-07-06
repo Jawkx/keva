@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
@@ -14,6 +14,7 @@ import {
   IconAlertTriangle,
   IconArrowDown,
   IconCloudUpload,
+  IconDeviceFloppy,
   IconFiles,
   IconFilter,
   IconLoader2,
@@ -24,7 +25,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import type { QueryCondition } from "@keva/schema";
+import type { QueryCondition, UpdateView } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
@@ -32,7 +33,7 @@ import { FilterPanel } from "../components/FilterPanel";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatContentType, formatRelative } from "../lib/format";
-import { createFilterDraft } from "../lib/item-filters";
+import { createFilterDraft, draftFromConditions } from "../lib/item-filters";
 import {
   itemsQueryKey,
   prependItemToPages,
@@ -40,7 +41,16 @@ import {
   type ItemsCache,
 } from "../lib/items-cache";
 import { keva } from "../lib/keva";
+import { sharesQueryKey } from "../lib/shares";
 import { usageQueryKey } from "../lib/use-usage";
+import {
+  createView,
+  deleteView,
+  getView,
+  updateView,
+  viewQueryKey,
+  viewsQueryKey,
+} from "../lib/views";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useMountEffect } from "../lib/useMountEffect";
 import {
@@ -59,12 +69,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -229,9 +249,18 @@ const columns = [
 
 export function FilesPage() {
   const navigate = useNavigate();
-  const { id: selectedId } = useParams<{ id: string }>();
+  const { id: selectedId, viewId } = useParams<{ id: string; viewId: string }>();
   const queryClient = useQueryClient();
   const isWide = useMediaQuery("(min-width: 1024px)");
+
+  // View mode: the open view supplies the filter. Its conditions are read live,
+  // so editing the view (below) updates the list and any share link built on it.
+  const viewQuery = useQuery({
+    queryKey: viewId ? viewQueryKey(viewId) : ["views", "none"],
+    queryFn: () => getView(viewId!),
+    enabled: Boolean(viewId),
+  });
+  const view = viewQuery.data;
 
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
@@ -261,6 +290,70 @@ export function FilesPage() {
 
   const [pageDragging, setPageDragging] = useState(false);
   const dragDepth = useRef(0);
+
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState("");
+  const [deleteViewOpen, setDeleteViewOpen] = useState(false);
+
+  // Seed the filter from the active view whenever the view (or its saved
+  // conditions) changes, or reset to empty on the root list — adjusting state
+  // during render rather than via an effect (repo rule: no direct useEffect).
+  const seedKey = viewId ? `${viewId}:${view?.updatedAt ?? "loading"}` : "root";
+  const [seededKey, setSeededKey] = useState(seedKey);
+  if (seedKey !== seededKey) {
+    setSeededKey(seedKey);
+    setRowSelection({});
+    if (viewId) {
+      if (view) {
+        setActiveWhere([...view.conditions]);
+        setFilterDraft(draftFromConditions(view.conditions));
+      }
+    } else {
+      setActiveWhere([]);
+      setFilterDraft(createFilterDraft());
+      setSearch("");
+      setActiveSearch("");
+    }
+  }
+
+  // Navigation stays within the active view so selecting/closing an item keeps
+  // you on /v/:viewId rather than dropping back to the root list.
+  const listPath = viewId ? `/v/${viewId}` : "/";
+  const itemPath = (itemId: string) =>
+    viewId ? `/v/${viewId}/items/${itemId}` : `/items/${itemId}`;
+
+  const updateViewMutation = useMutation({
+    mutationFn: (input: UpdateView) => updateView(viewId!, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(viewQueryKey(updated.id), updated);
+      void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  const createViewMutation = useMutation({
+    mutationFn: (name: string) => createView({ name, conditions: activeWhere }),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
+      setSaveViewOpen(false);
+      setSaveViewName("");
+      navigate(`/v/${created.id}`);
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: () => deleteView(viewId!),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
+      // Grants on this view were cascade-deleted server-side; refresh the roster.
+      void queryClient.invalidateQueries({ queryKey: sharesQueryKey });
+      setDeleteViewOpen(false);
+      toast.success("View deleted");
+      navigate("/");
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
 
   const itemsQuery = useInfiniteQuery({
     queryKey: itemsQueryKey(activeSearch, activeWhere, DEFAULT_ORDER),
@@ -372,8 +465,8 @@ export function FilesPage() {
     if (dropped.length > 0) startUploads(dropped);
   };
 
-  const closeDetail = () => navigate("/");
-  const onDeleted = () => navigate("/");
+  const closeDetail = () => navigate(listPath);
+  const onDeleted = () => navigate(listPath);
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => keva.deleteMany(ids),
@@ -393,7 +486,7 @@ export function FilesPage() {
         void queryClient.invalidateQueries({ queryKey: usageQueryKey });
       }
       setRowSelection({});
-      if (selectedId && ids.includes(selectedId)) navigate("/");
+      if (selectedId && ids.includes(selectedId)) navigate(listPath);
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
@@ -416,15 +509,22 @@ export function FilesPage() {
   const applyFilters = (where: QueryCondition[]) => {
     setActiveWhere(where);
     setRowSelection({});
+    // On a saved view, applying edits the view in place (live) so any share link
+    // built on it reflects the change.
+    if (viewId) updateViewMutation.mutate({ conditions: where });
   };
 
   const clearFilters = () => {
     window.clearTimeout(searchTimer.current);
     setSearch("");
     setActiveSearch("");
-    setActiveWhere([]);
-    setFilterDraft(createFilterDraft());
     setRowSelection({});
+    // On a view, "Clear" only drops the free-text search — the saved view filter
+    // stays intact (delete the view to remove it). On the root list it resets all.
+    if (!viewId) {
+      setActiveWhere([]);
+      setFilterDraft(createFilterDraft());
+    }
   };
 
   const tableInner = (
@@ -465,7 +565,7 @@ export function FilesPage() {
                 className={cn("group", !row.original.upload && "cursor-pointer")}
                 onClick={() => {
                   if (row.original.upload) return;
-                  navigate(row.original.id === selectedId ? "/" : `/items/${row.original.id}`);
+                  navigate(row.original.id === selectedId ? listPath : itemPath(row.original.id));
                 }}
               >
                 {row.getVisibleCells().map((cell) => (
@@ -546,6 +646,11 @@ export function FilesPage() {
           </>
         ) : (
           <>
+            {viewId && view && (
+              <span className="mr-1 truncate text-sm font-medium" title={view.name}>
+                {view.name}
+              </span>
+            )}
             <div className="relative w-full min-w-0 sm:w-72">
               <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -566,14 +671,35 @@ export function FilesPage() {
                 Clear
               </Button>
             )}
-            <Button variant="outline" className="sm:ml-auto" onClick={openShare}>
-              <IconShare3 data-icon="inline-start" />
-              Share
-            </Button>
-            <Button onClick={() => uploadInputRef.current?.click()}>
-              <IconUpload data-icon="inline-start" />
-              Upload
-            </Button>
+            <div className="flex items-center gap-3 sm:ml-auto">
+              {viewId ? (
+                <>
+                  <Button variant="outline" onClick={openShare}>
+                    <IconShare3 data-icon="inline-start" />
+                    Share
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setDeleteViewOpen(true)}
+                  >
+                    <IconTrash data-icon="inline-start" />
+                    Delete view
+                  </Button>
+                </>
+              ) : (
+                activeWhere.length > 0 && (
+                  <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
+                    <IconDeviceFloppy data-icon="inline-start" />
+                    Save as view
+                  </Button>
+                )
+              )}
+              <Button onClick={() => uploadInputRef.current?.click()}>
+                <IconUpload data-icon="inline-start" />
+                Upload
+              </Button>
+            </div>
           </>
         )}
       </div>
@@ -715,8 +841,62 @@ export function FilesPage() {
         key={shareKey}
         open={shareOpen}
         onOpenChange={setShareOpen}
+        viewId={viewId ?? ""}
         conditions={activeWhere}
       />
+
+      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save as view</DialogTitle>
+            <DialogDescription>
+              Save the current filters as a named view. It appears in the sidebar and can be shared.
+            </DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="save-view-name">Name</FieldLabel>
+            <Input
+              id="save-view-name"
+              value={saveViewName}
+              onChange={(e) => setSaveViewName(e.target.value)}
+              placeholder="Diving trip"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && saveViewName.trim()) {
+                  createViewMutation.mutate(saveViewName.trim());
+                }
+              }}
+            />
+          </Field>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <Button
+              onClick={() => createViewMutation.mutate(saveViewName.trim())}
+              disabled={!saveViewName.trim() || createViewMutation.isPending}
+            >
+              {createViewMutation.isPending ? "Saving…" : "Save view"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteViewOpen} onOpenChange={setDeleteViewOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this view?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the view “{view?.name}” and revokes any share links built on it. Your
+              files are not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => deleteViewMutation.mutate()}>
+              Delete view
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

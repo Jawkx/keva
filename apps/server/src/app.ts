@@ -3,15 +3,19 @@ import {
   ItemPatch,
   BatchDelete,
   CreateShareGrant,
+  CreateView,
+  isPropertyKey,
   ItemId,
   InitiateUpload,
   Internal,
   KevaError,
   MintToken,
   NotFound,
+  propertiesMatchCondition,
   Query,
   toSharedItem,
   Unauthorized,
+  UpdateView,
   ValidationError,
   statusFor,
   type KevaItem,
@@ -22,13 +26,15 @@ import { Hono, type Context } from "hono";
 import { ApiTokenStore, Authenticator, requireAdminSession } from "./auth.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
+import { ViewStore } from "./views.js";
 
 export type AppServices =
   | Authenticator
   | BlobStore
   | MetadataStore
   | ApiTokenStore
-  | ShareGrantStore;
+  | ShareGrantStore
+  | ViewStore;
 
 const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
   Schema.decodeUnknown(schema)(value).pipe(
@@ -381,7 +387,79 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
+  // View management: named saved filters, admin-session-only like tokens.
+  app.post("/api/views", async (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const body = yield* decode(CreateView, yield* jsonBody(context));
+        const views = yield* ViewStore;
+        return yield* views.create(principal.tenantId, body);
+      }),
+    ),
+  );
+
+  app.get("/api/views", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const views = yield* ViewStore;
+        return yield* views.list(principal.tenantId);
+      }),
+    ),
+  );
+
+  app.get("/api/views/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const views = yield* ViewStore;
+        const view = yield* views.get(principal.tenantId, context.req.param("id"));
+        if (!view) return yield* new NotFound({ message: "View not found" });
+        return view;
+      }),
+    ),
+  );
+
+  app.patch("/api/views/:id", async (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const body = yield* decode(UpdateView, yield* jsonBody(context));
+        const views = yield* ViewStore;
+        const view = yield* views.update(principal.tenantId, context.req.param("id"), body);
+        if (!view) return yield* new NotFound({ message: "View not found" });
+        return view;
+      }),
+    ),
+  );
+
+  app.delete("/api/views/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const views = yield* ViewStore;
+        return {
+          deleted: yield* views.delete(principal.tenantId, context.req.param("id")),
+        };
+      }),
+    ),
+  );
+
   // Share management: create/list/revoke, all admin-session-only like tokens.
+  // A grant references a view; write-soundness invariants that depend on the
+  // view's conditions are enforced here (the CreateShareGrant schema can only
+  // check the writeStamp-presence invariant, since conditions live on the view).
   app.post("/api/shares", async (context) =>
     runRoute(
       context,
@@ -389,6 +467,24 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         yield* requireAdminSession(principal);
         const body = yield* decode(CreateShareGrant, yield* jsonBody(context));
+        const views = yield* ViewStore;
+        const view = yield* views.get(principal.tenantId, body.viewId);
+        if (!view) return yield* new NotFound({ message: "View not found" });
+        if (body.scopes.includes("write")) {
+          if (!view.conditions.every((c) => isPropertyKey(c.key))) {
+            return yield* new ValidationError({
+              message: "Write grants may only condition on plain property keys",
+            });
+          }
+          if (
+            body.writeStamp !== undefined &&
+            !view.conditions.every((c) => propertiesMatchCondition(body.writeStamp!, c))
+          ) {
+            return yield* new ValidationError({
+              message: "writeStamp must satisfy every view condition",
+            });
+          }
+        }
         const shares = yield* ShareGrantStore;
         return yield* shares.create(principal.tenantId, body);
       }),

@@ -19,6 +19,7 @@ import {
   ShareGrantStore,
   type ShareGrantStoreService,
 } from "./shares.js";
+import { PostgresViewStoreLive, unavailableViewStore, ViewStore } from "./views.js";
 
 // Without Postgres there is no token store. `resolve` simply finds no token (so
 // auth falls through to the static token); the mutating ops fail with a typed
@@ -86,6 +87,10 @@ export const makeRuntimeLayer = (config: RuntimeConfig) => {
   const shares = config.databaseUrl
     ? PostgresShareGrantStoreLive(config.databaseUrl)
     : Layer.succeed(ShareGrantStore, unavailableShareStore);
+  const views = config.databaseUrl
+    ? PostgresViewStoreLive(config.databaseUrl)
+    : Layer.succeed(ViewStore, unavailableViewStore);
+  const stores = Layer.mergeAll(tokens, shares, views);
   const authAndStores = config.databaseUrl
     ? Layer.provideMerge(
         TokenAndStaticAuthFromStoreLive({
@@ -93,10 +98,10 @@ export const makeRuntimeLayer = (config: RuntimeConfig) => {
           tenantId: config.tenantId,
           ...(config.sessionResolver ? { sessionResolver: config.sessionResolver } : {}),
         }),
-        Layer.merge(tokens, shares),
+        stores,
       )
     : Layer.merge(
-        Layer.merge(tokens, shares),
+        stores,
         StaticTokenAuthLive({
           token: config.staticToken,
           tenantId: config.tenantId,
