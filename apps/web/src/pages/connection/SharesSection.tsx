@@ -85,9 +85,9 @@ export function SharesSection() {
 
   return (
     <Card className="overflow-hidden p-0">
-      <Table>
-        <TableHeader>
-          <TableRow>
+      <Table className="select-text">
+        <TableHeader className="bg-muted/50">
+          <TableRow className="hover:bg-transparent">
             <TableHead>Name</TableHead>
             <TableHead>Access</TableHead>
             <TableHead>Shared files</TableHead>
@@ -99,7 +99,7 @@ export function SharesSection() {
         </TableHeader>
         <TableBody>
           {shares.map((share) => (
-            <TableRow key={share.id}>
+            <TableRow key={share.id} className="hover:bg-transparent">
               <TableCell className="font-medium">{share.name}</TableCell>
               <TableCell>
                 <div className="flex flex-wrap gap-1">
