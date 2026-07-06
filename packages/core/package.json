@@ -23,7 +23,9 @@
     "test": "vitest run src",
     "lint": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node --env-file-if-exists=../../apps/server/.env node_modules/drizzle-kit/bin.cjs migrate"
+    "db:migrate": "node --env-file-if-exists=../../apps/server/.env node_modules/tsx/dist/cli.mjs scripts/migrate.ts",
+    "db:migrate:staging": "node --env-file=.env.staging node_modules/tsx/dist/cli.mjs scripts/migrate.ts",
+    "db:migrate:prod": "node --env-file=.env.production node_modules/tsx/dist/cli.mjs scripts/migrate.ts"
   },
   "dependencies": {
     "@keva/schema": "workspace:*",
@@ -36,6 +38,7 @@
     "@keva/tsconfig": "workspace:*",
     "@types/node": "22.15.30",
     "drizzle-kit": "0.31.10",
+    "tsx": "4.22.4",
     "vitest": "4.1.9"
   }
 }
