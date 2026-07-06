@@ -30,8 +30,6 @@ const STATIC = "static-token";
 const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
 
-// A minimal in-memory ApiTokenStore: mints `keva_sk_<id>_<secret>` tokens and
-// resolves them back to a principal carrying the requested scopes.
 const makeInMemoryTokenStore = (): ApiTokenStoreService => {
   const records = new Map<string, { record: TokenRecord; secret: string }>();
   return {
@@ -79,7 +77,6 @@ const makeInMemoryTokenStore = (): ApiTokenStoreService => {
   };
 };
 
-// The web session: an admin cookie maps to the tenant with the admin scope.
 const sessionResolver = async (headers: Headers) =>
   headers.get("cookie")?.includes(ADMIN_COOKIE)
     ? { tenantId: TENANT, scopes: ["read", "write", "delete", "admin"] as const }
@@ -171,7 +168,6 @@ describe("server token subsystem", () => {
     expect(mintBody.token).toMatch(/^keva_sk_/);
     expect(mintBody.record.scopes).toEqual(["read", "write"]);
 
-    // use the minted token: upload an item that inherits the minter's tenant
     const agentAuth = { authorization: `Bearer ${mintBody.token}` };
     const initiated = await app.request("/api/items", {
       method: "POST",
@@ -232,7 +228,6 @@ describe("server token subsystem", () => {
     expect(revoked.status).toBe(200);
     expect(await revoked.json()).toMatchObject({ revoked: true });
 
-    // the revoked token no longer authenticates
     const reuse = await app.request("/api/query", {
       method: "POST",
       headers: {

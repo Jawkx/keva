@@ -217,8 +217,6 @@ const seedAndUsage = async (store: MetadataStoreService) => {
   return run(makeKevaEngine(p).usage());
 };
 
-// Every seed name is 5 bytes; each content type appears once. Ordering is
-// bytes desc then contentType asc, so equal-sized types sort alphabetically.
 const EXPECTED_USAGE = {
   itemCount: 3,
   totalBytes: 15,
@@ -229,9 +227,6 @@ const EXPECTED_USAGE = {
   ],
 };
 
-// Insert a mix of tenants/sources/statuses/sizes directly (bypassing the
-// engine) and report sourceUsage for one (tenant, source). Only pending+ready
-// rows of the matching tenant AND source count; bytes use size ?? declaredSize.
 const seedAndSourceUsage = async (store: MetadataStoreService) => {
   const tenant = crypto.randomUUID();
   const other = crypto.randomUUID();

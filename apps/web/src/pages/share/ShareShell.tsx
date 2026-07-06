@@ -2,11 +2,6 @@ import type { ReactNode } from "react";
 import { Wordmark } from "../../components/Wordmark";
 import { ModeToggle } from "../../components/ModeToggle";
 
-// Minimal standalone chrome for the public share page — no sidebar, no session.
-// A header with the Keva wordmark, the share's name, and the theme toggle, over
-// a full-height content region. The body owns its own scrolling and width (the
-// read view runs edge-to-edge like the Files page; write-only centers its hero),
-// so this fixes the viewport height and leaves layout to the children.
 export function ShareShell({ name, children }: { name: string; children: ReactNode }) {
   return (
     <div className="flex h-svh flex-col overflow-hidden">

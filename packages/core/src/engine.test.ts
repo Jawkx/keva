@@ -334,7 +334,6 @@ describe("KevaEngine", () => {
         unset: [],
       });
       yield* engine.patch(two.id, { set: { location: "tokyo", rating: 5 }, unset: [] });
-      // A second tenant's keys and values must not leak into the aggregation.
       const other = yield* upload("tenant-b", "c.txt", new TextEncoder().encode("c"));
       yield* makeKevaEngine(principal("tenant-b")).patch(other.id, {
         set: { secret: "nope" },
@@ -350,12 +349,9 @@ describe("KevaEngine", () => {
     }).pipe(Effect.provide(layer));
 
     const result = await Effect.runPromise(program);
-    // Sorted, distinct, tenant-scoped (no "secret" from tenant-b).
     expect(result.keys).toEqual({ keys: ["location", "rating", "tags"] });
     expect(result.locations).toEqual({ values: ["bali", "tokyo"] });
-    // Duplicate scalar values collapse to one.
     expect(result.ratings).toEqual({ values: [5] });
-    // Array-valued properties are excluded — they can't seed a single-line input.
     expect(result.tags).toEqual({ values: [] });
   });
 });
@@ -363,7 +359,6 @@ describe("KevaEngine", () => {
 describe("KevaEngine share access", () => {
   const layer = () => Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
 
-  // Seed two ready items in tenant-a, tagged project=alpha and project=beta.
   const seedTagged = () =>
     Effect.gen(function* () {
       const owner = makeKevaEngine(principal("tenant-a"));
@@ -379,7 +374,6 @@ describe("KevaEngine share access", () => {
       yield* seedTagged();
       const share = makeKevaEngine(sharePrincipal("tenant-a"));
       const all = yield* share.query({ where: [], limit: 100, order: "created_at_asc" });
-      // A visitor condition only narrows further within the shared view.
       const widen = yield* share.query({
         where: [{ key: "project", op: "eq", value: "beta" }],
         limit: 100,
@@ -432,7 +426,6 @@ describe("KevaEngine share access", () => {
         writeStamp: { project: "alpha" },
       });
       const item = yield* shareUpload(p, "drop.txt", new TextEncoder().encode("x"));
-      // The stamped item is visible back through the same grant.
       const listed = yield* makeKevaEngine(p).query({
         where: [],
         limit: 100,
@@ -580,7 +573,6 @@ describe("KevaEngine share access", () => {
         grantId: "grant-1",
         writeStamp: { project: "alpha" },
       });
-      // grant-1 initiates but does not confirm — item is pending, source share:grant-1.
       const initiated = yield* makeKevaEngine(grant1).initiate({
         name: "pending.txt",
         contentType: "text/plain",

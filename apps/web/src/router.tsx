@@ -14,11 +14,7 @@ import { SignupPage } from "./pages/SignupPage";
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },
-  // Public share links live outside RequireAuth/AppShell — anonymous visitors
-  // reach the share page with only a token in the URL.
   { path: "/s/:token", element: <SharePage /> },
-  // Standalone (no AppShell) but auth-gated: the OAuth authorize flow only
-  // reaches here once Better Auth has confirmed a session.
   {
     path: "/oauth/consent",
     element: (

@@ -117,7 +117,6 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     expect(confirmed.status).toBe("ready");
     expect(confirmed.storageKey).toBe(`items/t1/${id}`);
 
-    // final key has the bytes; staging was cleaned up after the copy
     expect(mock.store.has(`items/t1/${id}`)).toBe(true);
     expect(mock.store.has(`staging/t1/${id}`)).toBe(false);
 
@@ -210,7 +209,6 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     await runtime.runPromise(engine.confirm(id));
     expect(mock.store.has(`items/t1/${id}`)).toBe(true);
 
-    // record delete intent (ready → deleting), then let the sweeper finish it
     await runtime.runPromise(
       Effect.flatMap(MetadataStore, (m) =>
         m.transition("t1", id, ["ready"], {

@@ -29,8 +29,6 @@ import {
 const isExpired = (expiresAt: string | null): boolean =>
   expiresAt !== null && new Date(expiresAt).getTime() <= Date.now();
 
-// Read-only management of share links. Creation lives on the Files page (it
-// snapshots the active filters); here owners review and revoke existing links.
 export function SharesSection() {
   const handleError = useApiError();
   const queryClient = useQueryClient();

@@ -64,7 +64,6 @@ describe("server integration — HTTP roundtrip", () => {
       headers: Record<string, string>;
     };
 
-    // upload bytes straight to the presigned (loopback) staging URL
     const uploaded = await loopback(app, initiated.uploadUrl, {
       method: "PUT",
       headers: initiated.headers,
@@ -83,7 +82,6 @@ describe("server integration — HTTP roundtrip", () => {
       size: bytes.byteLength,
     });
 
-    // write properties (and rename via the same patch), then query by one
     const patched = await app.request(`/api/items/${initiated.item.id}`, {
       method: "PATCH",
       headers: { ...auth, "content-type": "application/json" },
@@ -105,7 +103,6 @@ describe("server integration — HTTP roundtrip", () => {
     const queryBody = (await queried.json()) as { items: { id: string }[] };
     expect(queryBody.items.map((o) => o.id)).toContain(initiated.item.id);
 
-    // download: presigned GET → loopback → exact bytes
     const contentResponse = await app.request(`/api/items/${initiated.item.id}/content`, {
       method: "GET",
       headers: auth,
@@ -116,7 +113,6 @@ describe("server integration — HTTP roundtrip", () => {
     expect(downloaded.status).toBe(200);
     expect(new TextDecoder().decode(await downloaded.arrayBuffer())).toBe("the quick brown fox");
 
-    // delete, then a get is a typed NotFound
     const deleted = await app.request(`/api/items/${initiated.item.id}`, {
       method: "DELETE",
       headers: auth,
@@ -131,7 +127,6 @@ describe("server integration — HTTP roundtrip", () => {
     expect(await gone.json()).toMatchObject({ _tag: "NotFound" });
   });
 
-  // Create a ready item via the full initiate → upload → confirm flow.
   const makeReadyItem = async (app: ReturnType<typeof makeApp>, name: string) => {
     const bytes = new TextEncoder().encode(name);
     const initiatedResponse = await app.request("/api/items", {
@@ -180,7 +175,6 @@ describe("server integration — HTTP roundtrip", () => {
     expect(body.deleted.sort()).toEqual([a, b, unknown].sort());
     expect(body.failed).toEqual([]);
 
-    // Both real items are actually gone.
     for (const id of [a, b]) {
       const gone = await app.request(`/api/items/${id}`, {
         method: "GET",
@@ -245,7 +239,6 @@ describe("server integration — HTTP roundtrip", () => {
 
   it("returns a typed ValidationError (400) for a malformed query", async () => {
     const app = makeApp();
-    // gt with a boolean operand is rejected at schema-decode time
     const response = await app.request("/api/query", {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },

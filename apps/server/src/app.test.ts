@@ -21,7 +21,6 @@ const layer = Layer.mergeAll(
 
 const auth = { authorization: "Bearer test-secret" };
 
-// Upload → confirm → patch an item to a ready state carrying `properties`.
 const seedItem = async (
   app: ReturnType<typeof createApp>,
   name: string,
@@ -122,7 +121,6 @@ describe("server API", () => {
     expect(values.status).toBe(200);
     expect(await values.json()).toEqual({ values: ["bali", "tokyo"] });
 
-    // Missing `key` is a validation error; both routes require authentication.
     const missing = await app.request("/api/properties/values", { headers: auth });
     expect(missing.status).toBe(400);
     const unauthorized = await app.request("/api/properties/keys");

@@ -3,7 +3,11 @@ import type { CreateShareGrantResult } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
-import { ApiTokenStore, type ApiTokenStoreService, TokenAndStaticAuthFromStoreLive } from "./auth.js";
+import {
+  ApiTokenStore,
+  type ApiTokenStoreService,
+  TokenAndStaticAuthFromStoreLive,
+} from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 
@@ -11,8 +15,6 @@ const STATIC = "static-token";
 const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
 
-// The static token is a full-scope tenant credential; use it to seed items the
-// share will read. An admin session (cookie) is required for share management.
 const emptyTokenStore: ApiTokenStoreService = {
   resolve: () => Effect.succeed(null),
   mint: () => Effect.die("not used"),
@@ -47,7 +49,6 @@ const loopback = (app: ReturnType<typeof makeApp>, absoluteUrl: string, init?: R
   return app.request(`${url.pathname}${url.search}`, init);
 };
 
-// Seed a ready item via the full-scope static token, tagged with `properties`.
 const seedItem = async (app: ReturnType<typeof makeApp>, name: string, properties: object) => {
   const bytes = new TextEncoder().encode(name);
   const initiated = (await (
@@ -136,10 +137,17 @@ describe("server share subsystem", () => {
       await app.request("/api/items", {
         method: "POST",
         headers: { ...bearer(token), "content-type": "application/json" },
-        body: JSON.stringify({ name: "drop.txt", contentType: "text/plain", size: bytes.byteLength }),
+        body: JSON.stringify({
+          name: "drop.txt",
+          contentType: "text/plain",
+          size: bytes.byteLength,
+        }),
       })
-    ).json()) as { item: { id: string; source?: string; tenantId?: string }; uploadUrl: string; headers: Record<string, string> };
-    // The initiate response is already redacted (no tenantId).
+    ).json()) as {
+      item: { id: string; source?: string; tenantId?: string };
+      uploadUrl: string;
+      headers: Record<string, string>;
+    };
     expect(initiated.item.tenantId).toBeUndefined();
 
     await loopback(app, initiated.uploadUrl, {
@@ -156,13 +164,14 @@ describe("server share subsystem", () => {
     expect(confirmedItem.source).toBe(`share:${body.record.id}`);
     expect(confirmedItem.properties).toEqual({ project: "alpha" });
 
-    // The stamped upload is visible back through the same grant.
     const queried = await app.request("/api/query", {
       method: "POST",
       headers: { ...bearer(token), "content-type": "application/json" },
       body: JSON.stringify({ where: [] }),
     });
-    const names = ((await queried.json()) as { items: { name: string }[] }).items.map((i) => i.name);
+    const names = ((await queried.json()) as { items: { name: string }[] }).items.map(
+      (i) => i.name,
+    );
     expect(names).toContain("drop.txt");
   });
 
@@ -205,7 +214,6 @@ describe("server share subsystem", () => {
     const keys = await app.request("/api/properties/keys", { headers: bearer(token) });
     expect(keys.status).toBe(403);
 
-    // Share management is admin-session-only, so a share token is unauthorized.
     const manage = await app.request("/api/shares", { headers: bearer(token) });
     expect(manage.status).toBe(403);
   });
@@ -268,7 +276,6 @@ describe("server share subsystem", () => {
     expect(await revoked.json()).toMatchObject({ revoked: true });
 
     const afterSelf = await app.request("/api/shares/self", { headers: bearer(token) });
-    // The token no longer resolves at all → unauthorized.
     expect(afterSelf.status).toBe(401);
     const afterQuery = await app.request("/api/query", {
       method: "POST",

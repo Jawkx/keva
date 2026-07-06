@@ -1,9 +1,6 @@
 import { PageHeader } from "../components/PageHeader";
 import { SharesSection } from "./connection/SharesSection";
 
-// Dedicated screen listing every share link the owner has created. New links
-// are minted from the Files page (the "Share" button snapshots the active
-// filters); this page reviews and revokes them.
 export function SharesPage() {
   return (
     <div className="flex flex-col gap-6">

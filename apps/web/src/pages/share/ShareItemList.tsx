@@ -2,7 +2,12 @@ import { type ReactNode, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { IconFiles, IconSearch } from "@tabler/icons-react";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { formatBytes, formatContentType, formatPropertyValue, formatRelative } from "../../lib/format";
+import {
+  formatBytes,
+  formatContentType,
+  formatPropertyValue,
+  formatRelative,
+} from "../../lib/format";
 import { useMountEffect } from "../../lib/useMountEffect";
 import { useShare } from "./share-context";
 import { Badge } from "@/components/ui/badge";
@@ -30,20 +35,11 @@ const PAGE_SIZE = 50;
 interface ShareItemListProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
-  // Detail is open beside the list (wide screens): drop the secondary columns
-  // so the narrower list stays readable.
   collapsed: boolean;
-  // Right-aligned toolbar content on the search row — the Upload button for
-  // read+write grants.
   action?: ReactNode;
-  // Full-width content below the toolbar — upload progress for read+write grants.
   notice?: ReactNode;
 }
 
-// Left pane of a share's read view: a search toolbar above a scrollable list of
-// the items matching the grant. Clicking a row opens it in the detail panel. The
-// server appends the grant conditions server-side, so the client sends
-// `where: []` and never learns them.
 export function ShareItemList({
   selectedId,
   onSelect,

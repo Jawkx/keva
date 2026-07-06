@@ -36,16 +36,9 @@ const PANEL_LABELS: Record<Panel, string> = {
 
 interface ShareFileDetailProps {
   itemId: string;
-  // Renders a close affordance in the header (used by the side panel; the bottom
-  // sheet supplies its own close button).
   onClose?: () => void;
 }
 
-// Read-only detail view for a single shared item — the same preview surface as
-// the owner's FileDetail, but backed by the ShareClient and stripped of every
-// mutation (no rename, delete, or property editing). Shared by the resizable
-// side panel (wide screens) and the bottom sheet (narrow screens); remount it
-// with `key={itemId}` so a new selection re-runs the load.
 export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   const { client } = useShare();
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
@@ -59,8 +52,6 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   const loading = itemQuery.isLoading;
   const error = itemQuery.error ? errorMessage(itemQuery.error) : null;
 
-  // Content bytes are cached (immutable per id), so re-opening a file is instant
-  // and never re-downloads. The Blob is built once here and shared.
   const contentQuery = useQuery({
     queryKey: ["share-content", itemId],
     enabled: Boolean(item) && isPreviewable(item!),
@@ -75,9 +66,6 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   });
   const previewLoading = contentQuery.isLoading;
 
-  // Derive the preview from cached bytes. `objectUrlFor` is an LRU keyed by id,
-  // so reading it during render reuses the same URL. Best-effort: content errors
-  // are ignored here.
   const preview = useMemo<Preview | null>(() => {
     if (!item || !contentQuery.data) return null;
     const { bytes, blob } = contentQuery.data;
@@ -88,8 +76,6 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
     return { kind: "text", text: new TextDecoder().decode(bytes).slice(0, 5000) };
   }, [item, contentQuery.data, itemId]);
 
-  // Preview is offered only when the content can actually be rendered; Info
-  // always exists. With a single panel the segmented control is hidden.
   const panels = useMemo<Panel[]>(
     () => (item && isPreviewable(item) ? ["preview", "info"] : ["info"]),
     [item],
@@ -238,9 +224,6 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
             )}
           </section>
         ) : (
-          // Info is a read-only list of the system-owned metadata plus the
-          // grant's stamped properties — everything a visitor may see, none of
-          // it editable. The leading lock icon marks each row read-only.
           <section className="min-w-0">
             <div className={propertyListClass}>
               <InfoRow label="Status">
@@ -274,8 +257,6 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   );
 }
 
-// One read-only row of the info list — mirrors PropertiesEditor's system-row
-// shape (lock icon | key | value) so shares and the owner view read alike.
 function InfoRow({
   label,
   title,

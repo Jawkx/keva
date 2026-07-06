@@ -25,13 +25,8 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 
-// Read view: the Files-page master/detail layout, scoped to the share. The list
-// fills the pane until a row is picked, then splits to show the read-only detail
-// beside it (wide) or in a bottom sheet (narrow). Read+write grants get the
-// compact upload zone pinned above the list.
 function ShareReadView({ canWrite }: { canWrite: boolean }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Split only makes sense once there's room for two panes side by side.
   const isWide = useMediaQuery("(min-width: 1024px)");
   const splitOpen = Boolean(selectedId) && isWide;
 
@@ -75,7 +70,6 @@ function ShareReadView({ canWrite }: { canWrite: boolean }) {
         <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">{list}</div>
       )}
 
-      {/* Narrow screens: detail opens as a bottom sheet over the list. */}
       <Sheet
         open={Boolean(selectedId) && !isWide}
         onOpenChange={(open) => {
@@ -85,7 +79,11 @@ function ShareReadView({ canWrite }: { canWrite: boolean }) {
         <SheetContent side="bottom" showCloseButton={false} className="h-[85vh] p-0">
           <SheetTitle className="sr-only">File details</SheetTitle>
           {selectedId && (
-            <ShareFileDetail key={selectedId} itemId={selectedId} onClose={() => setSelectedId(null)} />
+            <ShareFileDetail
+              key={selectedId}
+              itemId={selectedId}
+              onClose={() => setSelectedId(null)}
+            />
           )}
         </SheetContent>
       </Sheet>
@@ -93,8 +91,6 @@ function ShareReadView({ canWrite }: { canWrite: boolean }) {
   );
 }
 
-// Body rendered inside the share-scoped QueryClient. Loads the share's
-// self-descriptor and picks the layout from its scopes.
 function ShareBody({ client, onGone }: { client: ShareClient; onGone: () => void }) {
   const selfQuery = useQuery({ queryKey: ["share-self"], queryFn: () => client.self() });
 
@@ -117,7 +113,6 @@ function ShareBody({ client, onGone }: { client: ShareClient; onGone: () => void
         {canRead ? (
           <ShareReadView canWrite={canWrite} />
         ) : (
-          // Write-only grant: no list to browse, just the centered drop zone.
           <div className="min-h-0 flex-1 overflow-auto">
             <div className="mx-auto w-full max-w-2xl px-4 py-6">
               <ShareUploadZone />
@@ -152,7 +147,6 @@ export function SharePage() {
     });
   });
 
-  // No network call for a token that isn't even shaped like a share token.
   if (!valid || linkDead) return <ShareUnavailable />;
 
   return (

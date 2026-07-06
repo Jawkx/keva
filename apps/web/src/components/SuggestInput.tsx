@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils";
 interface SuggestInputProps {
   value: string;
   onValueChange: (value: string) => void;
-  // Existing keys/values to offer as completions. Free text is always allowed:
-  // the input value is the source of truth, suggestions only assist.
   suggestions: readonly string[];
   placeholder?: string | undefined;
   className?: string | undefined;
@@ -16,8 +14,6 @@ interface SuggestInputProps {
   invalid?: boolean | undefined;
   inputMode?: React.ComponentProps<"input">["inputMode"];
   type?: React.ComponentProps<"input">["type"];
-  // Fired when Enter is pressed without accepting a highlighted suggestion, so
-  // the surrounding form can submit.
   onEnter?: (() => void) | undefined;
   onBlur?: (() => void) | undefined;
 }
@@ -32,10 +28,6 @@ const listClass = "max-h-56 scroll-py-1 overflow-y-auto overscroll-contain p-1";
 const itemClass =
   "relative flex w-full cursor-default items-center truncate rounded-md px-2 py-1 text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground";
 
-// A text input backed by an autocomplete popup. Suggestions are filtered here
-// (not by the primitive) so the popup only opens when there is something to
-// pick — a free-text field never flashes a "no matches" box while the user is
-// typing a brand-new value.
 export function SuggestInput({
   value,
   onValueChange,
@@ -60,7 +52,6 @@ export function SuggestInput({
     return suggestions
       .filter((suggestion) => {
         const candidate = suggestion.toLowerCase();
-        // Drop the exact match: offering back what's already typed is noise.
         return candidate.includes(query) && candidate !== query;
       })
       .slice(0, MAX_SUGGESTIONS);

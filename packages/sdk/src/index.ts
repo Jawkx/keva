@@ -57,9 +57,6 @@ export type {
   UsageResultType as UsageResult,
 };
 
-// Share links carry a `keva_sh_` bearer token (vs. `keva_sk_` API tokens). The
-// web app uses this to validate a `/s/:token` route param before any network
-// call.
 export const SHARE_TOKEN_PREFIX = "keva_sh_";
 export const isShareToken = (token: string): boolean => token.startsWith(SHARE_TOKEN_PREFIX);
 
@@ -136,9 +133,7 @@ const httpRequest = async <A, I>(
   try {
     return decode(schema, payload);
   } catch {
-    throw new KevaProtocolError(
-      `Server returned ${response.status} with an invalid response body`,
-    );
+    throw new KevaProtocolError(`Server returned ${response.status} with an invalid response body`);
   }
 };
 
@@ -261,18 +256,15 @@ export class KevaClient {
     return this.#request("POST", "/query", QueryResult, decode(Query, query));
   }
 
-  // Storage usage: totals + per-content-type breakdown for the tenant.
   usage(): Promise<UsageResultType> {
     return this.#request("GET", "/usage", UsageResult);
   }
 
-  // Distinct property keys across the tenant, for key autocomplete.
   async propertyKeys(): Promise<string[]> {
     const { keys } = await this.#request("GET", "/properties/keys", PropertyKeysResult);
     return [...keys];
   }
 
-  // Distinct scalar values seen for one property key, for value autocomplete.
   async propertyValues(key: string): Promise<PropertyScalarType[]> {
     const { values } = await this.#request(
       "GET",
@@ -294,11 +286,13 @@ export class KevaClient {
     return this.#request("POST", "/items/delete", BatchDeleteResult, decode(BatchDelete, { ids }));
   }
 
-  // ── Share grants (owner session) ────────────────────────────────────────
-
-  // Mint a share link. The plaintext token in the result is shown once.
   createShare(input: CreateShareGrantType): Promise<CreateShareGrantResultType> {
-    return this.#request("POST", "/shares", CreateShareGrantResult, decode(CreateShareGrant, input));
+    return this.#request(
+      "POST",
+      "/shares",
+      CreateShareGrantResult,
+      decode(CreateShareGrant, input),
+    );
   }
 
   async listShares(): Promise<ShareGrantRecordType[]> {

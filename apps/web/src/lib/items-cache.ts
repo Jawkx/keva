@@ -2,10 +2,6 @@ import type { InfiniteData } from "@tanstack/react-query";
 import type { QueryCondition, QueryOrder } from "@keva/schema";
 import type { KevaItem, QueryResult } from "@keva/sdk";
 
-// Helpers for editing the cached item list in place after a mutation, so the
-// UI updates without a refetch (no flicker, kept pages + scroll). Both are
-// no-ops on an empty/undefined cache and return a fresh object so React Query
-// sees the change.
 export type ItemsCache = InfiniteData<QueryResult, string | undefined>;
 
 export const itemsQueryKey = (

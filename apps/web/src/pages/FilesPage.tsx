@@ -91,17 +91,10 @@ const DEFAULT_ORDER = "created_at_desc" as const;
 
 const plural = (n: number) => (n === 1 ? "item" : "items");
 
-// A table row is either a real item from the server or an optimistic row for a
-// file that is still uploading (or failed). The optimistic row borrows the
-// KevaItem shape — only `name`, `contentType` and `size` are real; the rest are
-// placeholders that never reach the screen — plus a client-only `upload` marker.
 type FileRow = KevaItem & {
   upload?: { status: "uploading" | "error"; file: File; error?: string };
 };
 
-// Placeholder fields are never rendered (uploading rows show name/type/size
-// only); they exist solely to satisfy the KevaItem shape until the real item
-// arrives. `createdAt: now` keeps the row at the top under the default sort.
 const optimisticRow = (id: string, file: File): FileRow => {
   const now = new Date().toISOString();
   return {
@@ -126,8 +119,6 @@ const optimisticRow = (id: string, file: File): FileRow => {
 
 const columnHelper = createColumnHelper<FileRow>();
 
-// Selection column stays out of the way until a row is hovered or selection
-// mode is active (anything selected); the table meta carries that flag.
 const selectModeOf = (meta: unknown) =>
   Boolean((meta as { selectMode?: boolean } | undefined)?.selectMode);
 
@@ -240,7 +231,6 @@ export function FilesPage() {
   const navigate = useNavigate();
   const { id: selectedId } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  // Split layout only makes sense once there's room for two panes side by side.
   const isWide = useMediaQuery("(min-width: 1024px)");
 
   const [search, setSearch] = useState("");
@@ -261,11 +251,7 @@ export function FilesPage() {
   // affordance rather than roll back, and survive list refetches.
   const [uploads, setUploads] = useState<FileRow[]>([]);
 
-  // Hidden file input behind the Upload buttons — clicking one opens the native
-  // picker directly and uploads on selection (no intermediate modal).
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  // Share dialog. Remounted by key so it re-snapshots the current filters
-  // (activeWhere) and resets its form each time it opens.
   const [shareOpen, setShareOpen] = useState(false);
   const [shareKey, setShareKey] = useState(0);
   const openShare = () => {
@@ -296,12 +282,8 @@ export function FilesPage() {
     () => itemsQuery.data?.pages.flatMap((p) => p.items) ?? [],
     [itemsQuery.data],
   );
-  // Upload rows sit on top of the server list; memoized so react-table doesn't
-  // rebuild its row model every render.
   const tableData = useMemo<FileRow[]>(() => [...uploads, ...serverItems], [uploads, serverItems]);
 
-  // Detail open in the side panel; collapse secondary columns so the list
-  // stays readable in the narrower remaining space.
   const splitOpen = Boolean(selectedId) && isWide;
   const columnVisibility: VisibilityState = {
     contentType: !splitOpen,
@@ -310,7 +292,6 @@ export function FilesPage() {
   };
 
   const selectMode = Object.values(rowSelection).some(Boolean);
-  // Whether anything is narrowing the list — drives the toolbar "Clear" button.
   const filtered = activeSearch.trim().length > 0 || activeWhere.length > 0;
 
   // Upload lifecycle. Files appear instantly as optimistic rows; each upload
@@ -334,7 +315,6 @@ export function FilesPage() {
             (old) => (old ? prependItemToPages(old, item) : old),
           );
         }
-        // A confirmed upload changes storage usage regardless of the list path.
         void queryClient.invalidateQueries({ queryKey: usageQueryKey });
         setUploads((prev) => prev.filter((r) => r.id !== id));
       } catch (err) {
@@ -374,8 +354,6 @@ export function FilesPage() {
     columns,
     state: { columnVisibility, rowSelection },
     getRowId: (row) => row.id,
-    // In-flight / failed uploads aren't real items yet, so they can't be
-    // selected or bulk-deleted.
     enableRowSelection: (row) => !row.original.upload,
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
@@ -383,8 +361,6 @@ export function FilesPage() {
   });
 
   const rows = table.getRowModel().rows;
-  // Intersect selection with currently loaded rows so a stale id (e.g. after a
-  // search narrows the list) never counts toward the action bar.
   const selectedRows = table.getSelectedRowModel().rows;
   const selectedCount = selectedRows.length;
 
@@ -397,8 +373,6 @@ export function FilesPage() {
   };
 
   const closeDetail = () => navigate("/");
-  // The delete itself (and its list-cache removal) happens in FileDetail; here
-  // we just close the panel.
   const onDeleted = () => navigate("/");
 
   const bulkDeleteMutation = useMutation({
@@ -419,7 +393,6 @@ export function FilesPage() {
         void queryClient.invalidateQueries({ queryKey: usageQueryKey });
       }
       setRowSelection({});
-      // The open detail may have been one of the deleted rows.
       if (selectedId && ids.includes(selectedId)) navigate("/");
     },
     onError: (err) => toast.error(errorMessage(err)),
@@ -430,8 +403,6 @@ export function FilesPage() {
     if (ids.length > 0) bulkDeleteMutation.mutate(ids);
   };
 
-  // Update the controlled value instantly; commit the active search — which
-  // swaps the query key and auto-refetches — after a short pause. No submit.
   const onSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     setSearch(value);
@@ -442,15 +413,11 @@ export function FilesPage() {
     }, 300);
   };
 
-  // Advanced conditions + quick facets commit here; swapping activeWhere swaps
-  // the query key so the list refetches.
   const applyFilters = (where: QueryCondition[]) => {
     setActiveWhere(where);
     setRowSelection({});
   };
 
-  // One-click back to the full list: drop the search text, conditions, facets,
-  // and any pending search debounce.
   const clearFilters = () => {
     window.clearTimeout(searchTimer.current);
     setSearch("");
@@ -497,7 +464,6 @@ export function FilesPage() {
                 }
                 className={cn("group", !row.original.upload && "cursor-pointer")}
                 onClick={() => {
-                  // Uploading / failed rows aren't real items — nothing to open.
                   if (row.original.upload) return;
                   navigate(row.original.id === selectedId ? "/" : `/items/${row.original.id}`);
                 }}
@@ -506,7 +472,6 @@ export function FilesPage() {
                   <TableCell
                     key={cell.id}
                     className={cell.column.id === "select" ? "w-10" : undefined}
-                    // The checkbox cell toggles selection; don't also open detail.
                     onClick={cell.column.id === "select" ? (e) => e.stopPropagation() : undefined}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -532,8 +497,6 @@ export function FilesPage() {
 
   const hasItems = tableData.length > 0;
 
-  // Left pane: its own toolbar (filter + upload) above the scrollable table.
-  // Used full-width when no detail is open, and as the left side of the split.
   const leftPane = (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-3 p-3">
@@ -716,7 +679,6 @@ export function FilesPage() {
         <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">{leftPane}</div>
       )}
 
-      {/* Narrow screens: detail opens as a bottom sheet over the list. */}
       <Sheet
         open={Boolean(selectedId) && !isWide}
         onOpenChange={(open) => {

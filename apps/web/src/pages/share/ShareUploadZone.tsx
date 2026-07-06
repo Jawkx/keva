@@ -30,14 +30,9 @@ export interface ShareUpload {
   uploads: readonly UploadState[];
   addFiles: (list: FileList | null) => void;
   retry: (entry: UploadState) => void;
-  // A short "used / limit" summary when the grant caps size or count, else null.
   quotaHint: string | null;
 }
 
-// The upload state machine for a share, shared by every write affordance (the
-// toolbar button + its progress list, or the write-only hero drop zone).
-// Uploads run through the ShareClient (initiate → PUT → confirm); the server
-// force-applies the grant's property stamp, so there is nothing to configure.
 export function useShareUpload(): ShareUpload {
   const { client, self, onGone } = useShare();
   const queryClient = useQueryClient();
@@ -48,7 +43,6 @@ export function useShareUpload(): ShareUpload {
     try {
       await client.uploadFile(entry.file);
       setUploads((prev) => prev.map((u) => (u.id === entry.id ? { ...u, status: "done" } : u)));
-      // Refresh the list so the new file appears (read+write grants only).
       if (canRead) void queryClient.invalidateQueries({ queryKey: ["share-items"] });
     } catch (err) {
       // A revoked/expired link mid-upload takes down the whole page.
@@ -98,9 +92,6 @@ export function useShareUpload(): ShareUpload {
   return { uploads, addFiles, retry, quotaHint };
 }
 
-// Toolbar upload trigger for read+write shares — a plain button (matching the
-// owner's Files toolbar) that opens the file picker, with the grant's quota
-// shown beside it when there is one.
 export function ShareUploadButton({
   onFiles,
   quotaHint,
@@ -118,18 +109,11 @@ export function ShareUploadButton({
         <IconUpload data-icon="inline-start" />
         Upload
       </Button>
-      <input
-        ref={inputRef}
-        type="file"
-        hidden
-        multiple
-        onChange={(e) => onFiles(e.target.files)}
-      />
+      <input ref={inputRef} type="file" hidden multiple onChange={(e) => onFiles(e.target.files)} />
     </div>
   );
 }
 
-// The in-progress / failed upload rows. Renders nothing while idle.
 export function ShareUploadProgress({
   uploads,
   retry,
@@ -171,8 +155,6 @@ export function ShareUploadProgress({
   );
 }
 
-// Write-only shares have no list to browse, so uploading IS the page: a large
-// drop target with the quota and progress beneath it.
 export function ShareUploadZone() {
   const { uploads, addFiles, retry, quotaHint } = useShareUpload();
   const inputRef = useRef<HTMLInputElement>(null);

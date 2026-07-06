@@ -75,7 +75,6 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
   const run = <A, E>(effect: Effect.Effect<A, E, BlobStore | MetadataStore>) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)));
 
-  // initiate → stage bytes → confirm, returning the ready item's id
   const createReady = (p: Principal, name: string, body: string) =>
     Effect.gen(function* () {
       const engine = makeKevaEngine(p);
@@ -152,7 +151,6 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       }),
     );
 
-    // "restart": a brand-new store instance over the same database
     const fresh = makePostgresMetadataStore(sql);
     const fetched = await Effect.runPromise(
       makeKevaEngine(p)
@@ -202,7 +200,6 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
           limit: 100,
           order: "created_at_asc",
         });
-        // tenant B cannot see tenant A's items
         const crossTenant = yield* makeKevaEngine(principal(tenantB)).query({
           where: [{ key: "kind", op: "eq", value: "doc" }],
           limit: 100,
@@ -323,7 +320,6 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
           source: "upload",
           properties: {},
         });
-        // backdate the pending row so the reaper's cutoff includes it
         yield* Effect.promise(() =>
           sql`update items set created_at = now() - interval '1 hour'
               where id = ${initiated.item.id}`.then(() => undefined),
@@ -332,7 +328,6 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         const blobs = yield* BlobStore;
         yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
 
-        // confirm and reaper contend for the same pending row
         const [confirmExit, reaped] = yield* Effect.all(
           [Effect.either(engine.confirm(initiated.item.id)), reapPending({ pendingTtlMs: 1 })],
           { concurrency: "unbounded" },
@@ -345,11 +340,9 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
     );
 
     if (outcome.confirmExit._tag === "Right") {
-      // confirm won: item is ready, reaper found nothing to reap
       expect(outcome.status).toBe("ready");
       expect(outcome.reaped).toBe(0);
     } else {
-      // reaper won: confirm saw the row leave 'pending' → Conflict; row deleting
       expect(outcome.confirmExit.left._tag).toBe("Conflict");
       expect(outcome.status).toBe("deleting");
       expect(outcome.reaped).toBe(1);

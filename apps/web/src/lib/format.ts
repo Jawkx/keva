@@ -31,8 +31,6 @@ const relativeFormatter = new Intl.RelativeTimeFormat(undefined, {
   numeric: "auto",
 });
 
-// "3 hours ago", "yesterday", "in 2 days" — reads more human than a raw
-// locale timestamp in dense lists. Falls back to the raw string on bad input.
 export const formatRelative = (iso: string): string => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -45,8 +43,6 @@ export const formatRelative = (iso: string): string => {
   return relativeFormatter.format(Math.round(seconds), "second");
 };
 
-// Short, human label for a MIME type — "application/pdf" → "PDF", "image/png"
-// → "PNG". The full type still appears in the detail panel and as a tooltip.
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   jpeg: "JPEG",
   json: "JSON",

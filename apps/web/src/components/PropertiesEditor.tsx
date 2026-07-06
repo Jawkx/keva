@@ -38,27 +38,16 @@ import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
-// An item is one bag of key→value pairs: system-owned keys are read-only, the
-// user's own properties are editable. They render as ONE list (not two groups),
-// each row led by an icon that says which it is — a lock for system, a clickable
-// type icon for editable properties. The last row of the list is the add row.
-// JSON is a hand-edit escape hatch (arrays, bulk edits).
 type Mode = "rows" | "json";
 
-// A read-only system field, supplied by the parent as pre-rendered value nodes
-// (badges, relative dates, copy buttons) so this component can weave them into
-// the same list as the editable custom rows.
 export interface SystemField {
   key: string;
   value: ReactNode;
   title?: string | undefined;
 }
 
-// The bordered, divided container that grounds the property rows.
 export const propertyListClass = "divide-y divide-border overflow-hidden rounded-lg border";
 
-// The type a stored value edits as. Arrays aren't edited by the scalar control
-// (they're shown read-only and otherwise edited in JSON), so they map to text.
 const editTypeOf = (value: PropertyValue): ScalarType => {
   const type = valueType(value);
   return type === "array" ? "string" : type;
@@ -80,8 +69,6 @@ const TYPE_OPTS: { type: ScalarType; label: string; Icon: typeof IconTag }[] = [
 ];
 const typeMeta = (type: ScalarType) => TYPE_OPTS.find((o) => o.type === type)!;
 
-// A borderless input that reads as plain text (like a system row's value) until
-// you hover or focus it, so a *set* property matches the read-only rows.
 const GHOST_INPUT =
   "h-7 border-transparent bg-transparent px-1.5 shadow-none hover:border-input dark:bg-transparent";
 
@@ -104,7 +91,6 @@ interface FieldProps {
 export function PropertiesEditor({ properties, systemRows, onPatch }: PropertiesEditorProps) {
   const [mode, setMode] = useState<Mode>("rows");
   const [busy, setBusy] = useState(false);
-  // Distinct keys across the whole tenant, offered as autocomplete options.
   const knownKeys = usePropertyKeys();
   const knownSet = useMemo(() => new Set(knownKeys), [knownKeys]);
 
@@ -157,8 +143,6 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
   );
 }
 
-// One row of the unified list: leading icon | key | value | trailing action.
-// System and custom rows share it so they line up as a single list.
 function PropRow({
   icon,
   label,
@@ -199,7 +183,6 @@ function PropRow({
   );
 }
 
-// The system rows woven into the list — a muted lock marks them read-only.
 const systemRowNodes = (rows: readonly SystemField[]) =>
   rows.map((f) => (
     <PropRow
@@ -217,7 +200,6 @@ const systemRowNodes = (rows: readonly SystemField[]) =>
     </PropRow>
   ));
 
-// The reveal-on-hover remove button used by editable rows.
 function RemoveButton({
   label,
   busy,
@@ -240,8 +222,6 @@ function RemoveButton({
   );
 }
 
-// The leading type icon on an editable row: shows the value's type and opens a
-// menu to change it — this is the "force to boolean" affordance.
 function TypeMenu({
   value,
   disabled,
@@ -282,9 +262,6 @@ function TypeMenu({
   );
 }
 
-// The value cell for an editable scalar: a bare tag shows "—", a boolean shows a
-// true/false toggle, and text/number show a ghost input. `onCommit` fires when
-// the value should persist (blur, Enter, bool flip); `onEnter` submits an add.
 function ScalarValue({
   type,
   draft,
@@ -339,10 +316,6 @@ function ScalarValue({
   );
 }
 
-// One editable custom row. Set values read like a system row (clean text via a
-// ghost input); the leading type icon changes type; edits persist on blur,
-// Enter, a type change, or a bool flip — but only when the value actually
-// changes. Arrays are read-only here (edit in JSON).
 function CustomRow({
   propKey,
   value,
@@ -405,8 +378,6 @@ function CustomRow({
   );
 }
 
-// The add row — the last row of the list. Same shape as a custom row: leading
-// type icon | key input | value | a "+" icon button that commits.
 function AddRow({
   busy,
   availableKeys,
