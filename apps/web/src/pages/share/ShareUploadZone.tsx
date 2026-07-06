@@ -1,6 +1,12 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { IconAlertTriangle, IconCheck, IconCloudUpload, IconLoader2 } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconCheck,
+  IconCloudUpload,
+  IconLoader2,
+  IconUpload,
+} from "@tabler/icons-react";
 import { errorMessage, isShareGone, type TaggedError } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { useShare } from "./share-context";
@@ -20,16 +26,22 @@ const isQuotaError = (error: unknown): boolean =>
   "_tag" in error &&
   (error as TaggedError)._tag === "QuotaExceeded";
 
-// Write view of a share. "hero" is the standalone drop-box for write-only
-// grants; "compact" sits above the list for read+write grants. Uploads run
-// through the ShareClient (initiate → PUT → confirm); the server force-applies
-// the grant's property stamp, so there is no properties editor here.
-export function ShareUploadZone({ variant }: { variant: "hero" | "compact" }) {
+export interface ShareUpload {
+  uploads: readonly UploadState[];
+  addFiles: (list: FileList | null) => void;
+  retry: (entry: UploadState) => void;
+  // A short "used / limit" summary when the grant caps size or count, else null.
+  quotaHint: string | null;
+}
+
+// The upload state machine for a share, shared by every write affordance (the
+// toolbar button + its progress list, or the write-only hero drop zone).
+// Uploads run through the ShareClient (initiate → PUT → confirm); the server
+// force-applies the grant's property stamp, so there is nothing to configure.
+export function useShareUpload(): ShareUpload {
   const { client, self, onGone } = useShare();
   const queryClient = useQueryClient();
   const canRead = self.scopes.includes("read");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
   const [uploads, setUploads] = useState<UploadState[]>([]);
 
   const runUpload = async (entry: UploadState) => {
@@ -72,15 +84,99 @@ export function ShareUploadZone({ variant }: { variant: "hero" | "compact" }) {
 
   const limits = self.upload;
   const quotaHint =
-    limits &&
-    [
-      limits.maxItems !== null ? `${limits.usedItems}/${limits.maxItems} files` : null,
-      limits.maxTotalBytes !== null
-        ? `${formatBytes(limits.usedBytes)} / ${formatBytes(limits.maxTotalBytes)}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    (limits &&
+      [
+        limits.maxItems !== null ? `${limits.usedItems}/${limits.maxItems} files` : null,
+        limits.maxTotalBytes !== null
+          ? `${formatBytes(limits.usedBytes)} / ${formatBytes(limits.maxTotalBytes)}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")) ||
+    null;
+
+  return { uploads, addFiles, retry, quotaHint };
+}
+
+// Toolbar upload trigger for read+write shares — a plain button (matching the
+// owner's Files toolbar) that opens the file picker, with the grant's quota
+// shown beside it when there is one.
+export function ShareUploadButton({
+  onFiles,
+  quotaHint,
+}: {
+  onFiles: (list: FileList | null) => void;
+  quotaHint: string | null;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="flex items-center gap-2">
+      {quotaHint && (
+        <span className="hidden text-xs text-muted-foreground sm:inline">{quotaHint}</span>
+      )}
+      <Button onClick={() => inputRef.current?.click()}>
+        <IconUpload data-icon="inline-start" />
+        Upload
+      </Button>
+      <input
+        ref={inputRef}
+        type="file"
+        hidden
+        multiple
+        onChange={(e) => onFiles(e.target.files)}
+      />
+    </div>
+  );
+}
+
+// The in-progress / failed upload rows. Renders nothing while idle.
+export function ShareUploadProgress({
+  uploads,
+  retry,
+}: {
+  uploads: readonly UploadState[];
+  retry: (entry: UploadState) => void;
+}) {
+  if (uploads.length === 0) return null;
+  const firstError = uploads.find((u) => u.status === "error")?.error;
+  return (
+    <div className="flex flex-col gap-1">
+      <ul className="flex flex-col gap-1">
+        {uploads.map((entry) => (
+          <li
+            key={entry.id}
+            className="flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-sm"
+          >
+            {entry.status === "uploading" && (
+              <IconLoader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+            )}
+            {entry.status === "done" && <IconCheck className="size-4 shrink-0 text-primary" />}
+            {entry.status === "error" && (
+              <IconAlertTriangle className="size-4 shrink-0 text-destructive" />
+            )}
+            <span className="min-w-0 flex-1 truncate">{entry.file.name}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {formatBytes(entry.file.size)}
+            </span>
+            {entry.status === "error" && (
+              <Button size="sm" variant="ghost" onClick={() => retry(entry)}>
+                Retry
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {firstError && <p className="text-xs text-destructive">{firstError}</p>}
+    </div>
+  );
+}
+
+// Write-only shares have no list to browse, so uploading IS the page: a large
+// drop target with the quota and progress beneath it.
+export function ShareUploadZone() {
+  const { uploads, addFiles, retry, quotaHint } = useShareUpload();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -98,53 +194,23 @@ export function ShareUploadZone({ variant }: { variant: "hero" | "compact" }) {
           addFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input text-center transition-colors hover:bg-muted/50",
-          variant === "hero" ? "p-12" : "p-6",
+          "flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-12 text-center transition-colors hover:bg-muted/50",
           dragging && "border-primary bg-primary/5",
         )}
       >
-        <IconCloudUpload
-          className={cn("text-muted-foreground", variant === "hero" ? "size-8" : "size-6")}
-        />
-        <span className="text-sm text-muted-foreground">
-          Drag files here, or click to choose
-        </span>
+        <IconCloudUpload className="size-8 text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Drag files here, or click to choose</span>
         {quotaHint && <span className="text-xs text-muted-foreground">{quotaHint}</span>}
-        <input ref={inputRef} type="file" hidden multiple onChange={(e) => addFiles(e.target.files)} />
+        <input
+          ref={inputRef}
+          type="file"
+          hidden
+          multiple
+          onChange={(e) => addFiles(e.target.files)}
+        />
       </button>
 
-      {uploads.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {uploads.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-sm"
-            >
-              {entry.status === "uploading" && (
-                <IconLoader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-              )}
-              {entry.status === "done" && <IconCheck className="size-4 shrink-0 text-primary" />}
-              {entry.status === "error" && (
-                <IconAlertTriangle className="size-4 shrink-0 text-destructive" />
-              )}
-              <span className="min-w-0 flex-1 truncate">{entry.file.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                {formatBytes(entry.file.size)}
-              </span>
-              {entry.status === "error" && (
-                <Button size="sm" variant="ghost" onClick={() => retry(entry)}>
-                  Retry
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {uploads.some((u) => u.status === "error") && (
-        <p className="text-xs text-destructive">
-          {uploads.find((u) => u.status === "error")?.error}
-        </p>
-      )}
+      <ShareUploadProgress uploads={uploads} retry={retry} />
     </div>
   );
 }

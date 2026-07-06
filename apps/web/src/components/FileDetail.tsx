@@ -14,6 +14,7 @@ import { PDFViewer } from "@/components/ui/pdf-viewer";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate, formatRelative } from "../lib/format";
 import { removeItemsFromPages, replaceItemInPages, type ItemsCache } from "../lib/items-cache";
+import { isCsv, isImage, isPdf, isPreviewable } from "../lib/preview";
 import { keva } from "../lib/keva";
 import { objectUrlFor, revokeObjectUrl } from "../lib/object-url-cache";
 import { usageQueryKey } from "../lib/use-usage";
@@ -40,24 +41,6 @@ type Preview =
   | { kind: "pdf"; url: string }
   | { kind: "csv"; text: string }
   | { kind: "text"; text: string };
-
-const IMAGE_MAX = 5 * 1024 * 1024;
-const PDF_MAX = 25 * 1024 * 1024;
-const TEXT_MAX = 256 * 1024;
-const isImage = (o: KevaItem) => o.contentType.startsWith("image/");
-const isPdf = (o: KevaItem) => o.contentType === "application/pdf";
-const isCsv = (o: KevaItem) =>
-  o.contentType === "text/csv" ||
-  o.contentType === "text/tab-separated-values" ||
-  o.contentType === "application/csv";
-const isText = (o: KevaItem) =>
-  o.contentType.startsWith("text/") ||
-  o.contentType === "application/json" ||
-  o.contentType === "application/xml";
-const isPreviewable = (o: KevaItem) =>
-  (isImage(o) && (o.size ?? Infinity) <= IMAGE_MAX) ||
-  (isPdf(o) && (o.size ?? Infinity) <= PDF_MAX) ||
-  (isText(o) && (o.size ?? Infinity) <= TEXT_MAX);
 
 type Panel = "preview" | "properties";
 

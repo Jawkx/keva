@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 type WordmarkProps = {
-  /** "sm" for the sidebar, "lg" for the marketing/auth hero. */
+  /** "sm" for the sidebar/header, "lg" for the marketing/auth hero. */
   size?: "sm" | "lg";
   className?: string;
   /** Extra classes for the "eva" text — e.g. to hide it when the sidebar collapses. */
@@ -9,34 +9,45 @@ type WordmarkProps = {
 };
 
 // The logo PNG is a big "K"; "eva" is rendered as text so the pair reads as the
-// "Keva" wordmark. Two size presets, each with tuned nudges:
-//   -ml-*        The icon has ~15% transparent side padding baked in, so the
-//                glyph's visual right edge stops short of its box. This negative
-//                left margin (scales with the icon) pulls "eva" back over that
-//                padding so the two kern as one word instead of floating apart.
-//   translate-y  We bottom-align the boxes (items-end), but the font reserves
-//                descender space below the baseline, so "eva" (no descenders)
-//                floats above the glyph. This nudge drops the baseline onto the
-//                glyph's visual bottom; it tracks the font's descent, so it grows
-//                with the text size (hence ~1px at sm but ~13px at lg).
-// Values are measured against this specific font + icon; re-check if either changes.
+// "Keva" wordmark. Aligning an image glyph with text is what made earlier
+// versions fiddly, so this derives the alignment instead of guessing it:
+//
+//   items-baseline  Flexbox aligns an <img>'s bottom edge to the text baseline.
+//                   That sidesteps the font's descender space entirely — the
+//                   reason bottom-aligning the boxes (items-end) left "eva"
+//                   floating above the "K" and needed per-size translate hacks.
+//
+// The icon has transparent padding baked in (measured once from the 192px
+// canvas: the glyph occupies x[29..162] y[14..178]). We express that padding as
+// FRACTIONS of the image, so a single formula aligns the pair at any size:
+//   BOTTOM_PAD  transparent space below the glyph → nudge the K down by that much
+//               so its visual bottom (not its box bottom) lands on the baseline.
+//   RIGHT_PAD   transparent space right of the glyph → pull "eva" left by that
+//               much so the two kern as one word instead of floating apart.
+// Re-measure if the icon asset changes.
+const BOTTOM_PAD = 0.068;
+const RIGHT_PAD = 0.151;
+
+// img = rendered "K" box in px; font = "eva" font-size in px (tuned to read at
+// the same visual weight as the glyph).
 const SIZES = {
-  sm: { img: "size-8", text: "text-[1.8rem]", nudge: "-ml-1 translate-y-px" },
-  lg: { img: "size-11", text: "text-[2.6rem]", nudge: "-ml-1.5 translate-y-[13px]" },
+  sm: { img: 32, font: 29 },
+  lg: { img: 44, font: 42 },
 } as const;
 
 export function Wordmark({ size = "sm", className, textClassName }: WordmarkProps) {
-  const s = SIZES[size];
+  const { img, font } = SIZES[size];
   return (
-    <span className={cn("inline-flex items-end", className)}>
-      <img src="/android-chrome-192x192.png" alt="K" className={cn(s.img, "object-contain")} />
+    <span className={cn("inline-flex items-baseline", className)}>
+      <img
+        src="/android-chrome-192x192.png"
+        alt="K"
+        className="object-contain"
+        style={{ width: img, height: img, transform: `translateY(${img * BOTTOM_PAD}px)` }}
+      />
       <span
-        className={cn(
-          "font-heading font-semibold leading-none text-primary",
-          s.text,
-          s.nudge,
-          textClassName,
-        )}
+        className={cn("font-heading font-semibold leading-none text-primary", textClassName)}
+        style={{ fontSize: font, marginLeft: -(img * RIGHT_PAD) }}
       >
         eva
       </span>

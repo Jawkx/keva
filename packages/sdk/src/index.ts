@@ -366,6 +366,20 @@ export class ShareClient {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
   }
 
+  async downloadResponse(id: string): Promise<Response> {
+    const target = await this.getDownloadUrl(id);
+    const response = await this.#config.fetch(target.url);
+    if (!response.ok) {
+      throw new KevaProtocolError(`Blob download failed with ${response.status}`);
+    }
+    return response;
+  }
+
+  async downloadBytes(id: string): Promise<Uint8Array> {
+    const response = await this.downloadResponse(id);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   confirm(id: string): Promise<SharedItemType> {
     return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, SharedItem);
   }

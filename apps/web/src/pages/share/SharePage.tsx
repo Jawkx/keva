@@ -9,12 +9,89 @@ import {
 } from "@tanstack/react-query";
 import { isShareToken, ShareClient } from "@keva/sdk";
 import { isShareGone } from "../../lib/errors";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { ShareContextProvider } from "./share-context";
+import { ShareFileDetail } from "./ShareFileDetail";
 import { ShareItemList } from "./ShareItemList";
 import { ShareShell } from "./ShareShell";
 import { ShareUnavailable } from "./ShareUnavailable";
-import { ShareUploadZone } from "./ShareUploadZone";
+import {
+  ShareUploadButton,
+  ShareUploadProgress,
+  ShareUploadZone,
+  useShareUpload,
+} from "./ShareUploadZone";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
+
+// Read view: the Files-page master/detail layout, scoped to the share. The list
+// fills the pane until a row is picked, then splits to show the read-only detail
+// beside it (wide) or in a bottom sheet (narrow). Read+write grants get the
+// compact upload zone pinned above the list.
+function ShareReadView({ canWrite }: { canWrite: boolean }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Split only makes sense once there's room for two panes side by side.
+  const isWide = useMediaQuery("(min-width: 1024px)");
+  const splitOpen = Boolean(selectedId) && isWide;
+
+  // Always call the hook (rules of hooks); its result is only wired in for
+  // grants that can actually upload.
+  const upload = useShareUpload();
+
+  const list = (
+    <ShareItemList
+      selectedId={selectedId}
+      onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
+      collapsed={splitOpen}
+      action={
+        canWrite ? (
+          <ShareUploadButton onFiles={upload.addFiles} quotaHint={upload.quotaHint} />
+        ) : undefined
+      }
+      notice={
+        canWrite ? <ShareUploadProgress uploads={upload.uploads} retry={upload.retry} /> : undefined
+      }
+    />
+  );
+
+  return (
+    <div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
+      {splitOpen ? (
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 w-full min-w-0 flex-1">
+          <ResizablePanel defaultSize={58} minSize={35} className="min-w-0">
+            {list}
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={42} minSize={28} className="min-w-0">
+            <ShareFileDetail
+              key={selectedId}
+              itemId={selectedId!}
+              onClose={() => setSelectedId(null)}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      ) : (
+        <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">{list}</div>
+      )}
+
+      {/* Narrow screens: detail opens as a bottom sheet over the list. */}
+      <Sheet
+        open={Boolean(selectedId) && !isWide}
+        onOpenChange={(open) => {
+          if (!open) setSelectedId(null);
+        }}
+      >
+        <SheetContent side="bottom" showCloseButton={false} className="h-[85vh] p-0">
+          <SheetTitle className="sr-only">File details</SheetTitle>
+          {selectedId && (
+            <ShareFileDetail key={selectedId} itemId={selectedId} onClose={() => setSelectedId(null)} />
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
 
 // Body rendered inside the share-scoped QueryClient. Loads the share's
 // self-descriptor and picks the layout from its scopes.
@@ -37,10 +114,16 @@ function ShareBody({ client, onGone }: { client: ShareClient; onGone: () => void
   return (
     <ShareContextProvider value={{ client, self, onGone }}>
       <ShareShell name={self.name}>
-        <div className="flex flex-col gap-6">
-          {canWrite && <ShareUploadZone variant={canRead ? "compact" : "hero"} />}
-          {canRead && <ShareItemList />}
-        </div>
+        {canRead ? (
+          <ShareReadView canWrite={canWrite} />
+        ) : (
+          // Write-only grant: no list to browse, just the centered drop zone.
+          <div className="min-h-0 flex-1 overflow-auto">
+            <div className="mx-auto w-full max-w-2xl px-4 py-6">
+              <ShareUploadZone />
+            </div>
+          </div>
+        )}
       </ShareShell>
     </ShareContextProvider>
   );

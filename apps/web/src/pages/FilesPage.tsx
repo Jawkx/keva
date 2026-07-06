@@ -30,7 +30,6 @@ import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { FilterPanel } from "../components/FilterPanel";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
-import { UploadModal } from "../components/UploadModal";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatContentType, formatRelative } from "../lib/format";
 import { createFilterDraft } from "../lib/item-filters";
@@ -262,9 +261,9 @@ export function FilesPage() {
   // affordance rather than roll back, and survive list refetches.
   const [uploads, setUploads] = useState<FileRow[]>([]);
 
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [uploadKey, setUploadKey] = useState(0);
+  // Hidden file input behind the Upload buttons — clicking one opens the native
+  // picker directly and uploads on selection (no intermediate modal).
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   // Share dialog. Remounted by key so it re-snapshots the current filters
   // (activeWhere) and resets its form each time it opens.
   const [shareOpen, setShareOpen] = useState(false);
@@ -389,18 +388,12 @@ export function FilesPage() {
   const selectedRows = table.getSelectedRowModel().rows;
   const selectedCount = selectedRows.length;
 
-  const openUpload = (files: File[]) => {
-    setPendingFiles(files);
-    setUploadKey((k) => k + 1);
-    setUploadOpen(true);
-  };
-
   const onPageDrop = (e: React.DragEvent) => {
     e.preventDefault();
     dragDepth.current = 0;
     setPageDragging(false);
     const dropped = Array.from(e.dataTransfer.files);
-    if (dropped.length > 0) openUpload(dropped);
+    if (dropped.length > 0) startUploads(dropped);
   };
 
   const closeDetail = () => navigate("/");
@@ -614,7 +607,7 @@ export function FilesPage() {
               <IconShare3 data-icon="inline-start" />
               Share
             </Button>
-            <Button onClick={() => openUpload([])}>
+            <Button onClick={() => uploadInputRef.current?.click()}>
               <IconUpload data-icon="inline-start" />
               Upload
             </Button>
@@ -698,7 +691,7 @@ export function FilesPage() {
                 Upload your first file, or drop one anywhere on this page.
               </EmptyDescription>
             </EmptyHeader>
-            <Button onClick={() => openUpload([])}>
+            <Button onClick={() => uploadInputRef.current?.click()}>
               <IconUpload data-icon="inline-start" />
               Upload
             </Button>
@@ -743,12 +736,17 @@ export function FilesPage() {
         </SheetContent>
       </Sheet>
 
-      <UploadModal
-        key={uploadKey}
-        open={uploadOpen}
-        onOpenChange={setUploadOpen}
-        initialFiles={pendingFiles}
-        onUpload={startUploads}
+      <input
+        ref={uploadInputRef}
+        type="file"
+        hidden
+        multiple
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          if (files.length > 0) startUploads(files);
+          // Reset so selecting the same file again still fires onChange.
+          e.target.value = "";
+        }}
       />
 
       <ShareCreateDialog
