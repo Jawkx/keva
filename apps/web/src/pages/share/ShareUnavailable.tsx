@@ -1,5 +1,4 @@
 import { IconLinkOff } from "@tabler/icons-react";
-import { Wordmark } from "../../components/Wordmark";
 import {
   Empty,
   EmptyDescription,
@@ -11,7 +10,7 @@ import {
 export function ShareUnavailable() {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-8 p-6">
-      <Wordmark size="lg" />
+      <span className="font-heading text-[42px] leading-none font-semibold text-primary">Keva</span>
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">

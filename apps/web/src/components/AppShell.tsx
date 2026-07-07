@@ -16,7 +16,6 @@ import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
 import { ModeToggle } from "./ModeToggle";
-import { SidebarWordmark } from "./SidebarWordmark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,8 +84,19 @@ export function AppShell() {
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg" className="items-end gap-0" render={<Link to="/" />}>
-                <SidebarWordmark />
+              <SidebarMenuButton
+                size="lg"
+                className="justify-start group-data-[collapsible=icon]:justify-center"
+                render={<Link to="/" />}
+              >
+                <span className="font-heading text-[29px] leading-none font-semibold text-primary group-data-[collapsible=icon]:hidden">
+                  Keva
+                </span>
+                <img
+                  src="/main-icon.png"
+                  alt="Keva"
+                  className="hidden size-7 rounded-sm object-cover group-data-[collapsible=icon]:block"
+                />
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
