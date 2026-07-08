@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconAlertTriangle, IconCopy, IconKey } from "@tabler/icons-react";
+import { Alert02Icon, Copy01Icon, Key01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { Scope } from "@keva/schema";
 import { formatDate } from "../../lib/format";
@@ -95,14 +96,14 @@ export function ApiTokensSection() {
     <div>
       {error && (
         <Alert variant="destructive" className="mb-4">
-          <IconAlertTriangle />
+          <HugeiconsIcon icon={Alert02Icon} />
           <AlertTitle>{error}</AlertTitle>
         </Alert>
       )}
 
       {plaintext && (
         <Alert className="mb-6 border-primary/40">
-          <IconKey />
+          <HugeiconsIcon icon={Key01Icon} />
           <AlertTitle>Copy your token now — it won't be shown again.</AlertTitle>
           <AlertDescription>
             <div className="mt-2 flex w-full items-center gap-2">
@@ -110,7 +111,7 @@ export function ApiTokensSection() {
                 {plaintext}
               </code>
               <Button size="sm" variant="outline" onClick={onCopy}>
-                <IconCopy data-icon="inline-start" />
+                <HugeiconsIcon icon={Copy01Icon} data-icon="inline-start" />
                 Copy
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setPlaintext(null)}>
@@ -177,7 +178,7 @@ export function ApiTokensSection() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <IconKey />
+              <HugeiconsIcon icon={Key01Icon} />
             </EmptyMedia>
             <EmptyTitle>No tokens yet</EmptyTitle>
             <EmptyDescription>Mint a token above to access keva from code.</EmptyDescription>

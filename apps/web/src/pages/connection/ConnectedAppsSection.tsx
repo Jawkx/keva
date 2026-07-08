@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconPlugConnected } from "@tabler/icons-react";
+import { Plug01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import { listConnections, revokeConnection } from "../../lib/connections";
 import { formatDate } from "../../lib/format";
@@ -57,7 +58,7 @@ export function ConnectedAppsSection() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <IconPlugConnected />
+              <HugeiconsIcon icon={Plug01Icon} />
             </EmptyMedia>
             <EmptyTitle>No connected applications</EmptyTitle>
             <EmptyDescription>Agents you authorize over MCP will appear here.</EmptyDescription>

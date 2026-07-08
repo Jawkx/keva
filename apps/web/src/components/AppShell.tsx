@@ -2,15 +2,16 @@ import { useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  IconDatabase,
-  IconFiles,
-  IconFilter,
-  IconLogout,
-  IconPlugConnected,
-  IconSelector,
-  IconSettings,
-  IconShare3,
-} from "@tabler/icons-react";
+  DatabaseIcon,
+  Files01Icon,
+  FilterIcon,
+  Logout01Icon,
+  Plug01Icon,
+  Settings01Icon,
+  Share03Icon,
+  UnfoldMoreIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
@@ -44,9 +45,9 @@ import {
 // "Files" now lives in the Views group as the default "All" entry (Linear-style,
 // where the all-items list is itself a view), so it's dropped from this static nav.
 const NAV = [
-  { title: "Share", url: "/shares", icon: IconShare3, exact: false },
-  { title: "Connection", url: "/connection", icon: IconPlugConnected, exact: false },
-] as const;
+  { title: "Share", url: "/shares", icon: Share03Icon, exact: false },
+  { title: "Connection", url: "/connection", icon: Plug01Icon, exact: false },
+] satisfies readonly { title: string; url: string; icon: IconSvgElement; exact: boolean }[];
 
 export function AppShell() {
   const { data } = authClient.useSession();
@@ -115,7 +116,7 @@ export function AppShell() {
                     tooltip="All files"
                     render={<Link to="/" />}
                   >
-                    <IconFiles />
+                    <HugeiconsIcon icon={Files01Icon} />
                     <span>All</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -126,7 +127,7 @@ export function AppShell() {
                       tooltip={view.name}
                       render={<Link to={`/v/${view.id}`} />}
                     >
-                      <IconFilter />
+                      <HugeiconsIcon icon={FilterIcon} />
                       <span>{view.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -145,7 +146,7 @@ export function AppShell() {
                       tooltip={item.title}
                       render={<Link to={item.url} />}
                     >
-                      <item.icon />
+                      <HugeiconsIcon icon={item.icon} />
                       <span>{item.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -158,7 +159,7 @@ export function AppShell() {
         <SidebarFooter>
           {usage && usage.itemCount > 0 && (
             <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-              <IconDatabase className="size-3.5 shrink-0" />
+              <HugeiconsIcon icon={DatabaseIcon} className="size-3.5 shrink-0" />
               <span className="truncate">
                 <span className="font-medium text-foreground tabular-nums">
                   {formatBytes(usage.totalBytes)}
@@ -183,7 +184,10 @@ export function AppShell() {
                     <span className="truncate text-sm font-medium">{name}</span>
                     <span className="truncate text-xs text-muted-foreground">{email}</span>
                   </div>
-                  <IconSelector className="ml-auto size-4 text-muted-foreground" />
+                  <HugeiconsIcon
+                    icon={UnfoldMoreIcon}
+                    className="ml-auto size-4 text-muted-foreground"
+                  />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="start" className="min-w-56">
                   <DropdownMenuGroup>
@@ -192,7 +196,7 @@ export function AppShell() {
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
                     <DropdownMenuItem render={<Link to="/settings" />}>
-                      <IconSettings />
+                      <HugeiconsIcon icon={Settings01Icon} />
                       Settings
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
@@ -203,7 +207,7 @@ export function AppShell() {
                       disabled={signingOut}
                       onClick={onSignOut}
                     >
-                      <IconLogout />
+                      <HugeiconsIcon icon={Logout01Icon} />
                       {signingOut ? "Signing out…" : "Sign out"}
                     </DropdownMenuItem>
                   </DropdownMenuGroup>

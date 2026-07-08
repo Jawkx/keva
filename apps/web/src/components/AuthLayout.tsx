@@ -1,12 +1,13 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
-  IconFileSpreadsheet,
-  IconFileText,
-  IconFileTypePdf,
-  IconFileTypeSvg,
-  IconMarkdown,
-  IconPhoto,
-} from "@tabler/icons-react";
+  File02Icon,
+  FileSpreadsheetIcon,
+  Image01Icon,
+  Pdf01Icon,
+  Svg01Icon,
+  TextIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
 
 // Decorative-only chip that mirrors the app's property tags (e.g. `category=finance`).
@@ -28,7 +29,7 @@ function Chip({ children, accent }: { children: ReactNode; accent?: boolean }) {
 type MockFile = {
   name: string;
   meta: string;
-  Icon: ComponentType<{ className?: string }>;
+  icon: IconSvgElement;
   chips: [label: string, accent: boolean][];
 };
 
@@ -39,7 +40,7 @@ function FileCard({ file }: { file: MockFile }) {
     <div className="mr-6 w-72 shrink-0 rounded-xl border border-white/10 bg-[#141922] p-5">
       <div className="flex items-center gap-3.5">
         <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-          <file.Icon className="size-[22px]" />
+          <HugeiconsIcon icon={file.icon} className="size-[22px]" />
         </div>
         <div className="min-w-0">
           <div className="truncate text-base font-medium text-white/90">{file.name}</div>
@@ -61,7 +62,7 @@ const FILES: MockFile[] = [
   {
     name: "annual-report.pdf",
     meta: "PDF · 2.4 MB",
-    Icon: IconFileTypePdf,
+    icon: Pdf01Icon,
     chips: [
       ["category=finance", false],
       ["year=2026", true],
@@ -70,29 +71,34 @@ const FILES: MockFile[] = [
   {
     name: "brand-logo.svg",
     meta: "SVG · 12 KB",
-    Icon: IconFileTypeSvg,
+    icon: Svg01Icon,
     chips: [["project=brand", false]],
   },
   {
     name: "q2-budget.xlsx",
     meta: "XLSX · 88 KB",
-    Icon: IconFileSpreadsheet,
+    icon: FileSpreadsheetIcon,
     chips: [
       ["category=finance", false],
       ["status=final", true],
     ],
   },
-  { name: "rooftop.jpg", meta: "JPEG · 3.1 MB", Icon: IconPhoto, chips: [["album=travel", false]] },
+  {
+    name: "rooftop.jpg",
+    meta: "JPEG · 3.1 MB",
+    icon: Image01Icon,
+    chips: [["album=travel", false]],
+  },
   {
     name: "contract.pdf",
     meta: "PDF · 480 KB",
-    Icon: IconFileText,
+    icon: File02Icon,
     chips: [
       ["type=legal", false],
       ["signed=true", true],
     ],
   },
-  { name: "notes.md", meta: "MD · 4 KB", Icon: IconMarkdown, chips: [["pinned=true", false]] },
+  { name: "notes.md", meta: "MD · 4 KB", icon: TextIcon, chips: [["pinned=true", false]] },
 ];
 
 /** One copy of the file row; rendered twice inside the marquee track. */

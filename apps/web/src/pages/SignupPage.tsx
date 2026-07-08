@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { IconAlertTriangle } from "@tabler/icons-react";
+import { Alert02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { authClient } from "../lib/auth";
 import { oauthContinuation } from "../lib/oauth";
 import { Alert, AlertTitle } from "@/components/ui/alert";
@@ -55,7 +56,7 @@ export function SignupPage() {
         <FieldGroup>
           {error && (
             <Alert variant="destructive">
-              <IconAlertTriangle />
+              <HugeiconsIcon icon={Alert02Icon} />
               <AlertTitle>{error}</AlertTitle>
             </Alert>
           )}

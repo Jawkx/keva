@@ -1,18 +1,19 @@
 import { type ReactNode, useMemo, useState } from "react";
 import {
-  IconAbc,
-  IconAlertTriangle,
-  IconBraces,
-  IconDeviceFloppy,
-  IconHash,
-  IconLayoutRows,
-  IconList,
-  IconLock,
-  IconPlus,
-  IconTag,
-  IconToggleRight,
-  IconX,
-} from "@tabler/icons-react";
+  Add01Icon,
+  Alert02Icon,
+  BracesIcon,
+  Cancel01Icon,
+  FloppyDiskIcon,
+  HashIcon,
+  ListViewIcon,
+  LockIcon,
+  TableRowsSplitIcon,
+  Tag01Icon,
+  TextFontIcon,
+  ToggleOnIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import type { PropertyValue, Properties } from "@keva/schema";
 import {
   coerceScalar,
@@ -61,11 +62,11 @@ const buildValue = (type: ScalarType, draft: string): PropertyValue => {
   return coerceScalar(type, draft);
 };
 
-const TYPE_OPTS: { type: ScalarType; label: string; Icon: typeof IconTag }[] = [
-  { type: "null", label: "Bare tag", Icon: IconTag },
-  { type: "string", label: "Text", Icon: IconAbc },
-  { type: "number", label: "Number", Icon: IconHash },
-  { type: "boolean", label: "Boolean", Icon: IconToggleRight },
+const TYPE_OPTS: { type: ScalarType; label: string; icon: IconSvgElement }[] = [
+  { type: "null", label: "Bare tag", icon: Tag01Icon },
+  { type: "string", label: "Text", icon: TextFontIcon },
+  { type: "number", label: "Number", icon: HashIcon },
+  { type: "boolean", label: "Boolean", icon: ToggleOnIcon },
 ];
 const typeMeta = (type: ScalarType) => TYPE_OPTS.find((o) => o.type === type)!;
 
@@ -130,10 +131,10 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
           aria-label="Editor mode"
         >
           <ToggleGroupItem value="rows" title="Rows">
-            <IconLayoutRows />
+            <HugeiconsIcon icon={TableRowsSplitIcon} />
           </ToggleGroupItem>
           <ToggleGroupItem value="json" title="JSON">
-            <IconBraces />
+            <HugeiconsIcon icon={BracesIcon} />
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
@@ -189,7 +190,7 @@ const systemRowNodes = (rows: readonly SystemField[]) =>
       key={`sys:${f.key}`}
       icon={
         <span title="System · read-only">
-          <IconLock className="size-3.5 text-muted-foreground" />
+          <HugeiconsIcon icon={LockIcon} className="size-3.5 text-muted-foreground" />
         </span>
       }
       label={f.key}
@@ -217,7 +218,7 @@ function RemoveButton({
       className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100 [&>svg]:size-4"
       onClick={onClick}
     >
-      <IconX />
+      <HugeiconsIcon icon={Cancel01Icon} />
     </button>
   );
 }
@@ -231,7 +232,7 @@ function TypeMenu({
   disabled?: boolean | undefined;
   onChange: (type: ScalarType) => void;
 }) {
-  const Current = typeMeta(value).Icon;
+  const currentIcon = typeMeta(value).icon;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -244,16 +245,16 @@ function TypeMenu({
           />
         }
       >
-        <Current className="text-muted-foreground" />
+        <HugeiconsIcon icon={currentIcon} className="text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-36">
-        {TYPE_OPTS.map(({ type, label, Icon }) => (
+        {TYPE_OPTS.map(({ type, label, icon }) => (
           <DropdownMenuItem
             key={type}
             onClick={() => onChange(type)}
             className={cn(type === value && "bg-accent/60")}
           >
-            <Icon />
+            <HugeiconsIcon icon={icon} />
             {label}
           </DropdownMenuItem>
         ))}
@@ -344,7 +345,7 @@ function CustomRow({
     <PropRow
       icon={
         isArray ? (
-          <IconList className="size-3.5 text-muted-foreground" />
+          <HugeiconsIcon icon={ListViewIcon} className="size-3.5 text-muted-foreground" />
         ) : (
           <TypeMenu
             value={type}
@@ -435,7 +436,7 @@ function AddRow({
           className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-40 [&>svg]:size-4"
           onClick={submit}
         >
-          <IconPlus />
+          <HugeiconsIcon icon={Add01Icon} />
         </button>
       }
     >
@@ -535,7 +536,7 @@ function JsonView({
       <div className="flex items-center justify-between gap-3">
         {!parsed.ok ? (
           <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
-            <IconAlertTriangle className="size-3.5 shrink-0" />
+            <HugeiconsIcon icon={Alert02Icon} className="size-3.5 shrink-0" />
             <span className="truncate" title={parsed.error}>
               {parsed.error}
             </span>
@@ -561,7 +562,7 @@ function JsonView({
             disabled={busy || !parsed.ok || changeCount === 0}
             onClick={() => void save()}
           >
-            <IconDeviceFloppy data-icon="inline-start" />
+            <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
             Save
           </Button>
         </div>

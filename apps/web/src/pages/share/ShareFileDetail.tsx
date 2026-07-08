@@ -1,6 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { IconAlertTriangle, IconDownload, IconLock, IconX } from "@tabler/icons-react";
+import { Alert02Icon, Cancel01Icon, Download01Icon, LockIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
 import { CopyButton } from "../../components/CopyButton";
@@ -133,14 +134,14 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
                 />
               }
             >
-              <IconDownload />
+              <HugeiconsIcon icon={Download01Icon} />
             </TooltipTrigger>
             <TooltipContent>Download</TooltipContent>
           </Tooltip>
 
           {onClose && (
             <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
-              <IconX />
+              <HugeiconsIcon icon={Cancel01Icon} />
             </Button>
           )}
         </div>
@@ -175,7 +176,7 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
           </div>
         ) : error && !item ? (
           <Alert variant="destructive">
-            <IconAlertTriangle />
+            <HugeiconsIcon icon={Alert02Icon} />
             <AlertTitle>{error}</AlertTitle>
           </Alert>
         ) : !item ? (
@@ -271,7 +272,7 @@ function InfoRow({
   return (
     <div className="flex items-center gap-2 px-3 py-1.5">
       <span className="flex size-6 shrink-0 items-center justify-center" title="Read-only">
-        <IconLock className="size-3.5 text-muted-foreground" />
+        <HugeiconsIcon icon={LockIcon} className="size-3.5 text-muted-foreground" />
       </span>
       <span
         className={cn("w-24 shrink-0 truncate text-sm text-muted-foreground", mono && "font-mono")}

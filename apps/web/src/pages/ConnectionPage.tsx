@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { IconKey, IconPlugConnected } from "@tabler/icons-react";
+import { Key01Icon, Plug01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { PageHeader } from "../components/PageHeader";
 import { ApiTokensSection } from "./connection/ApiTokensSection";
 import { ConnectedAppsSection } from "./connection/ConnectedAppsSection";
@@ -47,7 +48,7 @@ export function ConnectionPage() {
             variant={tab === "mcp" ? "default" : "outline"}
             onClick={() => setTab("mcp")}
           >
-            <IconPlugConnected data-icon="inline-start" />
+            <HugeiconsIcon icon={Plug01Icon} data-icon="inline-start" />
             MCP
           </Button>
           <Button
@@ -55,7 +56,7 @@ export function ConnectionPage() {
             variant={tab === "api" ? "default" : "outline"}
             onClick={() => setTab("api")}
           >
-            <IconKey data-icon="inline-start" />
+            <HugeiconsIcon icon={Key01Icon} data-icon="inline-start" />
             API tokens
           </Button>
         </div>

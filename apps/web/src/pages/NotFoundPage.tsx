@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { IconError404 } from "@tabler/icons-react";
+import { AlertCircleIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -14,7 +15,7 @@ export function NotFoundPage() {
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <IconError404 />
+          <HugeiconsIcon icon={AlertCircleIcon} />
         </EmptyMedia>
         <EmptyTitle>Page not found</EmptyTitle>
         <EmptyDescription>

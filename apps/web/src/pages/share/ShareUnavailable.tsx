@@ -1,4 +1,5 @@
-import { IconLinkOff } from "@tabler/icons-react";
+import { Unlink01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Empty,
   EmptyDescription,
@@ -14,7 +15,7 @@ export function ShareUnavailable() {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <IconLinkOff />
+            <HugeiconsIcon icon={Unlink01Icon} />
           </EmptyMedia>
           <EmptyTitle>This link is no longer available</EmptyTitle>
           <EmptyDescription>

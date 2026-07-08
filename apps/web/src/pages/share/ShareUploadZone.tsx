@@ -1,12 +1,13 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  IconAlertTriangle,
-  IconCheck,
-  IconCloudUpload,
-  IconLoader2,
-  IconUpload,
-} from "@tabler/icons-react";
+  Alert02Icon,
+  CloudUploadIcon,
+  Loading03Icon,
+  Tick02Icon,
+  Upload01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { errorMessage, isShareGone, type TaggedError } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { useShare } from "./share-context";
@@ -106,7 +107,7 @@ export function ShareUploadButton({
         <span className="hidden text-xs text-muted-foreground sm:inline">{quotaHint}</span>
       )}
       <Button onClick={() => inputRef.current?.click()}>
-        <IconUpload data-icon="inline-start" />
+        <HugeiconsIcon icon={Upload01Icon} data-icon="inline-start" />
         Upload
       </Button>
       <input ref={inputRef} type="file" hidden multiple onChange={(e) => onFiles(e.target.files)} />
@@ -132,11 +133,16 @@ export function ShareUploadProgress({
             className="flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-sm"
           >
             {entry.status === "uploading" && (
-              <IconLoader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+              <HugeiconsIcon
+                icon={Loading03Icon}
+                className="size-4 shrink-0 animate-spin text-muted-foreground"
+              />
             )}
-            {entry.status === "done" && <IconCheck className="size-4 shrink-0 text-primary" />}
+            {entry.status === "done" && (
+              <HugeiconsIcon icon={Tick02Icon} className="size-4 shrink-0 text-primary" />
+            )}
             {entry.status === "error" && (
-              <IconAlertTriangle className="size-4 shrink-0 text-destructive" />
+              <HugeiconsIcon icon={Alert02Icon} className="size-4 shrink-0 text-destructive" />
             )}
             <span className="min-w-0 flex-1 truncate">{entry.file.name}</span>
             <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -180,7 +186,7 @@ export function ShareUploadZone() {
           dragging && "border-primary bg-primary/5",
         )}
       >
-        <IconCloudUpload className="size-8 text-muted-foreground" />
+        <HugeiconsIcon icon={CloudUploadIcon} className="size-8 text-muted-foreground" />
         <span className="text-sm text-muted-foreground">Drag files here, or click to choose</span>
         {quotaHint && <span className="text-xs text-muted-foreground">{quotaHint}</span>}
         <input

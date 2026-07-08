@@ -11,21 +11,22 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import {
-  IconAlertTriangle,
-  IconArrowDown,
-  IconCloudUpload,
-  IconDeviceFloppy,
-  IconDotsVertical,
-  IconFiles,
-  IconFilter,
-  IconLoader2,
-  IconPencil,
-  IconSearch,
-  IconShare3,
-  IconTrash,
-  IconUpload,
-  IconX,
-} from "@tabler/icons-react";
+  Alert02Icon,
+  ArrowDown01Icon,
+  Cancel01Icon,
+  CloudUploadIcon,
+  Delete02Icon,
+  Files01Icon,
+  FilterIcon,
+  FloppyDiskIcon,
+  Loading03Icon,
+  MoreVerticalIcon,
+  PencilEdit01Icon,
+  Search01Icon,
+  Share03Icon,
+  Upload01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
@@ -212,7 +213,8 @@ const columns = [
       const upload = row.original.upload;
       if (upload?.status === "uploading") {
         return (
-          <IconLoader2
+          <HugeiconsIcon
+            icon={Loading03Icon}
             aria-label="Uploading"
             className="size-4 animate-spin text-muted-foreground"
           />
@@ -227,7 +229,7 @@ const columns = [
             onClick={() => table.options.meta?.onRetryUpload(row.original.id, upload.file)}
             className="flex size-5 items-center justify-center rounded text-destructive hover:bg-destructive/10"
           >
-            <IconAlertTriangle className="size-4" />
+            <HugeiconsIcon icon={Alert02Icon} className="size-4" />
           </button>
         );
       }
@@ -757,7 +759,7 @@ export function FilesPage() {
                   />
                 }
               >
-                <IconTrash data-icon="inline-start" />
+                <HugeiconsIcon icon={Delete02Icon} data-icon="inline-start" />
                 Delete
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -798,7 +800,10 @@ export function FilesPage() {
               </button>
             )}
             <div className="relative w-full min-w-0 sm:w-72">
-              <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <HugeiconsIcon
+                icon={Search01Icon}
+                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              />
               <Input
                 placeholder="Search by name or type…"
                 className="pl-8"
@@ -807,7 +812,7 @@ export function FilesPage() {
               />
             </div>
             <Button variant="outline" onClick={() => setShowFilters((v) => !v)}>
-              <IconFilter data-icon="inline-start" />
+              <HugeiconsIcon icon={FilterIcon} data-icon="inline-start" />
               Filters
               {appliedChips.length > 0 && <Badge className="ml-1">{appliedChips.length}</Badge>}
             </Button>
@@ -825,24 +830,24 @@ export function FilesPage() {
                         onClick={saveViewEdits}
                         disabled={updateViewMutation.isPending}
                       >
-                        <IconDeviceFloppy data-icon="inline-start" />
+                        <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
                         Save
                       </Button>
                     </>
                   )}
                   <Button variant="outline" onClick={openShare}>
-                    <IconShare3 data-icon="inline-start" />
+                    <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
                     Share
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={<Button variant="ghost" size="icon" aria-label="View options" />}
                     >
-                      <IconDotsVertical />
+                      <HugeiconsIcon icon={MoreVerticalIcon} />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => setRenameDraft(view?.name ?? "")}>
-                        <IconPencil />
+                        <HugeiconsIcon icon={PencilEdit01Icon} />
                         Rename
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -850,7 +855,7 @@ export function FilesPage() {
                         variant="destructive"
                         onClick={() => setDeleteViewOpen(true)}
                       >
-                        <IconTrash />
+                        <HugeiconsIcon icon={Delete02Icon} />
                         Delete view
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -860,18 +865,18 @@ export function FilesPage() {
                 filtered && (
                   <>
                     <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
-                      <IconDeviceFloppy data-icon="inline-start" />
+                      <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
                       Save as view
                     </Button>
                     <Button variant="outline" onClick={openShare}>
-                      <IconShare3 data-icon="inline-start" />
+                      <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
                       Share
                     </Button>
                   </>
                 )
               )}
               <Button onClick={() => uploadInputRef.current?.click()}>
-                <IconUpload data-icon="inline-start" />
+                <HugeiconsIcon icon={Upload01Icon} data-icon="inline-start" />
                 Upload
               </Button>
             </div>
@@ -889,7 +894,7 @@ export function FilesPage() {
                 className="flex size-4 items-center justify-center rounded-sm hover:bg-foreground/10"
                 onClick={() => applyWhere(buildFilterWhere(chip.remove(appliedDraft)))}
               >
-                <IconX className="size-3" />
+                <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
               </button>
             </Badge>
           ))}
@@ -922,7 +927,7 @@ export function FilesPage() {
           <Empty className="py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <IconSearch />
+                <HugeiconsIcon icon={Search01Icon} />
               </EmptyMedia>
               <EmptyTitle>No matches</EmptyTitle>
               <EmptyDescription>No items match your search and filters.</EmptyDescription>
@@ -958,7 +963,7 @@ export function FilesPage() {
       {pageDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8 text-center">
-            <IconCloudUpload className="size-7 text-primary" />
+            <HugeiconsIcon icon={CloudUploadIcon} className="size-7 text-primary" />
             <p className="font-medium">Drop to upload</p>
             {uploadStampEntries.length > 0 && (
               <p className="text-sm text-muted-foreground">
@@ -973,7 +978,7 @@ export function FilesPage() {
       {error && (
         <div className="shrink-0 p-4">
           <Alert variant="destructive">
-            <IconAlertTriangle />
+            <HugeiconsIcon icon={Alert02Icon} />
             <AlertTitle>{error}</AlertTitle>
           </Alert>
         </div>
@@ -984,7 +989,7 @@ export function FilesPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <IconFiles />
+                <HugeiconsIcon icon={Files01Icon} />
               </EmptyMedia>
               <EmptyTitle>No items yet</EmptyTitle>
               <EmptyDescription>
@@ -992,7 +997,7 @@ export function FilesPage() {
               </EmptyDescription>
             </EmptyHeader>
             <Button onClick={() => uploadInputRef.current?.click()}>
-              <IconUpload data-icon="inline-start" />
+              <HugeiconsIcon icon={Upload01Icon} data-icon="inline-start" />
               Upload
             </Button>
           </Empty>
@@ -1155,7 +1160,7 @@ function SortButton({ label }: { label: string }) {
   return (
     <span className="-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-foreground">
       {label}
-      <IconArrowDown className="size-3.5" />
+      <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" />
     </span>
   );
 }

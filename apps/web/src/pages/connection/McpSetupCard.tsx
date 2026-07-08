@@ -1,4 +1,5 @@
-import { IconPlugConnected } from "@tabler/icons-react";
+import { Plug01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { CodeBlock } from "../../components/CodeBlock";
 import { CopyButton } from "../../components/CopyButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +19,7 @@ export function McpSetupCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <IconPlugConnected className="size-5 text-muted-foreground" />
+          <HugeiconsIcon icon={Plug01Icon} className="size-5 text-muted-foreground" />
           Model Context Protocol
         </CardTitle>
         <CardDescription>

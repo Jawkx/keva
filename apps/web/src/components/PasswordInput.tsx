@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { IconEye, IconEyeOff } from "@tabler/icons-react";
+import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -18,7 +19,7 @@ export function PasswordInput(props: React.ComponentProps<typeof InputGroupInput
           aria-label={show ? "Hide password" : "Show password"}
           onClick={() => setShow((s) => !s)}
         >
-          {show ? <IconEyeOff /> : <IconEye />}
+          {show ? <HugeiconsIcon icon={ViewOffIcon} /> : <HugeiconsIcon icon={ViewIcon} />}
         </InputGroupButton>
       </InputGroupAddon>
     </InputGroup>

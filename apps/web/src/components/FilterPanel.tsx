@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { IconCode, IconPlus, IconX } from "@tabler/icons-react";
+import { Add01Icon, Cancel01Icon, CodeIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { Operator, QueryCondition } from "@keva/schema";
 import { CodeBlock } from "./CodeBlock";
 import {
@@ -183,7 +184,7 @@ function ConditionRow({
       )}
 
       <Button size="icon" variant="ghost" aria-label="Remove condition" onClick={onRemove}>
-        <IconX />
+        <HugeiconsIcon icon={Cancel01Icon} />
       </Button>
     </div>
   );
@@ -272,12 +273,12 @@ export function FilterPanel({
             variant={showApi ? "default" : "outline"}
             onClick={() => setShowApi(true)}
           >
-            <IconCode data-icon="inline-start" />
+            <HugeiconsIcon icon={CodeIcon} data-icon="inline-start" />
             API
           </Button>
         </div>
         <Button size="icon" variant="ghost" aria-label="Close filters" onClick={close}>
-          <IconX />
+          <HugeiconsIcon icon={Cancel01Icon} />
         </Button>
       </div>
 
@@ -315,7 +316,7 @@ export function FilterPanel({
 
           <div className="flex flex-wrap items-center gap-3">
             <Button variant="outline" onClick={() => onDraftChange(addConditionDraft(draft))}>
-              <IconPlus data-icon="inline-start" />
+              <HugeiconsIcon icon={Add01Icon} data-icon="inline-start" />
               Add condition
             </Button>
             {where.length > 0 && (

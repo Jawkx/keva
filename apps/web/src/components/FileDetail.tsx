@@ -1,7 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconAlertTriangle, IconDownload, IconPencil, IconTrash, IconX } from "@tabler/icons-react";
+import {
+  Alert02Icon,
+  Cancel01Icon,
+  Delete02Icon,
+  Download01Icon,
+  PencilEdit01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
@@ -277,7 +284,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                         />
                       }
                     >
-                      <IconPencil />
+                      <HugeiconsIcon icon={PencilEdit01Icon} />
                     </TooltipTrigger>
                     <TooltipContent>Rename</TooltipContent>
                   </Tooltip>
@@ -304,7 +311,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                 />
               }
             >
-              <IconDownload />
+              <HugeiconsIcon icon={Download01Icon} />
             </TooltipTrigger>
             <TooltipContent>Download</TooltipContent>
           </Tooltip>
@@ -326,7 +333,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                   />
                 }
               >
-                <IconTrash />
+                <HugeiconsIcon icon={Delete02Icon} />
               </TooltipTrigger>
               <TooltipContent>Delete</TooltipContent>
             </Tooltip>
@@ -354,7 +361,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
 
           {onClose && (
             <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
-              <IconX />
+              <HugeiconsIcon icon={Cancel01Icon} />
             </Button>
           )}
         </div>
@@ -389,7 +396,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
           </div>
         ) : error && !item ? (
           <Alert variant="destructive">
-            <IconAlertTriangle />
+            <HugeiconsIcon icon={Alert02Icon} />
             <AlertTitle>{error}</AlertTitle>
           </Alert>
         ) : !item ? (

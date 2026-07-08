@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconAlertTriangle, IconArrowRight, IconPlus, IconShare3 } from "@tabler/icons-react";
+import { Add01Icon, Alert02Icon, ArrowRight01Icon, Share03Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import type { ViewRecord } from "@keva/schema";
@@ -61,7 +62,7 @@ export function SharesSection() {
   const newShareButton = (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="outline" />}>
-        <IconPlus data-icon="inline-start" />
+        <HugeiconsIcon icon={Add01Icon} data-icon="inline-start" />
         New share link
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
@@ -107,7 +108,7 @@ export function SharesSection() {
   if (error) {
     return (
       <Alert variant="destructive">
-        <IconAlertTriangle />
+        <HugeiconsIcon icon={Alert02Icon} />
         <AlertTitle>{error}</AlertTitle>
       </Alert>
     );
@@ -129,7 +130,7 @@ export function SharesSection() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <IconShare3 />
+              <HugeiconsIcon icon={Share03Icon} />
             </EmptyMedia>
             <EmptyTitle>No share links yet</EmptyTitle>
             <EmptyDescription>
@@ -182,7 +183,7 @@ export function SharesSection() {
                     className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     Open
-                    <IconArrowRight className="size-3.5" />
+                    <HugeiconsIcon icon={ArrowRight01Icon} className="size-3.5" />
                   </Link>
                 </TableCell>
                 <TableCell className="text-muted-foreground">

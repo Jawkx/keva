@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IconLink } from "@tabler/icons-react";
+import { Link01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { CreateShareGrant, PropertyValue, QueryCondition, ShareScope } from "@keva/schema";
 import { createShare, sharesQueryKey } from "../lib/shares";
@@ -203,7 +204,7 @@ export function ShareCreateDialog({
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-lg border bg-muted/40 py-1 pr-1 pl-3">
-              <IconLink className="size-4 shrink-0 text-muted-foreground" />
+              <HugeiconsIcon icon={Link01Icon} className="size-4 shrink-0 text-muted-foreground" />
               <input
                 readOnly
                 value={link}
