@@ -16,7 +16,6 @@ import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
-import { ModeToggle } from "./ModeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -221,8 +220,6 @@ export function AppShell() {
       <SidebarInset className="h-svh min-w-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-2 px-4">
           <SidebarTrigger className="-ml-1" />
-          <div className="flex-1" />
-          <ModeToggle />
         </header>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {fullBleed ? (

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "../lib/auth";
 import { PageHeader } from "../components/PageHeader";
+import { AppearanceCard } from "../components/AppearanceCard";
 import { PasswordInput } from "../components/PasswordInput";
 import { StorageUsageCard } from "../components/StorageUsageCard";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,8 @@ export function SettingsPage() {
 
       <div className="flex flex-col gap-6">
         <StorageUsageCard />
+
+        <AppearanceCard />
 
         <Card>
           <CardHeader>
