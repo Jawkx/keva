@@ -11,6 +11,7 @@ import {
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
@@ -56,6 +57,9 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [signingOut, setSigningOut] = useState(false);
+  // Callback ref: publishing the mounted header element via state re-renders
+  // the provider so the portal target becomes available to route content.
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
 
   const onSignOut = async () => {
     setSigningOut(true);
@@ -220,18 +224,21 @@ export function AppShell() {
       <SidebarInset className="h-svh min-w-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-2 px-4">
           <SidebarTrigger className="-ml-1" />
+          <div ref={setHeaderSlot} className="flex min-w-0 flex-1 items-center gap-2" />
         </header>
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {fullBleed ? (
-            <Outlet />
-          ) : (
-            <div className="min-h-0 flex-1 overflow-auto">
-              <div className="mx-auto w-full max-w-5xl p-4 md:p-6">
-                <Outlet />
+        <AppHeaderSlotContext.Provider value={headerSlot}>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {fullBleed ? (
+              <Outlet />
+            ) : (
+              <div className="min-h-0 flex-1 overflow-auto">
+                <div className="mx-auto w-full max-w-5xl p-4 md:p-6">
+                  <Outlet />
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </AppHeaderSlotContext.Provider>
       </SidebarInset>
     </SidebarProvider>
   );

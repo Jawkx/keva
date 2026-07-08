@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -35,6 +36,7 @@ import { FileTypeIcon } from "../components/FileTypeIcon";
 import { FilterPanel } from "../components/FilterPanel";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { ViewIconPicker, viewIcon } from "../components/view-icons";
+import { useAppHeaderSlot } from "../lib/app-header-slot";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
 import {
@@ -313,6 +315,7 @@ export function FilesPage() {
   const { id: selectedId, viewId } = useParams<{ id: string; viewId: string }>();
   const queryClient = useQueryClient();
   const isWide = useMediaQuery("(min-width: 1024px)");
+  const headerSlot = useAppHeaderSlot();
 
   // View mode: the open view supplies the baseline filter. Edits are previewed
   // live in the list but only persisted to the view (and its share links) on an
@@ -814,17 +817,6 @@ export function FilesPage() {
           </>
         ) : (
           <>
-            {viewId && view && (
-              <button
-                type="button"
-                className="mr-1 flex max-w-40 items-center gap-1.5 truncate rounded-sm px-1 text-sm font-medium hover:bg-muted"
-                title={`${view.name} — click to edit`}
-                onClick={openRename}
-              >
-                <HugeiconsIcon icon={viewIcon(view.icon)} className="size-4 shrink-0" />
-                <span className="truncate">{view.name}</span>
-              </button>
-            )}
             <div className="relative w-full min-w-0 sm:w-72">
               <HugeiconsIcon
                 icon={Search01Icon}
@@ -861,44 +853,13 @@ export function FilesPage() {
                       </Button>
                     </>
                   )}
-                  <Button variant="outline" onClick={openShare}>
-                    <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
-                    Share
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={<Button variant="ghost" size="icon" aria-label="View options" />}
-                    >
-                      <HugeiconsIcon icon={MoreVerticalIcon} />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={openRename}>
-                        <HugeiconsIcon icon={PencilEdit01Icon} />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => setDeleteViewOpen(true)}
-                      >
-                        <HugeiconsIcon icon={Delete02Icon} />
-                        Delete view
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                 </>
               ) : (
                 filtered && (
-                  <>
-                    <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
-                      <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
-                      Save as view
-                    </Button>
-                    <Button variant="outline" onClick={openShare}>
-                      <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
-                      Share
-                    </Button>
-                  </>
+                  <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
+                    <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+                    Save as view
+                  </Button>
                 )
               )}
               <Button onClick={() => uploadInputRef.current?.click()}>
@@ -969,6 +930,58 @@ export function FilesPage() {
     </div>
   );
 
+  // Title + Share + view options live in the app top bar (beside the
+  // sidebar-collapse button) via a portal, keeping this page's state/handlers
+  // intact. The root list shows a matching "All" label for uniformity.
+  const headerControls = (
+    <>
+      {viewId && view ? (
+        <button
+          type="button"
+          className="flex max-w-56 items-center gap-1.5 truncate rounded-sm px-1.5 py-1 text-sm font-medium hover:bg-muted"
+          title={`${view.name} — click to edit`}
+          onClick={openRename}
+        >
+          <HugeiconsIcon icon={viewIcon(view.icon)} className="size-4 shrink-0" />
+          <span className="truncate">{view.name}</span>
+        </button>
+      ) : (
+        <span className="flex items-center gap-1.5 px-1.5 py-1 text-sm font-medium">
+          <HugeiconsIcon icon={Files01Icon} className="size-4 shrink-0" />
+          All
+        </span>
+      )}
+      {!selectMode && (viewId || filtered) && (
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" onClick={openShare}>
+            <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
+            Share
+          </Button>
+          {viewId && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon" aria-label="View options" />}
+              >
+                <HugeiconsIcon icon={MoreVerticalIcon} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={openRename}>
+                  <HugeiconsIcon icon={PencilEdit01Icon} />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleteViewOpen(true)}>
+                  <HugeiconsIcon icon={Delete02Icon} />
+                  Delete view
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div
       onDragEnter={(e) => {
@@ -986,6 +999,8 @@ export function FilesPage() {
       onDrop={onPageDrop}
       className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden"
     >
+      {headerSlot && createPortal(headerControls, headerSlot)}
+
       {pageDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8 text-center">
