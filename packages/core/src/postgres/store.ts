@@ -115,11 +115,35 @@ const comparison = (sql: Sql, operator: string): Fragment => {
   return sql.unsafe(allowed[operator] ?? "=");
 };
 
+// OR-join a list of fragments into `(a or b or …)`. An empty list matches
+// nothing (an `in` with no compatible members can never be satisfied).
+const anyOf = (sql: Sql, fragments: readonly Fragment[]): Fragment =>
+  fragments.length === 0
+    ? sql`false`
+    : sql`(${fragments.reduce((left, right) => sql`${left} or ${right}`)})`;
+
 const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
   const column = systemColumn(sql, condition.key);
   const value = condition.value;
   if (column) {
     if (condition.op === "exists") return sql`true`;
+    // `in` is an OR of `contains` over the listed values; expand it before the
+    // scalar type-mismatch guard below (its operand is an array, not a scalar).
+    if (condition.op === "in") {
+      const members = Array.isArray(value) ? value : [];
+      if (column.type === "number") {
+        const numbers = members.filter((m): m is number => typeof m === "number");
+        return anyOf(
+          sql,
+          numbers.map((m) => sql`${column.fragment} = ${m}`),
+        );
+      }
+      const strings = members.filter((m): m is string => typeof m === "string");
+      return anyOf(
+        sql,
+        strings.map((m) => sql`position(${m} in ${column.fragment}) > 0`),
+      );
+    }
     const expected = column.type === "number" ? "number" : "string";
     const typeMismatch = value !== null && typeof value !== expected;
     // Type-strict values of different types are necessarily unequal, but cannot
@@ -152,12 +176,18 @@ const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
   if (condition.op === "neq") {
     return sql`properties ? ${key} and not (properties @> ${sql.json({ [key]: value })})`;
   }
-  if (condition.op === "contains") {
-    const member = value as string | number | boolean;
+  const containsMember = (member: string | number | boolean): Fragment => {
     const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${sql.json([member])})`;
-    return typeof value === "string"
-      ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${value} in properties ->> ${key}) > 0))`
+    return typeof member === "string"
+      ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${member} in properties ->> ${key}) > 0))`
       : arrayMatch;
+  };
+  if (condition.op === "contains") {
+    return containsMember(value as string | number | boolean);
+  }
+  if (condition.op === "in") {
+    const members = (Array.isArray(value) ? value : []) as (string | number | boolean)[];
+    return anyOf(sql, members.map(containsMember));
   }
   if (typeof value === "number") {
     return sql`(jsonb_typeof(properties -> ${key}) = 'number' and (properties ->> ${key})::numeric ${comparison(sql, condition.op)} ${value})`;

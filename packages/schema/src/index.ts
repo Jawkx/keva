@@ -85,7 +85,17 @@ export const KevaItem = Schema.Struct({
 });
 export type KevaItem = typeof KevaItem.Type;
 
-export const Operator = Schema.Literal("eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists");
+export const Operator = Schema.Literal(
+  "eq",
+  "neq",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "contains",
+  "in",
+  "exists",
+);
 export type Operator = typeof Operator.Type;
 
 export const QueryKey = Schema.String.pipe(
@@ -106,6 +116,16 @@ export const QueryCondition = Schema.Struct({
       if (value === undefined) return false;
       if (op === "contains")
         return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+      // `in` matches when the field satisfies `contains` against ANY listed
+      // value (an OR over alternatives), so it takes a non-empty scalar array.
+      if (op === "in")
+        return (
+          Array.isArray(value) &&
+          value.length > 0 &&
+          value.every(
+            (v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean",
+          )
+        );
       if (["gt", "gte", "lt", "lte"].includes(op)) {
         return typeof value === "string" || typeof value === "number";
       }

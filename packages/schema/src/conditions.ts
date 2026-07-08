@@ -37,6 +37,20 @@ const propertiesValueAt = (properties: Properties, key: string): Candidate =>
 const equals = (left: unknown, right: unknown): boolean =>
   typeof left === typeof right && Object.is(left, right);
 
+// `contains` against a single operand: substring for a string field, membership
+// for an array field. `in` reuses this per element (OR over alternatives).
+const containsScalar = (
+  candidateValue: PropertyValue | string | number | null,
+  operand: unknown,
+): boolean => {
+  if (typeof candidateValue === "string" && typeof operand === "string") {
+    return candidateValue.includes(operand);
+  }
+  return (
+    Array.isArray(candidateValue) && candidateValue.some((element) => equals(element, operand))
+  );
+};
+
 const evaluate = (candidate: Candidate, condition: QueryCondition): boolean => {
   if (condition.op === "exists") return candidate.exists;
   if (!candidate.exists) return false;
@@ -72,12 +86,11 @@ const evaluate = (candidate: Candidate, condition: QueryCondition): boolean => {
       return false;
     }
     case "contains":
-      if (typeof candidate.value === "string" && typeof operand === "string") {
-        return candidate.value.includes(operand);
-      }
+      return containsScalar(candidate.value, operand);
+    case "in":
       return (
-        Array.isArray(candidate.value) &&
-        candidate.value.some((element) => equals(element, operand))
+        Array.isArray(operand) &&
+        operand.some((element) => containsScalar(candidate.value, element))
       );
   }
 };

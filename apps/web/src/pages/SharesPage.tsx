@@ -6,7 +6,7 @@ export function SharesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Share links"
-        description="Secret links that give others filtered access to your files. Create one from the Files page."
+        description="Secret links that give others filtered access to your files. Create one from a saved view here, or by pressing Share on the Files page."
       />
       <SharesSection />
     </div>

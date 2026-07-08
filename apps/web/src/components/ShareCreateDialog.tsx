@@ -4,6 +4,8 @@ import { IconLink } from "@tabler/icons-react";
 import { toast } from "sonner";
 import type { CreateShareGrant, PropertyValue, QueryCondition, ShareScope } from "@keva/schema";
 import { createShare, sharesQueryKey } from "../lib/shares";
+import { createView, viewsQueryKey } from "../lib/views";
+import { describeFilter } from "../lib/item-filters";
 import { useApiError } from "../lib/useApiError";
 import {
   coerceScalar,
@@ -12,7 +14,6 @@ import {
   valueType,
   type ScalarType,
 } from "../lib/properties";
-import { ConditionChips } from "./ConditionChips";
 import { CopyButton } from "./CopyButton";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,7 +48,9 @@ interface ShareCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   // The view this link is built on. Conditions live on the view; the grant
-  // references it by id (they're read live server-side).
+  // references it by id (read live server-side). Empty when sharing from an
+  // unsaved filtered state — the dialog then saves a view first (KEV-7), so the
+  // link always rests on a real view.
   viewId: string;
   conditions: QueryCondition[];
 }
@@ -112,9 +115,27 @@ export function ShareCreateDialog({
     ...new Set(conditions.filter((c) => !isStampableKey(c.key)).map((c) => c.key)),
   ];
   const writeBlocked = blockingKeys.length > 0;
+  // Plain-language summary of what's shared, instead of raw query syntax (KEV-8).
+  const summary = describeFilter(conditions);
 
+  // Sharing from an unsaved filter (no viewId) saves a view first, then builds
+  // the grant on it — so a link always rests on a real, sidebar-visible view.
   const mutation = useMutation({
-    mutationFn: createShare,
+    mutationFn: async ({
+      grant,
+      conditions: where,
+    }: {
+      grant: Omit<CreateShareGrant, "viewId">;
+      conditions: readonly QueryCondition[];
+    }) => {
+      let targetViewId = viewId;
+      if (!targetViewId) {
+        const view = await createView({ name: grant.name, conditions: [...where] });
+        targetViewId = view.id;
+        void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
+      }
+      return createShare({ ...grant, viewId: targetViewId });
+    },
     onSuccess: (result) => {
       setLink(`${window.location.origin}/s/${result.token}`);
       void queryClient.invalidateQueries({ queryKey: sharesQueryKey });
@@ -141,9 +162,8 @@ export function ShareCreateDialog({
 
   const submit = () => {
     if (!name.trim() || scopes.length === 0) return;
-    const payload: CreateShareGrant = {
+    const grant: Omit<CreateShareGrant, "viewId"> = {
       name: name.trim(),
-      viewId,
       scopes,
     };
     if (scopes.includes("write")) {
@@ -152,23 +172,23 @@ export function ShareCreateDialog({
         toast.error(built.error);
         return;
       }
-      Object.assign(payload, { writeStamp: built });
+      Object.assign(grant, { writeStamp: built });
       const items = Number(maxItems);
       if (maxItems.trim() && Number.isFinite(items) && items > 0) {
-        Object.assign(payload, { maxItems: Math.floor(items) });
+        Object.assign(grant, { maxItems: Math.floor(items) });
       }
       const mb = Number(maxTotalMb);
       if (maxTotalMb.trim() && Number.isFinite(mb) && mb > 0) {
-        Object.assign(payload, { maxTotalBytes: Math.round(mb * 1024 * 1024) });
+        Object.assign(grant, { maxTotalBytes: Math.round(mb * 1024 * 1024) });
       }
     }
     const preset = EXPIRY_PRESETS.find((p) => p.id === expiry);
     if (preset?.days) {
-      Object.assign(payload, {
+      Object.assign(grant, {
         expiresAt: new Date(Date.now() + preset.days * 86_400_000).toISOString(),
       });
     }
-    mutation.mutate(payload);
+    mutation.mutate({ grant, conditions });
   };
 
   return (
@@ -200,10 +220,9 @@ export function ShareCreateDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Share this view</DialogTitle>
+              <DialogTitle>Share these files</DialogTitle>
               <DialogDescription>
-                Create a secret link that gives anyone who has it access to the files matching your
-                current filters.
+                Create a secret link that gives anyone who has it access to the files below.
               </DialogDescription>
             </DialogHeader>
             <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">
@@ -216,15 +235,28 @@ export function ShareCreateDialog({
                   placeholder="Client drop"
                   required
                 />
+                {!viewId && (
+                  <p className="text-xs text-muted-foreground">
+                    A view “{name.trim() || "…"}” will be saved to your sidebar.
+                  </p>
+                )}
               </Field>
 
               <Field>
                 <FieldLabel>Shared files</FieldLabel>
-                <ConditionChips conditions={conditions} />
-                {conditions.length === 0 && (
+                {summary.length === 0 ? (
                   <p className="text-xs text-amber-600 dark:text-amber-500">
                     No filters applied — this link shares all of your files.
                   </p>
+                ) : (
+                  <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
+                    {summary.map((phrase) => (
+                      <li key={phrase} className="flex items-center gap-2">
+                        <span className="size-1 shrink-0 rounded-full bg-muted-foreground/60" />
+                        {phrase}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </Field>
 
@@ -252,10 +284,15 @@ export function ShareCreateDialog({
                       Can upload
                     </FieldLabel>
                   </Field>
-                  {writeBlocked && (
+                  {writeBlocked ? (
                     <p className="text-xs text-muted-foreground">
-                      Uploads are only available when filtering by custom properties (not{" "}
-                      {blockingKeys.join(", ")}).
+                      Uploads are available for views filtered by properties, so incoming files can
+                      be tagged automatically. This view also filters by {blockingKeys.join(", ")},
+                      which uploads can’t match.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Uploaded files are tagged so they appear in this share.
                     </p>
                   )}
                 </div>

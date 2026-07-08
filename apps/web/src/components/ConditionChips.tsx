@@ -10,6 +10,7 @@ const OP_SYMBOL: Record<Operator, string> = {
   lt: "<",
   lte: "≤",
   contains: "∋",
+  in: "∈",
   exists: "",
 };
 

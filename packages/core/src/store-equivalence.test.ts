@@ -73,6 +73,21 @@ const QUERIES: Record<string, Query> = {
     limit: 100,
     order: "created_at_asc",
   },
+  inSysContentType: {
+    where: [{ key: "system.content_type", op: "in", value: ["application/pdf", "text/"] }],
+    limit: 100,
+    order: "created_at_asc",
+  },
+  inPropString: {
+    where: [{ key: "kind", op: "in", value: ["image", "doc"] }],
+    limit: 100,
+    order: "created_at_asc",
+  },
+  inArrayProp: {
+    where: [{ key: "tags", op: "in", value: ["z", "q"] }],
+    limit: 100,
+    order: "created_at_asc",
+  },
 };
 
 const EXPECTED: Record<string, string[]> = {
@@ -87,6 +102,9 @@ const EXPECTED: Record<string, string[]> = {
   sysContentTypeEq: ["bravo"],
   sysContentTypeNeq: ["alpha", "carol"],
   sysSizeNeqTypeMismatch: ["alpha", "bravo", "carol"],
+  inSysContentType: ["alpha", "carol"],
+  inPropString: ["alpha", "bravo", "carol"],
+  inArrayProp: ["bravo"],
 };
 
 const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");

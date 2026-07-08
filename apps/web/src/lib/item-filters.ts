@@ -22,6 +22,7 @@ export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
   lt: "less than",
   lte: "less than or equal",
   contains: "contains",
+  in: "is any of",
   exists: "exists",
 };
 
@@ -38,7 +39,7 @@ export interface ConditionDraft {
 
 export type ConditionDraftPatch = Partial<Omit<ConditionDraft, "id">>;
 
-export type KindFacetId = "all" | "image" | "video" | "audio";
+export type KindFacetId = "all" | "image" | "video" | "audio" | "document";
 export type SizeFacetId = "any" | "sm" | "md" | "lg" | "xl";
 
 export interface FacetOption<Id extends string> {
@@ -46,9 +47,26 @@ export interface FacetOption<Id extends string> {
   label: string;
 }
 
+// A Kind facet maps to a content-type predicate: a single `contains` prefix for
+// the media kinds, or an `in` over several type prefixes for Documents (which
+// spans pdf / text / office and can't be one substring).
 interface KindFacet extends FacetOption<KindFacetId> {
   prefix?: string;
+  types?: readonly string[];
 }
+
+// Content-type prefixes counted as "documents". Matched with the `in` operator,
+// whose per-element semantics are `contains`, so these behave as prefixes.
+const DOCUMENT_TYPES = [
+  "application/pdf",
+  "text/",
+  "application/json",
+  "application/rtf",
+  "application/msword",
+  "application/vnd.ms-",
+  "application/vnd.openxmlformats-officedocument",
+  "application/vnd.oasis.opendocument",
+] as const;
 
 interface SizeFacet extends FacetOption<SizeFacetId> {
   min?: number;
@@ -92,6 +110,7 @@ export const KIND_FACETS: readonly KindFacet[] = [
   { id: "image", label: "Images", prefix: "image/" },
   { id: "video", label: "Videos", prefix: "video/" },
   { id: "audio", label: "Audio", prefix: "audio/" },
+  { id: "document", label: "Documents", types: DOCUMENT_TYPES },
 ];
 
 export const SIZE_FACETS: readonly SizeFacet[] = [
@@ -121,9 +140,14 @@ export const removeConditionDraft = (draft: FilterDraft, id: string): FilterDraf
   return { ...draft, rows: rows.length > 0 ? rows : [createConditionDraft()] };
 };
 
+const CONTENT_TYPE_KEY = "system.content_type";
+const SIZE_KEY = "system.size";
+
 const kindConditions = (id: KindFacetId): QueryCondition[] => {
   const facet = KIND_FACETS.find((option) => option.id === id);
-  return facet?.prefix ? [{ key: "system.content_type", op: "contains", value: facet.prefix }] : [];
+  if (facet?.types) return [{ key: CONTENT_TYPE_KEY, op: "in", value: [...facet.types] }];
+  if (facet?.prefix) return [{ key: CONTENT_TYPE_KEY, op: "contains", value: facet.prefix }];
+  return [];
 };
 
 const sizeConditions = (id: SizeFacetId): QueryCondition[] => {
@@ -131,8 +155,8 @@ const sizeConditions = (id: SizeFacetId): QueryCondition[] => {
   if (!facet) return [];
 
   const conditions: QueryCondition[] = [];
-  if (facet.min !== undefined) conditions.push({ key: "system.size", op: "gte", value: facet.min });
-  if (facet.max !== undefined) conditions.push({ key: "system.size", op: "lt", value: facet.max });
+  if (facet.min !== undefined) conditions.push({ key: SIZE_KEY, op: "gte", value: facet.min });
+  if (facet.max !== undefined) conditions.push({ key: SIZE_KEY, op: "lt", value: facet.max });
   return conditions;
 };
 
@@ -151,11 +175,12 @@ export const buildFilterWhere = (draft: FilterDraft): QueryCondition[] => [
   ...rowConditions(draft.rows),
 ];
 
-// Inverse of buildFilterWhere for seeding the panel from a saved view. Every
-// condition becomes a plain row (the kind/size quick facets are just UI sugar
-// over the same conditions, so a facet-derived view shows as raw rows but
-// round-trips identically). Array/null values fall back to an empty string
-// input — edit those through JSON if needed.
+// Inverse of buildFilterWhere for seeding the panel from a saved view or URL.
+// The kind/size quick facets are sugar over ordinary conditions, so we detect
+// the facet-shaped conditions and pull them back onto `kind`/`size` — that's
+// what lets a saved "Images" filter reopen as the Images chip rather than a raw
+// `content_type ∋ image/` row (KEV-10). Everything else becomes a plain row.
+// Array/null values fall back to an empty string input — edit those via JSON.
 const FILTER_VALUE_TYPE_SET = new Set<string>(FILTER_VALUE_TYPES);
 
 const rowValueType = (condition: QueryCondition): FilterValueType => {
@@ -164,17 +189,197 @@ const rowValueType = (condition: QueryCondition): FilterValueType => {
   return FILTER_VALUE_TYPE_SET.has(type) ? (type as FilterValueType) : "string";
 };
 
-export const draftFromConditions = (conditions: readonly QueryCondition[]): FilterDraft => ({
-  kind: "all",
-  size: "any",
-  rows:
-    conditions.length > 0
-      ? conditions.map((condition) => ({
-          ...createConditionDraft(),
-          key: condition.key,
-          op: condition.op,
-          valueType: rowValueType(condition),
-          value: condition.value === undefined ? "" : scalarToInput(condition.value),
-        }))
-      : [createConditionDraft()],
-});
+const sameStringArray = (a: readonly unknown[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
+
+// Does a single condition encode a Kind facet? Media kinds are one `contains`
+// prefix; Documents is the `in` over DOCUMENT_TYPES.
+const matchKindCondition = (condition: QueryCondition): KindFacetId | null => {
+  if (condition.key !== CONTENT_TYPE_KEY) return null;
+  if (condition.op === "in" && Array.isArray(condition.value)) {
+    const facet = KIND_FACETS.find(
+      (f) => f.types && sameStringArray(condition.value as unknown[], f.types),
+    );
+    return facet?.id ?? null;
+  }
+  if (condition.op === "contains" && typeof condition.value === "string") {
+    const facet = KIND_FACETS.find((f) => f.prefix && f.prefix === condition.value);
+    return facet?.id ?? null;
+  }
+  return null;
+};
+
+// Does the set of system.size bounds present exactly match a Size facet? A facet
+// carries a min (gte), a max (lt), or both, so we compare the extracted bounds.
+const matchSizeFacet = (min: number | undefined, max: number | undefined): SizeFacetId | null => {
+  const facet = SIZE_FACETS.find((f) => f.id !== "any" && f.min === min && f.max === max);
+  return facet?.id ?? null;
+};
+
+export const draftFromConditions = (conditions: readonly QueryCondition[]): FilterDraft => {
+  const rest = [...conditions];
+
+  // Extract the first kind-shaped condition.
+  let kind: KindFacetId = "all";
+  const kindIndex = rest.findIndex((c) => matchKindCondition(c) !== null);
+  if (kindIndex !== -1) {
+    kind = matchKindCondition(rest[kindIndex]!)!;
+    rest.splice(kindIndex, 1);
+  }
+
+  // Extract the system.size bounds and, if they form a known facet, fold them in.
+  let size: SizeFacetId = "any";
+  const sizeRows = rest.filter((c) => c.key === SIZE_KEY && (c.op === "gte" || c.op === "lt"));
+  if (sizeRows.length > 0) {
+    const min = sizeRows.find((c) => c.op === "gte")?.value;
+    const max = sizeRows.find((c) => c.op === "lt")?.value;
+    const matched = matchSizeFacet(
+      typeof min === "number" ? min : undefined,
+      typeof max === "number" ? max : undefined,
+    );
+    if (matched) {
+      size = matched;
+      for (const row of sizeRows) rest.splice(rest.indexOf(row), 1);
+    }
+  }
+
+  return {
+    kind,
+    size,
+    rows:
+      rest.length > 0
+        ? rest.map((condition) => ({
+            ...createConditionDraft(),
+            key: condition.key,
+            op: condition.op,
+            valueType: rowValueType(condition),
+            value: condition.value === undefined ? "" : scalarToInput(condition.value),
+          }))
+        : [createConditionDraft()],
+  };
+};
+
+// ── Applied-filter chips (toolbar) ─────────────────────────────────────────
+
+export interface FilterChip {
+  id: string;
+  label: string;
+  // Returns the draft with this chip's contribution removed.
+  remove: (draft: FilterDraft) => FilterDraft;
+}
+
+const OP_LABEL: Partial<Record<Operator, string>> = {
+  neq: "≠",
+  gt: ">",
+  gte: "≥",
+  lt: "<",
+  lte: "≤",
+  contains: "∋",
+  in: "∈",
+};
+
+// A single condition row rendered as a compact chip label. Equality reads as
+// `key:value` (KEV-3), other operators keep their symbol, and `exists` reads as
+// a bare membership tag.
+const rowChipLabel = (row: ConditionDraft): string => {
+  const key = row.key.trim();
+  if (row.op === "exists") return key;
+  if (row.op === "eq") return `${key}:${row.value}`;
+  return `${key} ${OP_LABEL[row.op] ?? row.op} ${row.value}`;
+};
+
+// The applied filters as removable chips, in the same order buildFilterWhere
+// emits them: Kind, Size, then each condition row.
+export const filterChips = (draft: FilterDraft): FilterChip[] => {
+  const chips: FilterChip[] = [];
+  if (draft.kind !== "all") {
+    const label = KIND_FACETS.find((f) => f.id === draft.kind)?.label ?? draft.kind;
+    chips.push({ id: "kind", label, remove: (d) => ({ ...d, kind: "all" }) });
+  }
+  if (draft.size !== "any") {
+    const label = SIZE_FACETS.find((f) => f.id === draft.size)?.label ?? draft.size;
+    chips.push({ id: "size", label, remove: (d) => ({ ...d, size: "any" }) });
+  }
+  for (const row of draft.rows) {
+    if (row.key.trim().length === 0) continue;
+    chips.push({
+      id: row.id,
+      label: rowChipLabel(row),
+      remove: (d) => removeConditionDraft(d, row.id),
+    });
+  }
+  return chips;
+};
+
+// ── Plain-language description ──────────────────────────────────────────────
+//
+// Turns a filter into human phrases for the share dialog (KEV-8), so a recipient
+// flow never shows raw query syntax. Reuses the facet reverse-mapping.
+
+const SIZE_PHRASE: Record<Exclude<SizeFacetId, "any">, string> = {
+  sm: "Smaller than 1 MB",
+  md: "Between 1 and 10 MB",
+  lg: "Between 10 and 100 MB",
+  xl: "Larger than 100 MB",
+};
+
+const ROW_OP_PHRASE: Partial<Record<Operator, string>> = {
+  neq: "is not",
+  gt: "greater than",
+  gte: "at least",
+  lt: "less than",
+  lte: "at most",
+  contains: "contains",
+  in: "is any of",
+};
+
+// A property/system key as it reads in prose: drop the `system.` prefix.
+const prettyKey = (key: string): string => key.replace(/^system\./, "");
+
+const rowPhrase = (row: ConditionDraft): string => {
+  const key = prettyKey(row.key.trim());
+  if (row.op === "exists") return `has ${key}`;
+  if (row.op === "eq") return `${key} is ${row.value}`;
+  return `${key} ${ROW_OP_PHRASE[row.op] ?? row.op} ${row.value}`;
+};
+
+export const describeFilter = (conditions: readonly QueryCondition[]): string[] => {
+  const draft = draftFromConditions(conditions);
+  const parts: string[] = [];
+  if (draft.kind !== "all") {
+    const label = KIND_FACETS.find((f) => f.id === draft.kind)?.label ?? draft.kind;
+    parts.push(`All ${label.toLowerCase()}`);
+  }
+  if (draft.size !== "any") parts.push(SIZE_PHRASE[draft.size]);
+  for (const row of draft.rows) {
+    if (row.key.trim().length > 0) parts.push(rowPhrase(row));
+  }
+  return parts;
+};
+
+// ── URL persistence ────────────────────────────────────────────────────────
+//
+// The root list keeps its filter in the URL (KEV-10) so it survives reload and
+// is shareable. We serialize the *conditions* (the query the list actually
+// runs) as JSON; draftFromConditions reconstructs the kind/size/row structure.
+
+export const encodeFilterParam = (where: readonly QueryCondition[]): string =>
+  JSON.stringify(where);
+
+export const decodeFilterParam = (raw: string | null): QueryCondition[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Trust is bounded: malformed entries are dropped, and the server re-validates.
+    return parsed.filter(
+      (c): c is QueryCondition =>
+        typeof c === "object" &&
+        c !== null &&
+        typeof c.key === "string" &&
+        typeof c.op === "string",
+    );
+  } catch {
+    return [];
+  }
+};

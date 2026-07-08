@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
@@ -15,9 +15,11 @@ import {
   IconArrowDown,
   IconCloudUpload,
   IconDeviceFloppy,
+  IconDotsVertical,
   IconFiles,
   IconFilter,
   IconLoader2,
+  IconPencil,
   IconSearch,
   IconShare3,
   IconTrash,
@@ -25,15 +27,21 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import type { QueryCondition, UpdateView } from "@keva/schema";
+import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { FilterPanel } from "../components/FilterPanel";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { errorMessage } from "../lib/errors";
-import { formatPropertyValue, formatBytes, formatContentType, formatRelative } from "../lib/format";
-import { createFilterDraft, draftFromConditions } from "../lib/item-filters";
+import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
+import {
+  buildFilterWhere,
+  decodeFilterParam,
+  draftFromConditions,
+  encodeFilterParam,
+  filterChips,
+} from "../lib/item-filters";
 import {
   itemsQueryKey,
   prependItemToPages,
@@ -78,6 +86,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -103,13 +118,49 @@ declare module "@tanstack/react-table" {
   interface TableMeta<TData extends RowData> {
     selectMode: boolean;
     onRetryUpload: (id: string, file: File) => void;
+    onFilterByProperty: (key: string, value: PropertyValue) => void;
   }
 }
+
+// A property rendered as a chip in the list. Bare tags (null) show just the key;
+// scalars read as `key:value` (KEV-3). Arrays show the key with a count.
+const propertyChipLabel = (key: string, value: PropertyValue): string => {
+  if (value === null) return key;
+  if (Array.isArray(value)) return `${key}:${value.length}`;
+  return `${key}:${formatPropertyValue(value)}`;
+};
 
 const PAGE_SIZE = 50;
 const DEFAULT_ORDER = "created_at_desc" as const;
 
 const plural = (n: number) => (n === 1 ? "item" : "items");
+
+// Order-insensitive equality of two condition lists — used to tell whether a
+// view's filter has unsaved edits regardless of the order conditions are built.
+const canonCondition = (c: QueryCondition) => JSON.stringify([c.key, c.op, c.value ?? null]);
+const sameConditions = (a: readonly QueryCondition[], b: readonly QueryCondition[]): boolean =>
+  a.length === b.length &&
+  a.map(canonCondition).sort().join("|") === b.map(canonCondition).sort().join("|");
+
+// The property equalities a filter implies, as a stamp for uploads (KEV-5): an
+// upload into a view filtered by `project=keva` is tagged so it lands in view.
+// Only plain-property `eq` conditions with a scalar value qualify (system fields
+// and `name` can't be stamped).
+const uploadStampFrom = (where: readonly QueryCondition[]): Record<string, PropertyValue> => {
+  const stamp: Record<string, PropertyValue> = {};
+  for (const c of where) {
+    if (
+      c.op === "eq" &&
+      c.value !== undefined &&
+      !Array.isArray(c.value) &&
+      !c.key.startsWith("system.") &&
+      c.key !== "name"
+    ) {
+      stamp[c.key] = c.value;
+    }
+  }
+  return stamp;
+};
 
 type FileRow = KevaItem & {
   upload?: { status: "uploading" | "error"; file: File; error?: string };
@@ -204,14 +255,6 @@ const columns = [
       </div>
     ),
   }),
-  columnHelper.accessor("contentType", {
-    header: "Type",
-    cell: (ctx) => (
-      <span className="text-muted-foreground" title={ctx.getValue()}>
-        {formatContentType(ctx.getValue())}
-      </span>
-    ),
-  }),
   columnHelper.accessor((o) => o.size ?? 0, {
     id: "size",
     header: "Size",
@@ -232,15 +275,30 @@ const columns = [
     id: "properties",
     header: "Properties",
     cell: (ctx) => {
-      const keys = Object.keys(ctx.row.original.properties).slice(0, 2);
+      const { properties } = ctx.row.original;
+      const keys = Object.keys(properties).slice(0, 3);
       if (keys.length === 0) return <span className="text-muted-foreground">—</span>;
+      const onFilter = ctx.table.options.meta?.onFilterByProperty;
       return (
         <div className="flex flex-wrap gap-1">
-          {keys.map((key) => (
-            <Badge key={key} variant="secondary">
-              {key}={formatPropertyValue(ctx.row.original.properties[key]!)}
-            </Badge>
-          ))}
+          {keys.map((key) => {
+            const value = properties[key]!;
+            return (
+              <Badge
+                key={key}
+                variant="secondary"
+                render={<button type="button" />}
+                title={`Filter by ${propertyChipLabel(key, value)}`}
+                className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFilter?.(key, value);
+                }}
+              >
+                {propertyChipLabel(key, value)}
+              </Badge>
+            );
+          })}
         </div>
       );
     },
@@ -253,8 +311,9 @@ export function FilesPage() {
   const queryClient = useQueryClient();
   const isWide = useMediaQuery("(min-width: 1024px)");
 
-  // View mode: the open view supplies the filter. Its conditions are read live,
-  // so editing the view (below) updates the list and any share link built on it.
+  // View mode: the open view supplies the baseline filter. Edits are previewed
+  // live in the list but only persisted to the view (and its share links) on an
+  // explicit Save — see the Edited/Save/Discard affordance below (KEV-12).
   const viewQuery = useQuery({
     queryKey: viewId ? viewQueryKey(viewId) : ["views", "none"],
     queryFn: () => getView(viewId!),
@@ -262,10 +321,15 @@ export function FilesPage() {
   });
   const view = viewQuery.data;
 
+  // On the root list the applied filter lives in the URL (KEV-10) so it survives
+  // reload and is shareable; in a view it comes from the view's conditions.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialWhere = viewId ? [] : decodeFilterParam(searchParams.get("filter"));
+
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
-  const [activeWhere, setActiveWhere] = useState<QueryCondition[]>([]);
-  const [filterDraft, setFilterDraft] = useState(createFilterDraft);
+  const [activeWhere, setActiveWhere] = useState<QueryCondition[]>(initialWhere);
+  const [filterDraft, setFilterDraft] = useState(() => draftFromConditions(initialWhere));
   const [showFilters, setShowFilters] = useState(false);
   // Debounce timer for free-text search; scheduled from the change handler (an
   // event, not a lifecycle effect) and cleared on unmount so a late tick can't
@@ -294,27 +358,45 @@ export function FilesPage() {
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [deleteViewOpen, setDeleteViewOpen] = useState(false);
+  // Rename dialog: null when idle, otherwise the in-progress draft name.
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
 
-  // Seed the filter from the active view whenever the view (or its saved
-  // conditions) changes, or reset to empty on the root list — adjusting state
-  // during render rather than via an effect (repo rule: no direct useEffect).
-  const seedKey = viewId ? `${viewId}:${view?.updatedAt ?? "loading"}` : "root";
-  const [seededKey, setSeededKey] = useState(seedKey);
-  if (seedKey !== seededKey) {
-    setSeededKey(seedKey);
+  // Two independent seeds, adjusted during render rather than via an effect
+  // (repo rule: no direct useEffect):
+  //  • navKey changes on route change (root ↔ view, view → view): reset the
+  //    selection and the ephemeral free-text search.
+  //  • filterKey changes when the applied filter's source changes — the view's
+  //    saved conditions, or the root URL `filter` param — and reseeds the
+  //    working filter without disturbing the search box.
+  const navKey = viewId ?? "root";
+  const [seededNav, setSeededNav] = useState(navKey);
+  if (navKey !== seededNav) {
+    setSeededNav(navKey);
     setRowSelection({});
+    setSearch("");
+    setActiveSearch("");
+  }
+
+  const filterKey = viewId
+    ? `v:${view?.updatedAt ?? "loading"}`
+    : `u:${searchParams.get("filter") ?? ""}`;
+  const [seededFilter, setSeededFilter] = useState(filterKey);
+  if (filterKey !== seededFilter) {
+    setSeededFilter(filterKey);
     if (viewId) {
       if (view) {
         setActiveWhere([...view.conditions]);
         setFilterDraft(draftFromConditions(view.conditions));
       }
     } else {
-      setActiveWhere([]);
-      setFilterDraft(createFilterDraft());
-      setSearch("");
-      setActiveSearch("");
+      const where = decodeFilterParam(searchParams.get("filter"));
+      setActiveWhere(where);
+      setFilterDraft(draftFromConditions(where));
     }
   }
+
+  // Whether the view's filter has unsaved edits (view mode only).
+  const viewEdited = Boolean(viewId && view && !sameConditions(activeWhere, view.conditions));
 
   // Navigation stays within the active view so selecting/closing an item keeps
   // you on /v/:viewId rather than dropping back to the root list.
@@ -379,13 +461,22 @@ export function FilesPage() {
 
   const splitOpen = Boolean(selectedId) && isWide;
   const columnVisibility: VisibilityState = {
-    contentType: !splitOpen,
     createdAt: !splitOpen,
     properties: !splitOpen,
   };
 
   const selectMode = Object.values(rowSelection).some(Boolean);
   const filtered = activeSearch.trim().length > 0 || activeWhere.length > 0;
+
+  // The applied filter reverse-mapped to its facet/row structure, and the
+  // removable toolbar chips derived from it (KEV-9).
+  const appliedDraft = useMemo(() => draftFromConditions(activeWhere), [activeWhere]);
+  const appliedChips = useMemo(() => filterChips(appliedDraft), [appliedDraft]);
+
+  // Uploads inherit the property equalities of the current filter so a file
+  // dropped into a `project=keva` view is tagged and stays in view (KEV-5).
+  const uploadStamp = useMemo(() => uploadStampFrom(activeWhere), [activeWhere]);
+  const uploadStampEntries = Object.entries(uploadStamp);
 
   // Upload lifecycle. Files appear instantly as optimistic rows; each upload
   // runs independently and reconciles its own row — moving the real item into
@@ -394,7 +485,7 @@ export function FilesPage() {
     async (id: string, file: File) => {
       try {
         const item = await keva.uploadFile(file, {
-          properties: {},
+          properties: uploadStamp,
           source: "upload",
         });
         // Prepend into the (unfiltered) list and drop the optimistic row in the
@@ -417,7 +508,7 @@ export function FilesPage() {
         );
       }
     },
-    [activeSearch, activeWhere, queryClient],
+    [activeSearch, activeWhere, uploadStamp, queryClient],
   );
 
   const startUploads = useCallback(
@@ -442,6 +533,45 @@ export function FilesPage() {
     [uploadOne],
   );
 
+  // Set the applied filter. On the root list this writes the URL `filter` param
+  // (the seed above then normalizes activeWhere/draft from it); in a view it
+  // sets state directly as a live, unsaved preview persisted via Save (KEV-12).
+  const applyWhere = useCallback(
+    (where: QueryCondition[]) => {
+      setRowSelection({});
+      if (viewId) {
+        setActiveWhere(where);
+        setFilterDraft(draftFromConditions(where));
+      } else {
+        setSearchParams(
+          (prev) => {
+            const sp = new URLSearchParams(prev);
+            if (where.length > 0) sp.set("filter", encodeFilterParam(where));
+            else sp.delete("filter");
+            return sp;
+          },
+          { replace: true },
+        );
+      }
+    },
+    [viewId, setSearchParams],
+  );
+
+  // Clicking a property chip in the list filters by it (KEV-3): a scalar adds an
+  // equality, a bare tag / array adds an existence check. A same-key equality
+  // is replaced so clicking a different value swaps rather than contradicts.
+  const filterByProperty = useCallback(
+    (key: string, value: PropertyValue) => {
+      const condition: QueryCondition =
+        value === null || Array.isArray(value) ? { key, op: "exists" } : { key, op: "eq", value };
+      const kept = activeWhere.filter(
+        (c) => !(c.key === key && (c.op === "eq" || c.op === "exists")),
+      );
+      applyWhere([...kept, condition]);
+    },
+    [activeWhere, applyWhere],
+  );
+
   const table = useReactTable({
     data: tableData,
     columns,
@@ -450,7 +580,7 @@ export function FilesPage() {
     enableRowSelection: (row) => !row.original.upload,
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
-    meta: { selectMode, onRetryUpload: retryUpload },
+    meta: { selectMode, onRetryUpload: retryUpload, onFilterByProperty: filterByProperty },
   });
 
   const rows = table.getRowModel().rows;
@@ -506,25 +636,36 @@ export function FilesPage() {
     }, 300);
   };
 
-  const applyFilters = (where: QueryCondition[]) => {
-    setActiveWhere(where);
-    setRowSelection({});
-    // On a saved view, applying edits the view in place (live) so any share link
-    // built on it reflects the change.
-    if (viewId) updateViewMutation.mutate({ conditions: where });
-  };
-
   const clearFilters = () => {
     window.clearTimeout(searchTimer.current);
     setSearch("");
     setActiveSearch("");
+    applyWhere([]);
+  };
+
+  // View edits (KEV-12): Save persists the previewed filter to the view (and,
+  // through it, any share links); Discard reverts to the last saved conditions.
+  const saveViewEdits = () => {
+    updateViewMutation.mutate(
+      { conditions: activeWhere },
+      { onSuccess: () => toast.success("View updated") },
+    );
+  };
+
+  const discardViewEdits = () => {
+    if (!view) return;
     setRowSelection({});
-    // On a view, "Clear" only drops the free-text search — the saved view filter
-    // stays intact (delete the view to remove it). On the root list it resets all.
-    if (!viewId) {
-      setActiveWhere([]);
-      setFilterDraft(createFilterDraft());
+    setActiveWhere([...view.conditions]);
+    setFilterDraft(draftFromConditions(view.conditions));
+  };
+
+  const commitRename = () => {
+    const next = renameDraft?.trim() ?? "";
+    if (!next || next === view?.name) {
+      setRenameDraft(null);
+      return;
     }
+    updateViewMutation.mutate({ name: next }, { onSuccess: () => setRenameDraft(null) });
   };
 
   const tableInner = (
@@ -647,9 +788,14 @@ export function FilesPage() {
         ) : (
           <>
             {viewId && view && (
-              <span className="mr-1 truncate text-sm font-medium" title={view.name}>
+              <button
+                type="button"
+                className="mr-1 max-w-40 truncate rounded-sm px-1 text-sm font-medium hover:bg-muted"
+                title={`${view.name} — click to rename`}
+                onClick={() => setRenameDraft(view.name)}
+              >
                 {view.name}
-              </span>
+              </button>
             )}
             <div className="relative w-full min-w-0 sm:w-72">
               <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -663,36 +809,65 @@ export function FilesPage() {
             <Button variant="outline" onClick={() => setShowFilters((v) => !v)}>
               <IconFilter data-icon="inline-start" />
               Filters
-              {activeWhere.length > 0 && <Badge className="ml-1">{activeWhere.length}</Badge>}
+              {appliedChips.length > 0 && <Badge className="ml-1">{appliedChips.length}</Badge>}
             </Button>
-            {filtered && (
-              <Button variant="ghost" onClick={clearFilters}>
-                <IconX data-icon="inline-start" />
-                Clear
-              </Button>
-            )}
             <div className="flex items-center gap-3 sm:ml-auto">
               {viewId ? (
                 <>
+                  {viewEdited && (
+                    <>
+                      <Badge variant="secondary">Edited</Badge>
+                      <Button variant="ghost" onClick={discardViewEdits}>
+                        Discard
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={saveViewEdits}
+                        disabled={updateViewMutation.isPending}
+                      >
+                        <IconDeviceFloppy data-icon="inline-start" />
+                        Save
+                      </Button>
+                    </>
+                  )}
                   <Button variant="outline" onClick={openShare}>
                     <IconShare3 data-icon="inline-start" />
                     Share
                   </Button>
-                  <Button
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setDeleteViewOpen(true)}
-                  >
-                    <IconTrash data-icon="inline-start" />
-                    Delete view
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={<Button variant="ghost" size="icon" aria-label="View options" />}
+                    >
+                      <IconDotsVertical />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setRenameDraft(view?.name ?? "")}>
+                        <IconPencil />
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setDeleteViewOpen(true)}
+                      >
+                        <IconTrash />
+                        Delete view
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </>
               ) : (
-                activeWhere.length > 0 && (
-                  <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
-                    <IconDeviceFloppy data-icon="inline-start" />
-                    Save as view
-                  </Button>
+                filtered && (
+                  <>
+                    <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
+                      <IconDeviceFloppy data-icon="inline-start" />
+                      Save as view
+                    </Button>
+                    <Button variant="outline" onClick={openShare}>
+                      <IconShare3 data-icon="inline-start" />
+                      Share
+                    </Button>
+                  </>
                 )
               )}
               <Button onClick={() => uploadInputRef.current?.click()}>
@@ -703,12 +878,42 @@ export function FilesPage() {
           </>
         )}
       </div>
+      {!selectMode && (appliedChips.length > 0 || uploadStampEntries.length > 0) && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
+          {appliedChips.map((chip) => (
+            <Badge key={chip.id} variant="secondary" className="gap-1 pr-1">
+              <span className="truncate">{chip.label}</span>
+              <button
+                type="button"
+                aria-label={`Remove filter ${chip.label}`}
+                className="flex size-4 items-center justify-center rounded-sm hover:bg-foreground/10"
+                onClick={() => applyWhere(buildFilterWhere(chip.remove(appliedDraft)))}
+              >
+                <IconX className="size-3" />
+              </button>
+            </Badge>
+          ))}
+          {appliedChips.length > 0 && (
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearFilters}>
+              Clear all
+            </Button>
+          )}
+          {uploadStampEntries.length > 0 && (
+            <span className="ml-1 text-xs text-muted-foreground">
+              New uploads will be tagged{" "}
+              <span className="font-medium text-foreground">
+                {uploadStampEntries.map(([k, v]) => `${k}:${formatPropertyValue(v)}`).join(", ")}
+              </span>
+            </span>
+          )}
+        </div>
+      )}
       <FilterPanel
         open={showFilters}
         search={activeSearch}
         draft={filterDraft}
         onDraftChange={setFilterDraft}
-        onApply={applyFilters}
+        onApply={applyWhere}
         onClear={clearFilters}
         onClose={() => setShowFilters(false)}
       />
@@ -755,6 +960,12 @@ export function FilesPage() {
           <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8 text-center">
             <IconCloudUpload className="size-7 text-primary" />
             <p className="font-medium">Drop to upload</p>
+            {uploadStampEntries.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Tagged{" "}
+                {uploadStampEntries.map(([k, v]) => `${k}:${formatPropertyValue(v)}`).join(", ")}
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -875,6 +1086,45 @@ export function FilesPage() {
               disabled={!saveViewName.trim() || createViewMutation.isPending}
             >
               {createViewMutation.isPending ? "Saving…" : "Save view"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renameDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenameDraft(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename view</DialogTitle>
+            <DialogDescription>Give this view a new name in the sidebar.</DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="rename-view-name">Name</FieldLabel>
+            <Input
+              id="rename-view-name"
+              value={renameDraft ?? ""}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+              }}
+            />
+          </Field>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <Button
+              onClick={commitRename}
+              disabled={
+                !renameDraft?.trim() ||
+                renameDraft.trim() === view?.name ||
+                updateViewMutation.isPending
+              }
+            >
+              {updateViewMutation.isPending ? "Saving…" : "Rename"}
             </Button>
           </DialogFooter>
         </DialogContent>

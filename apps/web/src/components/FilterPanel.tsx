@@ -325,7 +325,10 @@ export function FilterPanel({
             )}
             <Button
               className={where.length > 0 ? undefined : "ml-auto"}
-              onClick={() => onApply(where)}
+              onClick={() => {
+                onApply(where);
+                close();
+              }}
             >
               Apply
             </Button>

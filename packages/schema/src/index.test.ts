@@ -38,6 +38,18 @@ describe("schema", () => {
         where: [{ key: "system.unknown", op: "exists" }],
       }),
     ).toThrow();
+    // `in` takes a non-empty scalar array; a scalar or empty array is rejected.
+    expect(
+      Schema.decodeUnknownSync(Query)({
+        where: [{ key: "system.content_type", op: "in", value: ["text/", "application/pdf"] }],
+      }).where,
+    ).toEqual([{ key: "system.content_type", op: "in", value: ["text/", "application/pdf"] }]);
+    expect(() =>
+      Schema.decodeUnknownSync(Query)({ where: [{ key: "kind", op: "in", value: "doc" }] }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(Query)({ where: [{ key: "kind", op: "in", value: [] }] }),
+    ).toThrow();
   });
 
   it("validates optional query search", () => {
@@ -111,6 +123,25 @@ describe("condition evaluator", () => {
     expect(itemMatchesCondition(item, { key: "tags", op: "contains", value: "x" })).toBe(true);
     expect(itemMatchesCondition(item, { key: "tags", op: "contains", value: "z" })).toBe(false);
     expect(itemMatchesCondition(item, { key: "project", op: "neq", value: "beta" })).toBe(true);
+    // `in` — OR of `contains` over the listed values.
+    expect(itemMatchesCondition(item, { key: "project", op: "in", value: ["beta", "alpha"] })).toBe(
+      true,
+    );
+    expect(itemMatchesCondition(item, { key: "project", op: "in", value: ["beta", "gamma"] })).toBe(
+      false,
+    );
+    expect(itemMatchesCondition(item, { key: "tags", op: "in", value: ["z", "x"] })).toBe(true);
+    expect(itemMatchesCondition(item, { key: "tags", op: "in", value: ["z", "q"] })).toBe(false);
+    expect(
+      itemMatchesCondition(item, {
+        key: "system.content_type",
+        op: "in",
+        value: ["text/", "application/pdf"],
+      }),
+    ).toBe(true);
+    expect(
+      itemMatchesCondition(item, { key: "system.content_type", op: "in", value: ["image/"] }),
+    ).toBe(false);
   });
 
   it("resolves declared system fields for items", () => {

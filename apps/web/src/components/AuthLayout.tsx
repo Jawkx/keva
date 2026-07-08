@@ -123,7 +123,9 @@ function BrandPanel() {
       />
 
       <div className="relative flex h-full flex-col">
-        <span className="font-heading text-[42px] leading-none font-semibold text-primary">Keva</span>
+        <span className="font-heading text-[42px] leading-none font-semibold text-primary">
+          Keva
+        </span>
 
         <div className="flex flex-1 flex-col justify-center gap-12">
           <div>
@@ -159,7 +161,9 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <main className="flex flex-col items-center justify-center px-6 py-12 lg:border-l lg:border-border">
         <div className="flex w-full max-w-sm flex-col gap-8">
           <div className="flex justify-center lg:hidden">
-            <span className="font-heading text-[42px] leading-none font-semibold text-primary">Keva</span>
+            <span className="font-heading text-[42px] leading-none font-semibold text-primary">
+              Keva
+            </span>
           </div>
           {children}
         </div>
