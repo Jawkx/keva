@@ -31,6 +31,7 @@ mcp__playwright__browser_take_screenshot  filename: ".playwright-mcp/files-detai
 
 - Web (Vite): `http://localhost:5173`
 - Backend API: `http://localhost:8787`
+- There are chances where the sandbox will block you from detecting the dev server is running, there are high chances that something was running if user ask you to do work, use playwright to open the webpage first
 - If nothing is listening, the server isn't running — ask the user to start it (e.g.
   `! pnpm dev`) rather than guessing a port.
 
