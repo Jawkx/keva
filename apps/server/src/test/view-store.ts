@@ -16,6 +16,7 @@ export const makeInMemoryViewStore = (
         id,
         tenantId,
         name: input.name,
+        icon: input.icon ?? null,
         conditions: [...input.conditions],
         createdAt: now,
         updatedAt: now,
@@ -36,6 +37,7 @@ export const makeInMemoryViewStore = (
       const next: ViewRecord = {
         ...view,
         ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.icon !== undefined ? { icon: input.icon } : {}),
         ...(input.conditions !== undefined ? { conditions: [...input.conditions] } : {}),
         updatedAt: new Date().toISOString(),
       };

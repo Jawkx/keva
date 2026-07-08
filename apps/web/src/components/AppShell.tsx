@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DatabaseIcon,
   Files01Icon,
-  FilterIcon,
   Logout01Icon,
   Plug01Icon,
   Settings01Icon,
@@ -16,6 +15,7 @@ import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
+import { viewIcon } from "./view-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,7 +126,7 @@ export function AppShell() {
                       tooltip={view.name}
                       render={<Link to={`/v/${view.id}`} />}
                     >
-                      <HugeiconsIcon icon={FilterIcon} />
+                      <HugeiconsIcon icon={viewIcon(view.icon)} />
                       <span>{view.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

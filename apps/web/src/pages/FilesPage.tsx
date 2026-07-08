@@ -34,6 +34,7 @@ import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { FilterPanel } from "../components/FilterPanel";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
+import { ViewIconPicker, viewIcon } from "../components/view-icons";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
 import {
@@ -359,9 +360,12 @@ export function FilesPage() {
 
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
+  const [saveViewIcon, setSaveViewIcon] = useState<string | null>(null);
   const [deleteViewOpen, setDeleteViewOpen] = useState(false);
-  // Rename dialog: null when idle, otherwise the in-progress draft name.
+  // Edit-view dialog: name is null when idle, otherwise the in-progress draft;
+  // icon holds the draft icon key (null = default) while the dialog is open.
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const [renameIcon, setRenameIcon] = useState<string | null>(null);
 
   // Two independent seeds, adjusted during render rather than via an effect
   // (repo rule: no direct useEffect):
@@ -416,11 +420,13 @@ export function FilesPage() {
   });
 
   const createViewMutation = useMutation({
-    mutationFn: (name: string) => createView({ name, conditions: activeWhere }),
+    mutationFn: (name: string) =>
+      createView({ name, conditions: activeWhere, icon: saveViewIcon ?? undefined }),
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
       setSaveViewOpen(false);
       setSaveViewName("");
+      setSaveViewIcon(null);
       navigate(`/v/${created.id}`);
     },
     onError: (err) => toast.error(errorMessage(err)),
@@ -663,11 +669,30 @@ export function FilesPage() {
 
   const commitRename = () => {
     const next = renameDraft?.trim() ?? "";
-    if (!next || next === view?.name) {
+    if (!next) {
       setRenameDraft(null);
       return;
     }
-    updateViewMutation.mutate({ name: next }, { onSuccess: () => setRenameDraft(null) });
+    const nameChanged = next !== view?.name;
+    // A null renameIcon means "default" — persisted as the "box" key by the
+    // picker's default selection, so there's nothing to send when it's null.
+    const iconChanged = renameIcon !== (view?.icon ?? null);
+    if (!nameChanged && !iconChanged) {
+      setRenameDraft(null);
+      return;
+    }
+    const patch: UpdateView = {
+      ...(nameChanged ? { name: next } : {}),
+      ...(iconChanged && renameIcon ? { icon: renameIcon } : {}),
+    };
+    updateViewMutation.mutate(patch, { onSuccess: () => setRenameDraft(null) });
+  };
+
+  // Open the edit-view dialog seeded with the view's current name and icon.
+  const openRename = () => {
+    if (!view) return;
+    setRenameIcon(view.icon);
+    setRenameDraft(view.name);
   };
 
   const tableInner = (
@@ -792,11 +817,12 @@ export function FilesPage() {
             {viewId && view && (
               <button
                 type="button"
-                className="mr-1 max-w-40 truncate rounded-sm px-1 text-sm font-medium hover:bg-muted"
-                title={`${view.name} — click to rename`}
-                onClick={() => setRenameDraft(view.name)}
+                className="mr-1 flex max-w-40 items-center gap-1.5 truncate rounded-sm px-1 text-sm font-medium hover:bg-muted"
+                title={`${view.name} — click to edit`}
+                onClick={openRename}
               >
-                {view.name}
+                <HugeiconsIcon icon={viewIcon(view.icon)} className="size-4 shrink-0" />
+                <span className="truncate">{view.name}</span>
               </button>
             )}
             <div className="relative w-full min-w-0 sm:w-72">
@@ -846,9 +872,9 @@ export function FilesPage() {
                       <HugeiconsIcon icon={MoreVerticalIcon} />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setRenameDraft(view?.name ?? "")}>
+                      <DropdownMenuItem onClick={openRename}>
                         <HugeiconsIcon icon={PencilEdit01Icon} />
-                        Rename
+                        Edit
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -1071,18 +1097,22 @@ export function FilesPage() {
           </DialogHeader>
           <Field>
             <FieldLabel htmlFor="save-view-name">Name</FieldLabel>
-            <Input
-              id="save-view-name"
-              value={saveViewName}
-              onChange={(e) => setSaveViewName(e.target.value)}
-              placeholder="Diving trip"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && saveViewName.trim()) {
-                  createViewMutation.mutate(saveViewName.trim());
-                }
-              }}
-            />
+            <div className="flex items-center gap-2">
+              <ViewIconPicker value={saveViewIcon} onChange={setSaveViewIcon} />
+              <Input
+                id="save-view-name"
+                className="flex-1"
+                value={saveViewName}
+                onChange={(e) => setSaveViewName(e.target.value)}
+                placeholder="Diving trip"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && saveViewName.trim()) {
+                    createViewMutation.mutate(saveViewName.trim());
+                  }
+                }}
+              />
+            </div>
           </Field>
           <DialogFooter>
             <DialogClose render={<Button variant="outline">Cancel</Button>} />
@@ -1104,20 +1134,24 @@ export function FilesPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename view</DialogTitle>
-            <DialogDescription>Give this view a new name in the sidebar.</DialogDescription>
+            <DialogTitle>Edit view</DialogTitle>
+            <DialogDescription>Change this view's name and icon in the sidebar.</DialogDescription>
           </DialogHeader>
           <Field>
             <FieldLabel htmlFor="rename-view-name">Name</FieldLabel>
-            <Input
-              id="rename-view-name"
-              value={renameDraft ?? ""}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitRename();
-              }}
-            />
+            <div className="flex items-center gap-2">
+              <ViewIconPicker value={renameIcon} onChange={setRenameIcon} />
+              <Input
+                id="rename-view-name"
+                className="flex-1"
+                value={renameDraft ?? ""}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitRename();
+                }}
+              />
+            </div>
           </Field>
           <DialogFooter>
             <DialogClose render={<Button variant="outline">Cancel</Button>} />
@@ -1125,11 +1159,11 @@ export function FilesPage() {
               onClick={commitRename}
               disabled={
                 !renameDraft?.trim() ||
-                renameDraft.trim() === view?.name ||
+                (renameDraft.trim() === view?.name && renameIcon === (view?.icon ?? null)) ||
                 updateViewMutation.isPending
               }
             >
-              {updateViewMutation.isPending ? "Saving…" : "Rename"}
+              {updateViewMutation.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

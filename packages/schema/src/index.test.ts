@@ -215,8 +215,21 @@ describe("CreateView / UpdateView", () => {
     expect(view.conditions).toHaveLength(1);
   });
 
+  it("decodes an optional icon on create", () => {
+    const view = Schema.decodeUnknownSync(CreateView)({
+      name: "Diving",
+      icon: "star",
+      conditions: [],
+    });
+    expect(view.icon).toBe("star");
+  });
+
   it("accepts an empty UpdateView (no-op patch)", () => {
     expect(Schema.decodeUnknownSync(UpdateView)({})).toEqual({});
+  });
+
+  it("decodes an icon-only UpdateView patch", () => {
+    expect(Schema.decodeUnknownSync(UpdateView)({ icon: "folder" })).toEqual({ icon: "folder" });
   });
 });
 

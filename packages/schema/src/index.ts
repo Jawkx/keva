@@ -311,6 +311,8 @@ export const ViewRecord = Schema.Struct({
   id: Schema.String,
   tenantId: Schema.String,
   name: Schema.NonEmptyString,
+  // A HugeIcons key resolved to an icon by the web client; null = default icon.
+  icon: Schema.NullOr(Schema.String),
   conditions: Schema.Array(QueryCondition),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -319,14 +321,16 @@ export type ViewRecord = typeof ViewRecord.Type;
 
 export const CreateView = Schema.Struct({
   name: Schema.NonEmptyString,
+  icon: Schema.optional(Schema.String),
   conditions: Schema.Array(QueryCondition),
 });
 export type CreateView = typeof CreateView.Type;
 
-// Both fields optional so a caller can rename or re-filter independently. An
-// empty patch is a no-op the store tolerates.
+// All fields optional so a caller can rename, re-icon, or re-filter
+// independently. An empty patch is a no-op the store tolerates.
 export const UpdateView = Schema.Struct({
   name: Schema.optional(Schema.NonEmptyString),
+  icon: Schema.optional(Schema.String),
   conditions: Schema.optional(Schema.Array(QueryCondition)),
 });
 export type UpdateView = typeof UpdateView.Type;

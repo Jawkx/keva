@@ -38,6 +38,7 @@ interface ViewRow {
   readonly id: string;
   readonly tenant_id: string;
   readonly name: string;
+  readonly icon: string | null;
   readonly conditions: ReadonlyArray<QueryCondition>;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
@@ -50,6 +51,7 @@ const viewRecord = (row: ViewRow): ViewRecord => ({
   id: row.id,
   tenantId: row.tenant_id,
   name: row.name,
+  icon: row.icon,
   conditions: [...row.conditions],
   createdAt: iso(row.created_at),
   updatedAt: iso(row.updated_at),
@@ -64,8 +66,8 @@ export const makePostgresViewStore = (sql: Sql): ViewStoreService => ({
       try: async () => {
         const id = randomTokenPart(12);
         const rows = await sql<ViewRow[]>`
-          insert into views (id, tenant_id, name, conditions, created_at, updated_at)
-          values (${id}, ${tenantId}, ${input.name}, ${sql.json(input.conditions)}, now(), now())
+          insert into views (id, tenant_id, name, icon, conditions, created_at, updated_at)
+          values (${id}, ${tenantId}, ${input.name}, ${input.icon ?? null}, ${sql.json(input.conditions)}, now(), now())
           returning *
         `;
         return viewRecord(rows[0]!);
@@ -104,6 +106,7 @@ export const makePostgresViewStore = (sql: Sql): ViewStoreService => ({
         const rows = await sql<ViewRow[]>`
           update views set
             name = coalesce(${input.name ?? null}::text, name),
+            icon = coalesce(${input.icon ?? null}::text, icon),
             conditions = coalesce(${input.conditions ? sql.json(input.conditions) : null}::jsonb, conditions),
             updated_at = now()
           where tenant_id = ${tenantId} and id = ${id}

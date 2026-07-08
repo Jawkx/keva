@@ -72,6 +72,8 @@ export const views = pgTable(
     id: text("id").primaryKey(),
     tenantId: text("tenant_id").notNull(),
     name: text("name").notNull(),
+    // A HugeIcons key (see the web icon registry); null falls back to a default.
+    icon: text("icon"),
     conditions: jsonb("conditions").$type<ReadonlyArray<QueryCondition>>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
