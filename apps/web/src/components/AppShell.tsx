@@ -48,7 +48,6 @@ import {
 // where the all-items list is itself a view), so it's dropped from this static nav.
 const NAV = [
   { title: "Share", url: "/shares", icon: Share03Icon, exact: false },
-  { title: "Connection", url: "/connection", icon: Plug01Icon, exact: false },
 ] satisfies readonly { title: string; url: string; icon: IconSvgElement; exact: boolean }[];
 
 function AppSidebar() {
@@ -182,6 +181,18 @@ function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={isActive("/connection", false)}
+              tooltip="Connection"
+              render={<Link to="/connection" />}
+            >
+              <HugeiconsIcon icon={Plug01Icon} />
+              <span>Connection</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         {usage && usage.itemCount > 0 && (
           <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
             <HugeiconsIcon icon={DatabaseIcon} className="size-3.5 shrink-0" />

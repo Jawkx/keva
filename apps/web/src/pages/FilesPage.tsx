@@ -938,16 +938,16 @@ export function FilesPage() {
       {viewId && view ? (
         <button
           type="button"
-          className="flex max-w-56 items-center gap-1.5 truncate rounded-sm px-1.5 py-1 text-sm font-medium hover:bg-muted"
+          className="flex max-w-[21rem] items-center gap-2.5 truncate rounded-sm px-2.5 py-1.5 text-[21px] leading-none font-medium hover:bg-muted"
           title={`${view.name} — click to edit`}
           onClick={openRename}
         >
-          <HugeiconsIcon icon={viewIcon(view.icon)} className="size-4 shrink-0" />
+          <HugeiconsIcon icon={viewIcon(view.icon)} className="size-6 shrink-0" />
           <span className="truncate">{view.name}</span>
         </button>
       ) : (
-        <span className="flex items-center gap-1.5 px-1.5 py-1 text-sm font-medium">
-          <HugeiconsIcon icon={Files01Icon} className="size-4 shrink-0" />
+        <span className="flex items-center gap-2.5 px-2.5 py-1.5 text-[21px] leading-none font-medium">
+          <HugeiconsIcon icon={Files01Icon} className="size-6 shrink-0" />
           All
         </span>
       )}
