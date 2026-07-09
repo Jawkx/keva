@@ -35,7 +35,7 @@ import { FileDetail } from "../components/FileDetail";
 import { FileTypeIcon } from "../components/FileTypeIcon";
 import { FilterPanel } from "../components/FilterPanel";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
-import { ViewIconPicker, viewIcon } from "../components/view-icons";
+import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
 import { useAppHeaderSlot } from "../lib/app-header-slot";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
@@ -365,10 +365,11 @@ export function FilesPage() {
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewIcon, setSaveViewIcon] = useState<string | null>(null);
   const [deleteViewOpen, setDeleteViewOpen] = useState(false);
-  // Edit-view dialog: name is null when idle, otherwise the in-progress draft;
-  // icon holds the draft icon key (null = default) while the dialog is open.
-  const [renameDraft, setRenameDraft] = useState<string | null>(null);
-  const [renameIcon, setRenameIcon] = useState<string | null>(null);
+  // Inline name editing in the header: false shows the name (with a hover pencil),
+  // true swaps it for an input seeded with `nameDraft`. The icon is edited in
+  // place via the icon picker anchored to the view icon (no dialog).
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
 
   // Two independent seeds, adjusted during render rather than via an effect
   // (repo rule: no direct useEffect):
@@ -384,6 +385,7 @@ export function FilesPage() {
     setRowSelection({});
     setSearch("");
     setActiveSearch("");
+    setNameEditing(false);
   }
 
   const filterKey = viewId
@@ -670,32 +672,26 @@ export function FilesPage() {
     setFilterDraft(draftFromConditions(view.conditions));
   };
 
-  const commitRename = () => {
-    const next = renameDraft?.trim() ?? "";
-    if (!next) {
-      setRenameDraft(null);
-      return;
-    }
-    const nameChanged = next !== view?.name;
-    // A null renameIcon means "default" — persisted as the "box" key by the
-    // picker's default selection, so there's nothing to send when it's null.
-    const iconChanged = renameIcon !== (view?.icon ?? null);
-    if (!nameChanged && !iconChanged) {
-      setRenameDraft(null);
-      return;
-    }
-    const patch: UpdateView = {
-      ...(nameChanged ? { name: next } : {}),
-      ...(iconChanged && renameIcon ? { icon: renameIcon } : {}),
-    };
-    updateViewMutation.mutate(patch, { onSuccess: () => setRenameDraft(null) });
+  // Begin inline renaming: seed the input with the current name and reveal it.
+  const startNameEdit = () => {
+    if (!view) return;
+    setNameDraft(view.name);
+    setNameEditing(true);
   };
 
-  // Open the edit-view dialog seeded with the view's current name and icon.
-  const openRename = () => {
-    if (!view) return;
-    setRenameIcon(view.icon);
-    setRenameDraft(view.name);
+  // Commit the inline name edit, persisting only a real change.
+  const commitName = () => {
+    const next = nameDraft.trim();
+    setNameEditing(false);
+    if (!next || next === view?.name) return;
+    updateViewMutation.mutate({ name: next });
+  };
+
+  // Persist an icon pick from the header picker, skipping a no-op change. A null
+  // stored icon falls back to the default key, so compare against that.
+  const changeIcon = (key: string) => {
+    if (key === (view?.icon ?? DEFAULT_VIEW_ICON_KEY)) return;
+    updateViewMutation.mutate({ icon: key });
   };
 
   const tableInner = (
@@ -936,15 +932,71 @@ export function FilesPage() {
   const headerControls = (
     <>
       {viewId && view ? (
-        <button
-          type="button"
-          className="flex max-w-[21rem] items-center gap-2.5 truncate rounded-sm px-2.5 py-1.5 text-[21px] leading-none font-medium hover:bg-muted"
-          title={`${view.name} — click to edit`}
-          onClick={openRename}
-        >
-          <HugeiconsIcon icon={viewIcon(view.icon)} className="size-6 shrink-0" />
-          <span className="truncate">{view.name}</span>
-        </button>
+        <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
+          <ViewIconPicker
+            value={view.icon}
+            onChange={changeIcon}
+            trigger={
+              <button
+                type="button"
+                title="Change icon"
+                aria-label="Change view icon"
+                className="group/vicon relative flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-muted"
+              >
+                <HugeiconsIcon icon={viewIcon(view.icon)} className="size-6" />
+                <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vicon:opacity-100">
+                  <HugeiconsIcon icon={PencilEdit01Icon} className="size-3.5" />
+                </span>
+              </button>
+            }
+          />
+          {nameEditing ? (
+            <Input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitName();
+                else if (e.key === "Escape") setNameEditing(false);
+              }}
+              className="h-9 w-56 text-[21px] font-medium"
+            />
+          ) : (
+            <div className="group/vname flex min-w-0 items-center gap-1">
+              <span className="truncate px-1 text-[21px] leading-none font-medium">
+                {view.name}
+              </span>
+              <button
+                type="button"
+                title="Rename view"
+                aria-label="Rename view"
+                onClick={startNameEdit}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/vname:opacity-100 focus-visible:opacity-100"
+              >
+                <HugeiconsIcon icon={PencilEdit01Icon} className="size-4" />
+              </button>
+            </div>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon" aria-label="View options" />}
+            >
+              <HugeiconsIcon icon={MoreVerticalIcon} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={startNameEdit}>
+                <HugeiconsIcon icon={PencilEdit01Icon} />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={() => setDeleteViewOpen(true)}>
+                <HugeiconsIcon icon={Delete02Icon} />
+                Delete view
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ) : (
         <span className="flex items-center gap-2.5 px-2.5 py-1.5 text-[21px] leading-none font-medium">
           <HugeiconsIcon icon={Files01Icon} className="size-6 shrink-0" />
@@ -957,26 +1009,6 @@ export function FilesPage() {
             <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
             Share
           </Button>
-          {viewId && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon" aria-label="View options" />}
-              >
-                <HugeiconsIcon icon={MoreVerticalIcon} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={openRename}>
-                  <HugeiconsIcon icon={PencilEdit01Icon} />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onClick={() => setDeleteViewOpen(true)}>
-                  <HugeiconsIcon icon={Delete02Icon} />
-                  Delete view
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
         </div>
       )}
     </>
@@ -1136,49 +1168,6 @@ export function FilesPage() {
               disabled={!saveViewName.trim() || createViewMutation.isPending}
             >
               {createViewMutation.isPending ? "Saving…" : "Save view"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={renameDraft !== null}
-        onOpenChange={(open) => {
-          if (!open) setRenameDraft(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit view</DialogTitle>
-            <DialogDescription>Change this view's name and icon in the sidebar.</DialogDescription>
-          </DialogHeader>
-          <Field>
-            <FieldLabel htmlFor="rename-view-name">Name</FieldLabel>
-            <div className="flex items-center gap-2">
-              <ViewIconPicker value={renameIcon} onChange={setRenameIcon} />
-              <Input
-                id="rename-view-name"
-                className="flex-1"
-                value={renameDraft ?? ""}
-                onChange={(e) => setRenameDraft(e.target.value)}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitRename();
-                }}
-              />
-            </div>
-          </Field>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
-            <Button
-              onClick={commitRename}
-              disabled={
-                !renameDraft?.trim() ||
-                (renameDraft.trim() === view?.name && renameIcon === (view?.icon ?? null)) ||
-                updateViewMutation.isPending
-              }
-            >
-              {updateViewMutation.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

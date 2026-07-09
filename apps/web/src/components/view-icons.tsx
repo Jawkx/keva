@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import {
   Airplane01Icon,
   Alert01Icon,
@@ -279,16 +279,22 @@ export function viewIcon(key: string | null | undefined): IconSvgElement {
   return entry.icon;
 }
 
-// A popover with a search box over a grid of icons. The trigger shows the
-// current selection; picking an icon reports its key and closes the popover.
+// A popover with a search box over a grid of icons. By default the trigger is an
+// outline button showing the current selection; pass `trigger` to anchor the
+// popover to any element (e.g. the view icon with a hover overlay). Picking an
+// icon reports its key and closes the popover.
 export function ViewIconPicker({
   value,
   onChange,
   disabled,
+  trigger,
+  align = "start",
 }: {
   value: string | null | undefined;
   onChange: (key: string) => void;
   disabled?: boolean;
+  trigger?: ReactElement;
+  align?: "start" | "center" | "end";
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -305,20 +311,24 @@ export function ViewIconPicker({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            disabled={disabled}
-            aria-label="Choose icon"
-          />
-        }
-      >
-        <HugeiconsIcon icon={viewIcon(selectedKey)} />
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 gap-2">
+      {trigger ? (
+        <PopoverTrigger render={trigger} />
+      ) : (
+        <PopoverTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              disabled={disabled}
+              aria-label="Choose icon"
+            />
+          }
+        >
+          <HugeiconsIcon icon={viewIcon(selectedKey)} />
+        </PopoverTrigger>
+      )}
+      <PopoverContent align={align} className="w-64 gap-2">
         <Input
           autoFocus
           value={query}
