@@ -1,0 +1,11 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "rules": {
+    "react-hooks-js/todo": "off",
+    "react-hooks-js/incompatible-library": "off",
+    "react-hooks-js/immutability": "off"
+  },
+  "ignore": {
+    "files": ["src/components/ui/csv-viewer.tsx", "src/components/ui/pdf-viewer.tsx"]
+  }
+}
