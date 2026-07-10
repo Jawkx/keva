@@ -14,7 +14,6 @@ import type { PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { PropertiesEditor } from "./PropertiesEditor";
 import { CopyButton } from "./CopyButton";
-import { FileTypeIcon } from "./FileTypeIcon";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
 import { CsvViewer } from "@/components/ui/csv-viewer";
 import { PDFViewer } from "@/components/ui/pdf-viewer";
@@ -243,60 +242,57 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <header className="flex items-center justify-between gap-2 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {item && <FileTypeIcon contentType={item.contentType} />}
-          <div className="min-w-0 flex-1">
-            {renameDraft !== null ? (
-              // Enter commits, Escape/blur cancels — a careless click-away never
-              // silently overwrites the name. The stem is pre-selected on focus.
-              <input
-                ref={renameInputRef}
-                value={renameDraft}
-                onChange={(event) => setRenameDraft(event.target.value)}
-                onBlur={() => setRenameDraft(null)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void commitRename();
-                  } else if (event.key === "Escape") {
-                    event.preventDefault();
-                    setRenameDraft(null);
-                  }
-                }}
-                aria-label="Rename file"
-                className="w-full rounded-sm border border-input bg-transparent px-1.5 py-0.5 font-heading text-base font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            ) : (
-              <div className="flex min-w-0 items-center gap-1">
-                <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
-                  {item?.name ?? "…"}
-                </h2>
-                {item && (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Rename"
-                          className="shrink-0 text-muted-foreground"
-                          onClick={() => setRenameDraft(item.name)}
-                        />
-                      }
-                    >
-                      <HugeiconsIcon icon={PencilEdit01Icon} />
-                    </TooltipTrigger>
-                    <TooltipContent>Rename</TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-            )}
-            {item && renameDraft === null && (
-              <p className="truncate text-sm text-muted-foreground">
-                {item.contentType} · {formatBytes(item.size)}
-              </p>
-            )}
-          </div>
+        <div className="min-w-0 flex-1">
+          {renameDraft !== null ? (
+            // Enter commits, Escape/blur cancels — a careless click-away never
+            // silently overwrites the name. The stem is pre-selected on focus.
+            <input
+              ref={renameInputRef}
+              value={renameDraft}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              onBlur={() => setRenameDraft(null)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void commitRename();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setRenameDraft(null);
+                }
+              }}
+              aria-label="Rename file"
+              className="w-full rounded-sm border border-input bg-transparent px-1.5 py-0.5 font-heading text-base font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          ) : (
+            <div className="flex min-w-0 items-center gap-1">
+              <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
+                {item?.name ?? "…"}
+              </h2>
+              {item && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Rename"
+                        className="shrink-0 text-muted-foreground"
+                        onClick={() => setRenameDraft(item.name)}
+                      />
+                    }
+                  >
+                    <HugeiconsIcon icon={PencilEdit01Icon} />
+                  </TooltipTrigger>
+                  <TooltipContent>Rename</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          )}
+          {item && renameDraft === null && (
+            <p className="truncate text-sm text-muted-foreground">
+              {item.contentType} · {formatBytes(item.size)}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <Tooltip>

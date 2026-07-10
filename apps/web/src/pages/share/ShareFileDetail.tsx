@@ -5,7 +5,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
 import { CopyButton } from "../../components/CopyButton";
-import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { propertyListClass } from "../../components/PropertiesEditor";
 import { CsvViewer } from "@/components/ui/csv-viewer";
 import { PDFViewer } from "@/components/ui/pdf-viewer";
@@ -108,18 +107,15 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <header className="flex items-center justify-between gap-2 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {item && <FileTypeIcon contentType={item.contentType} />}
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
-              {item?.name ?? "…"}
-            </h2>
-            {item && (
-              <p className="truncate text-sm text-muted-foreground">
-                {item.contentType} · {formatBytes(item.size)}
-              </p>
-            )}
-          </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
+            {item?.name ?? "…"}
+          </h2>
+          {item && (
+            <p className="truncate text-sm text-muted-foreground">
+              {item.contentType} · {formatBytes(item.size)}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <Tooltip>

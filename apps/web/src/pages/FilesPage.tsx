@@ -32,7 +32,6 @@ import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { FileDetail } from "../components/FileDetail";
-import { FileTypeIcon } from "../components/FileTypeIcon";
 import { FilterPanel } from "../components/FilterPanel";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
@@ -253,12 +252,7 @@ const columns = [
   }),
   columnHelper.accessor("name", {
     header: "Name",
-    cell: (ctx) => (
-      <div className="flex min-w-0 items-center gap-3">
-        <FileTypeIcon contentType={ctx.row.original.contentType} />
-        <span className="truncate font-medium">{ctx.getValue()}</span>
-      </div>
-    ),
+    cell: (ctx) => <span className="block truncate font-medium">{ctx.getValue()}</span>,
   }),
   columnHelper.accessor((o) => o.size ?? 0, {
     id: "size",
@@ -695,7 +689,7 @@ export function FilesPage() {
   };
 
   const tableInner = (
-    <Table className="[&_td]:px-3 [&_th]:px-3">
+    <Table className="[&_td]:px-3 [&_td]:py-3.5 [&_th]:px-3 [&_tr]:border-0">
       <TableHeader>
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id} className="group">

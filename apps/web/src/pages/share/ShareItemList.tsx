@@ -2,7 +2,6 @@ import { type ReactNode, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Files01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { FileTypeIcon } from "../../components/FileTypeIcon";
 import {
   formatBytes,
   formatContentType,
@@ -147,10 +146,7 @@ export function ShareItemList({
                           onClick={() => onSelect(item.id)}
                         >
                           <TableCell>
-                            <div className="flex min-w-0 items-center gap-3">
-                              <FileTypeIcon contentType={item.contentType} />
-                              <span className="truncate font-medium">{item.name}</span>
-                            </div>
+                            <span className="block truncate font-medium">{item.name}</span>
                           </TableCell>
                           {!collapsed && (
                             <>
