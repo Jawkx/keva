@@ -1,20 +1,7 @@
-// Object URLs for previewed item content, keyed by item id. The bytes
-// themselves are cached by React Query (`['content', id]`); this owns only the
-// blob: URL string and its `revokeObjectURL` lifecycle.
-//
-// This is an LRU, not a per-component lifecycle. Deliberately NOT revoked on
-// component unmount: under StrictMode a mount→unmount→mount cycle would revoke
-// the URL a freshly-rendered <img> is still pointing at (the memo that built it
-// won't re-run, so it never recovers). Instead the URL lives until evicted, so
-// reopening a cached file renders instantly from the same valid URL. Memory is
-// bounded by evicting (and revoking) the least-recently-used entry.
-//
-// Mirrors the module-level URL cache already used for PDF thumbnails
-// (pdf-thumbnail-utils), which likewise never revokes per-component.
+// Do not revoke on component unmount: StrictMode remounts can leave a rendered
+// image with a revoked URL, so this bounded LRU owns the URL lifecycle instead.
 const MAX_ENTRIES = 12;
 
-// Insertion order is the LRU order: re-inserting on access moves an entry to
-// the most-recently-used end.
 const cache = new Map<string, string>();
 
 export function objectUrlFor(id: string, blob: Blob): string {

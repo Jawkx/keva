@@ -125,8 +125,6 @@ declare module "@tanstack/react-table" {
   }
 }
 
-// A property rendered as a chip in the list. Bare tags (null) show just the key;
-// scalars read as `key:value` (KEV-3). Arrays show the key with a count.
 const propertyChipLabel = (key: string, value: PropertyValue): string => {
   if (value === null) return key;
   if (Array.isArray(value)) return `${key}:${value.length}`;
@@ -138,17 +136,11 @@ const DEFAULT_ORDER = "created_at_desc" as const;
 
 const plural = (n: number) => (n === 1 ? "item" : "items");
 
-// Order-insensitive equality of two condition lists — used to tell whether a
-// view's filter has unsaved edits regardless of the order conditions are built.
 const canonCondition = (c: QueryCondition) => JSON.stringify([c.key, c.op, c.value ?? null]);
 const sameConditions = (a: readonly QueryCondition[], b: readonly QueryCondition[]): boolean =>
   a.length === b.length &&
   a.map(canonCondition).sort().join("|") === b.map(canonCondition).sort().join("|");
 
-// The property equalities a filter implies, as a stamp for uploads (KEV-5): an
-// upload into a view filtered by `project=keva` is tagged so it lands in view.
-// Only plain-property `eq` conditions with a scalar value qualify (system fields
-// and `name` can't be stamped).
 const uploadStampFrom = (where: readonly QueryCondition[]): Record<string, PropertyValue> => {
   const stamp: Record<string, PropertyValue> = {};
   for (const c of where) {
@@ -311,9 +303,6 @@ export function FilesPage() {
   const isWide = useMediaQuery("(min-width: 1024px)");
   const headerSlot = useAppHeaderSlot();
 
-  // View mode: the open view supplies the baseline filter. Edits are previewed
-  // live in the list but only persisted to the view (and its share links) on an
-  // explicit Save — see the Edited/Save/Discard affordance below (KEV-12).
   const viewQuery = useQuery({
     queryKey: viewId ? viewQueryKey(viewId) : ["views", "none"],
     queryFn: () => getView(viewId!),
@@ -321,8 +310,6 @@ export function FilesPage() {
   });
   const view = viewQuery.data;
 
-  // On the root list the applied filter lives in the URL (KEV-10) so it survives
-  // reload and is shareable; in a view it comes from the view's conditions.
   const [searchParams, setSearchParams] = useSearchParams();
   const initialWhere = viewId ? [] : decodeFilterParam(searchParams.get("filter"));
 
@@ -331,9 +318,6 @@ export function FilesPage() {
   const [activeWhere, setActiveWhere] = useState<QueryCondition[]>(initialWhere);
   const [filterDraft, setFilterDraft] = useState(() => draftFromConditions(initialWhere));
   const [showFilters, setShowFilters] = useState(false);
-  // Debounce timer for free-text search; scheduled from the change handler (an
-  // event, not a lifecycle effect) and cleared on unmount so a late tick can't
-  // set state after the page is gone.
   const searchTimer = useRef<number | undefined>(undefined);
   useMountEffect(() => () => window.clearTimeout(searchTimer.current));
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -359,9 +343,6 @@ export function FilesPage() {
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewIcon, setSaveViewIcon] = useState<string | null>(null);
   const [deleteViewOpen, setDeleteViewOpen] = useState(false);
-  // Inline name editing in the header: false shows the name (with a hover pencil),
-  // true swaps it for an input seeded with `nameDraft`. The icon is edited in
-  // place via the icon picker anchored to the view icon (no dialog).
   const [nameEditing, setNameEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
 
@@ -400,11 +381,8 @@ export function FilesPage() {
     }
   }
 
-  // Whether the view's filter has unsaved edits (view mode only).
   const viewEdited = Boolean(viewId && view && !sameConditions(activeWhere, view.conditions));
 
-  // Navigation stays within the active view so selecting/closing an item keeps
-  // you on /v/:viewId rather than dropping back to the root list.
   const listPath = viewId ? `/v/${viewId}` : "/";
   const itemPath = (itemId: string) =>
     viewId ? `/v/${viewId}/items/${itemId}` : `/items/${itemId}`;
@@ -435,7 +413,6 @@ export function FilesPage() {
     mutationFn: () => deleteView(viewId!),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
-      // Grants on this view were cascade-deleted server-side; refresh the roster.
       void queryClient.invalidateQueries({ queryKey: sharesQueryKey });
       setDeleteViewOpen(false);
       toast.success("View deleted");
@@ -475,19 +452,12 @@ export function FilesPage() {
   const selectMode = Object.values(rowSelection).some(Boolean);
   const filtered = activeSearch.trim().length > 0 || activeWhere.length > 0;
 
-  // The applied filter reverse-mapped to its facet/row structure, and the
-  // removable toolbar chips derived from it (KEV-9).
   const appliedDraft = useMemo(() => draftFromConditions(activeWhere), [activeWhere]);
   const appliedChips = useMemo(() => filterChips(appliedDraft), [appliedDraft]);
 
-  // Uploads inherit the property equalities of the current filter so a file
-  // dropped into a `project=keva` view is tagged and stays in view (KEV-5).
   const uploadStamp = useMemo(() => uploadStampFrom(activeWhere), [activeWhere]);
   const uploadStampEntries = Object.entries(uploadStamp);
 
-  // Upload lifecycle. Files appear instantly as optimistic rows; each upload
-  // runs independently and reconciles its own row — moving the real item into
-  // the list cache on success, or flipping to a retryable error on failure.
   const uploadOne = useCallback(
     async (id: string, file: File) => {
       try {
@@ -540,9 +510,6 @@ export function FilesPage() {
     [uploadOne],
   );
 
-  // Set the applied filter. On the root list this writes the URL `filter` param
-  // (the seed above then normalizes activeWhere/draft from it); in a view it
-  // sets state directly as a live, unsaved preview persisted via Save (KEV-12).
   const applyWhere = useCallback(
     (where: QueryCondition[]) => {
       setRowSelection({});
@@ -564,9 +531,6 @@ export function FilesPage() {
     [viewId, setSearchParams],
   );
 
-  // Clicking a property chip in the list filters by it (KEV-3): a scalar adds an
-  // equality, a bare tag / array adds an existence check. A same-key equality
-  // is replaced so clicking a different value swaps rather than contradicts.
   const filterByProperty = useCallback(
     (key: string, value: PropertyValue) => {
       const condition: QueryCondition =
@@ -614,8 +578,6 @@ export function FilesPage() {
       if (result.failed.length > 0) {
         toast.error(`Failed to delete ${result.failed.length} ${plural(result.failed.length)}`);
       }
-      // Remove only the ids that actually deleted, from every cached list, with
-      // no refetch (keeps loaded pages and scroll).
       queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
         old ? removeItemsFromPages(old, result.deleted) : old,
       );
@@ -650,8 +612,6 @@ export function FilesPage() {
     applyWhere([]);
   };
 
-  // View edits (KEV-12): Save persists the previewed filter to the view (and,
-  // through it, any share links); Discard reverts to the last saved conditions.
   const saveViewEdits = () => {
     updateViewMutation.mutate(
       { conditions: activeWhere },
@@ -666,14 +626,12 @@ export function FilesPage() {
     setFilterDraft(draftFromConditions(view.conditions));
   };
 
-  // Begin inline renaming: seed the input with the current name and reveal it.
   const startNameEdit = () => {
     if (!view) return;
     setNameDraft(view.name);
     setNameEditing(true);
   };
 
-  // Commit the inline name edit, persisting only a real change.
   const commitName = () => {
     const next = nameDraft.trim();
     setNameEditing(false);
@@ -681,8 +639,6 @@ export function FilesPage() {
     updateViewMutation.mutate({ name: next });
   };
 
-  // Persist an icon pick from the header picker, skipping a no-op change. A null
-  // stored icon falls back to the default key, so compare against that.
   const changeIcon = (key: string) => {
     if (key === (view?.icon ?? DEFAULT_VIEW_ICON_KEY)) return;
     updateViewMutation.mutate({ icon: key });
@@ -920,9 +876,6 @@ export function FilesPage() {
     </div>
   );
 
-  // Title + Share + view options live in the app top bar (beside the
-  // sidebar-collapse button) via a portal, keeping this page's state/handlers
-  // intact. The root list shows a matching "All" label for uniformity.
   const headerControls = (
     <>
       {viewId && view ? (
@@ -1115,7 +1068,6 @@ export function FilesPage() {
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           if (files.length > 0) startUploads(files);
-          // Reset so selecting the same file again still fires onChange.
           e.target.value = "";
         }}
       />

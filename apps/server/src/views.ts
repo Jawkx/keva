@@ -9,8 +9,6 @@ import { Context, Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
 import { randomTokenPart } from "./auth.js";
 
-// A view is a named, saved filter owned by a tenant — the owner's first-class
-// navigation object, and the thing a share grant references for its conditions.
 export interface ViewStoreService {
   readonly create: (
     tenantId: string,

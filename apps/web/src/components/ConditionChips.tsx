@@ -20,8 +20,6 @@ export const formatCondition = (condition: QueryCondition): string => {
   return `${condition.key} ${OP_SYMBOL[condition.op]} ${value}`;
 };
 
-// Renders a grant's conditions as compact chips, for the share dialog preview
-// and the management table. Empty conditions mean the share is unfiltered.
 export function ConditionChips({ conditions }: { conditions: readonly QueryCondition[] }) {
   if (conditions.length === 0) {
     return <span className="text-sm text-muted-foreground">All files</span>;

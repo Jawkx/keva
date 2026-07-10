@@ -1,8 +1,6 @@
 import type { CreateView, UpdateView } from "@keva/schema";
 import { keva } from "./keva";
 
-// Owner-side view management goes through the cookie-authed `keva` singleton
-// (same as shares/tokens). Views are the named saved filters shown in the sidebar.
 export const viewsQueryKey = ["views"] as const;
 export const viewQueryKey = (id: string) => ["views", id] as const;
 

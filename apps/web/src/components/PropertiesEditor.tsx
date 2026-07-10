@@ -54,9 +54,6 @@ const editTypeOf = (value: PropertyValue): ScalarType => {
   return type === "array" ? "string" : type;
 };
 
-// Fold the type + draft string a control produced into a value to store. A blank
-// text/number field is treated as a bare membership tag (null) so you never
-// accidentally store an empty string.
 const buildValue = (type: ScalarType, draft: string): PropertyValue => {
   if ((type === "string" || type === "number") && draft.trim() === "") return null;
   return coerceScalar(type, draft);
@@ -512,8 +509,6 @@ function JsonView({
   commit: (set: Record<string, PropertyValue>, unset: string[]) => Promise<void>;
 }) {
   const baseline = prettyJson(properties);
-  // Seeded once on mount; the view remounts whenever the mode switches back to
-  // JSON, so it always opens in sync with the latest properties.
   const [text, setText] = useState(baseline);
 
   const parsed = useMemo(() => parsePropertiesJson(text), [text]);
@@ -527,8 +522,6 @@ function JsonView({
   const save = async () => {
     if (!parsed.ok || !diff || changeCount === 0) return;
     await commit(diff.set, diff.unset);
-    // Normalize to the saved item so dirty state clears once the prop catches
-    // up — no effect needed.
     setText(prettyJson(parsed.value));
   };
 

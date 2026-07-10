@@ -29,8 +29,6 @@ export function LoginPage() {
         setError(result.error.message ?? "Sign in failed.");
         return;
       }
-      // If we arrived mid-OAuth (an agent sent the user here to authorize),
-      // resume the authorize flow at the server endpoint instead of the app.
       const continuation = oauthContinuation(window.location.search);
       if (continuation) {
         window.location.href = continuation;

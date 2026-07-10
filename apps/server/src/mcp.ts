@@ -65,7 +65,6 @@ const runEngine = async <A>(
   throw new Error(error.message);
 };
 
-// Re-decode tool input with the canonical Effect schemas before reaching core.
 const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => {
   const engine = makeKevaEngine(principal);
   return {

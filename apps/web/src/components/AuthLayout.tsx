@@ -10,7 +10,6 @@ import {
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
 
-// Decorative-only chip that mirrors the app's property tags (e.g. `category=finance`).
 function Chip({ children, accent }: { children: ReactNode; accent?: boolean }) {
   return (
     <span
@@ -34,8 +33,6 @@ type MockFile = {
 };
 
 function FileCard({ file }: { file: MockFile }) {
-  // The trailing right margin is baked into the card so the two marquee copies
-  // tile with even spacing and the -50% loop stays seamless (no track gap).
   return (
     <div className="mr-6 w-72 shrink-0 rounded-xl border border-white/10 bg-[#141922] p-5">
       <div className="flex items-center gap-3.5">
@@ -101,7 +98,6 @@ const FILES: MockFile[] = [
   { name: "notes.md", meta: "MD · 4 KB", icon: TextIcon, chips: [["pinned=true", false]] },
 ];
 
-/** One copy of the file row; rendered twice inside the marquee track. */
 function FileRow({ ariaHidden }: { ariaHidden?: boolean }) {
   return (
     <div className="flex shrink-0" aria-hidden={ariaHidden}>
@@ -112,17 +108,9 @@ function FileRow({ ariaHidden }: { ariaHidden?: boolean }) {
   );
 }
 
-/**
- * The dark brand panel shown beside the auth form on large screens. A minimal,
- * typography-led headline sits above a full-bleed marquee of tagged file cards
- * that scrolls horizontally forever — a live preview of the real product (files
- * carry your own property tags). Edges fade out via a mask; the scroll respects
- * prefers-reduced-motion.
- */
 function BrandPanel() {
   return (
     <div className="relative hidden overflow-hidden bg-[#0b0e13] p-14 text-white lg:flex lg:flex-col">
-      {/* One faint light from the top edge — subtle depth, no busy texture. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.035] to-transparent"
@@ -146,7 +134,6 @@ function BrandPanel() {
             </p>
           </div>
 
-          {/* Full-bleed marquee: break out of the panel padding, fade both edges. */}
           <div className="-mx-14 [mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)]">
             <div className="flex w-max animate-[marquee-x_50s_linear_infinite] motion-reduce:animate-none">
               <FileRow />
@@ -159,7 +146,6 @@ function BrandPanel() {
   );
 }
 
-/** Two-column auth frame: brand panel (lg+) beside the form column. */
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-svh lg:grid-cols-[1.05fr_1fr]">

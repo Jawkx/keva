@@ -32,17 +32,12 @@ export const router = createBrowserRouter([
     children: [
       { path: "/", element: <FilesPage /> },
       { path: "/items/:id", element: <FilesPage /> },
-      // A saved view: same Files screen, seeded from the view's filter.
       { path: "/v/:viewId", element: <FilesPage /> },
       { path: "/v/:viewId/items/:id", element: <FilesPage /> },
-      // The former Query page is now the Files filter panel; keep the path as a
-      // redirect so old links/bookmarks don't 404.
       { path: "/query", element: <Navigate to="/" replace /> },
       { path: "/shares", element: <SharesPage /> },
       { path: "/connection", element: <ConnectionPage /> },
-      // Old deep links to the token-management screen.
       { path: "/tokens", element: <Navigate to="/connection" replace /> },
-      // The share manager moved from a Connection tab to its own sidebar page.
       { path: "/connection/shares", element: <Navigate to="/shares" replace /> },
       { path: "/settings", element: <SettingsPage /> },
       { path: "*", element: <NotFoundPage /> },

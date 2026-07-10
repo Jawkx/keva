@@ -2,13 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-// keva exposes its read/query/property surface to agents over MCP. This package
-// declares *what tools exist* and delegates each to an injected `McpEngine`; it
-// holds no keva rules. Authorization (scopes, tenancy, validation) stays in
-// @keva/core, reached through the engine the host (apps/server) provides. The
-// package is deliberately free of Effect and @keva/schema — zod is the only
-// schema library, confined to this MCP boundary.
-
 const propertyScalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const propertyValue = z.union([propertyScalar, z.array(propertyScalar)]);
 
@@ -61,10 +54,6 @@ const setPropertiesArgs = z.object({
 export type QueryToolInput = z.infer<typeof queryArgs>;
 export type SetPropertiesToolInput = z.infer<typeof setPropertiesArgs>;
 
-// The engine the host injects. Inputs are the parsed tool arguments; outputs are
-// plain JSON the tools serialize into text content. Implementations throw on
-// failure with a client-safe message (see apps/server's adapter, which maps
-// typed KevaErrors to Error.message and never leaks internals).
 export interface McpEngine {
   readonly queryItems: (input: QueryToolInput) => Promise<unknown>;
   readonly getItem: (id: string) => Promise<unknown>;

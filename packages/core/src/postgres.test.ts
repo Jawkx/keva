@@ -10,20 +10,6 @@ import { MemoryBlobStoreLive } from "./memory.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
 import { BlobStore, MetadataStore } from "./services.js";
 
-/**
- * DB-gated acceptance for the Postgres metadata store. Requires a reachable
- * Postgres via KEVA_TEST_DATABASE_URL; when unset the whole suite is SKIPPED
- * (never failed) so the default suite passes with no database available.
- *
- *  - items + properties persist across a "restart" (a new store instance over
- *    the same database);
- *  - the query operator matrix (eq / neq / contains / range / exists) is
- *    correct and tenant-scoped;
- *  - opaque cursor pagination walks every row exactly once;
- *  - a concurrent confirm-vs-reaper race resolves to exactly one winner via the
- *    conditional, atomic `transition`.
- */
-
 // Read the env without depending on @types/node (core has no node types):
 // vitest still injects `process` at runtime.
 const DATABASE_URL = (globalThis as { process?: { env?: Record<string, string | undefined> } })
@@ -53,8 +39,6 @@ const applyMigrations = async (sql: Sql): Promise<void> => {
 
 describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
   let sql: Sql;
-  // Stand up the store + an in-memory blob store. The blob store is shared so
-  // the test can pre-stage bytes that `confirm` will find via `head`/`copy`.
   const blobLayer = MemoryBlobStoreLive();
 
   const provide = (store: ReturnType<typeof makePostgresMetadataStore>) =>
@@ -173,7 +157,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
           set: { kind: "doc", tags: ["x", "y"], rating: 5 },
           unset: [],
         });
-        yield* createReady(principal(tenantB), "b.txt", "b"); // other tenant
+        yield* createReady(principal(tenantB), "b.txt", "b");
 
         const eqHit = yield* engine.query({
           where: [{ key: "kind", op: "eq", value: "doc" }],

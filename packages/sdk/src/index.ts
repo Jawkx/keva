@@ -76,22 +76,9 @@ export const isShareToken = (token: string): boolean => token.startsWith(SHARE_T
 
 export type UploadBody = BodyInit;
 
-/**
- * Two ways to authenticate, one client:
- * - `token`: a `keva_sk_…` Bearer token (machines, agents, the CLI/SDK).
- * - session cookie: omit `token` and the client sends the browser's cookies
- *   (`credentials: "include"`), so the web app reuses the logged-in session.
- *
- * Provide one or the other. If `token` is set it takes precedence; otherwise
- * the client falls back to cookie-based session auth.
- */
 export interface KevaClientOptions {
   readonly baseUrl: string;
   readonly token?: string;
-  /**
-   * Fetch credentials mode for keva API calls. Defaults to `"include"` when no
-   * `token` is given (browser session), otherwise `"same-origin"`.
-   */
   readonly credentials?: RequestCredentials;
   readonly fetch?: typeof globalThis.fetch;
 }
@@ -110,9 +97,6 @@ interface RequestConfig {
   readonly fetch: typeof globalThis.fetch;
 }
 
-// Shared request/decode pipeline for both the owner (`KevaClient`) and share
-// (`ShareClient`) clients: attach bearer/cookie auth, decode a typed KevaError
-// on a non-2xx, otherwise decode the success schema.
 const httpRequest = async <A, I>(
   config: RequestConfig,
   method: string,
@@ -375,12 +359,6 @@ export interface ShareClientOptions {
   readonly fetch?: typeof globalThis.fetch;
 }
 
-/**
- * Client for a public share link (`keva_sh_…`). Item responses are redacted to
- * `SharedItem` (no tenant-internal storage fields), so this is a separate type
- * from `KevaClient` rather than a mode of it. Only the operations a share
- * visitor may perform are exposed — no patch/delete/usage/property autocomplete.
- */
 export class ShareClient {
   readonly #config: RequestConfig;
 

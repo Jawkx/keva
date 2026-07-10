@@ -30,8 +30,6 @@ const sessionResolver = async (headers: Headers) =>
     : null;
 
 const makeApp = () => {
-  // Views and shares share one map so a grant reads its conditions live from the
-  // view it references (mirrors the Postgres JOIN).
   const views = new Map<string, ViewRecord>();
   const tokens = Layer.succeed(ApiTokenStore, emptyTokenStore);
   const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore(views));
@@ -112,7 +110,6 @@ const createShare = async (app: ReturnType<typeof makeApp>, body: object) => {
 
 const ALPHA: QueryCondition[] = [{ key: "project", op: "eq", value: "alpha" }];
 
-// Create the alpha view, then a read+write grant on it. Returns the share.
 const shareAlpha = async (app: ReturnType<typeof makeApp>, overrides: object = {}) => {
   const { view } = await createView(app, ALPHA);
   return createShare(app, {
@@ -198,7 +195,6 @@ describe("server share subsystem", () => {
     const items = ((await queried.json()) as { items: Record<string, unknown>[] }).items;
     expect(items).toHaveLength(1);
     expect(items[0]!.name).toBe("in.txt");
-    // Redaction: no tenant-internal fields anywhere in the share response.
     const serialized = JSON.stringify(items[0]);
     for (const field of ["tenantId", "storageKey", "stagingKey"]) {
       expect(serialized).not.toContain(field);
@@ -227,7 +223,6 @@ describe("server share subsystem", () => {
 
     expect(await namesVia()).toEqual(["in.txt"]);
 
-    // Edit the view to match beta instead; the same link now shows the other file.
     const patched = await app.request(`/api/views/${view.id}`, {
       method: "PATCH",
       headers: admin,
@@ -356,7 +351,6 @@ describe("server share subsystem", () => {
     const app = makeApp();
     const { body } = await shareAlpha(app, { maxItems: 1 });
     const token = body.token;
-    // First initiate consumes the single allowed slot (pending counts).
     await app.request("/api/items", {
       method: "POST",
       headers: { ...bearer(token), "content-type": "application/json" },

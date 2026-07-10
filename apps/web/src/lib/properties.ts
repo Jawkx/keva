@@ -1,17 +1,11 @@
 import type { PropertyValue } from "@keva/schema";
 
-// Client-side mirror of the property rules enforced by @keva/schema. The web
-// app only imports the *types* from that package (not Effect's runtime
-// validators), so we re-declare the constraints here to give immediate,
-// inline feedback before a patch is ever sent.
 export const KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 export const KEY_MAX = 128;
 export const MAX_KEYS = 256;
 export const MAX_TOTAL_BYTES = 64 * 1024;
 export const MAX_ARRAY_ITEMS = 256;
 
-// Scalars are the only types the tag chips edit directly; arrays are shown as
-// removable chips and otherwise edited through the JSON view.
 export type ScalarType = "string" | "number" | "boolean" | "null";
 export type ValueType = ScalarType | "array";
 
@@ -23,7 +17,6 @@ export const valueType = (value: PropertyValue): ValueType => {
   return "string";
 };
 
-// Turn the editing string + chosen type into a concrete scalar value.
 export const coerceScalar = (type: ScalarType, raw: string): PropertyValue => {
   if (type === "null") return null;
   if (type === "boolean") return raw.trim().toLowerCase() === "true";
@@ -34,7 +27,6 @@ export const coerceScalar = (type: ScalarType, raw: string): PropertyValue => {
   return raw;
 };
 
-// The string a scalar should seed its input with when you start editing it.
 export const scalarToInput = (value: PropertyValue): string => {
   if (value === null || Array.isArray(value)) return "";
   if (typeof value === "boolean") return value ? "true" : "false";
@@ -73,8 +65,6 @@ export type ParseResult =
   | { ok: true; value: Record<string, PropertyValue> }
   | { ok: false; error: string };
 
-// Parse the JSON-view text and validate every key/value against the schema
-// rules, returning either the typed object or a single human-readable error.
 export const parsePropertiesJson = (text: string): ParseResult => {
   let data: unknown;
   try {
@@ -108,8 +98,6 @@ const valuesEqual = (a: PropertyValue, b: PropertyValue): boolean => {
   return a === b;
 };
 
-// The minimal patch that turns `original` into `next`: only changed/added keys
-// go in `set`, removed keys go in `unset`.
 export const diffProperties = (
   original: Record<string, PropertyValue>,
   next: Record<string, PropertyValue>,

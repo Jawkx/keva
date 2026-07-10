@@ -48,10 +48,6 @@ interface StampRow {
 interface ShareCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // The view this link is built on. Conditions live on the view; the grant
-  // references it by id (read live server-side). Empty when sharing from an
-  // unsaved filtered state — the dialog then saves a view first (KEV-7), so the
-  // link always rests on a real view.
   viewId: string;
   conditions: QueryCondition[];
 }
@@ -71,9 +67,6 @@ const nextId = () => `stamp:${crypto.randomUUID()}`;
 // enabling write (the server would reject them anyway).
 const isStampableKey = (key: string): boolean => !key.startsWith("system.") && key !== "name";
 
-// Seed stamp rows from the eq conditions on plain property keys — those are the
-// values a matching upload must carry, so pre-filling them makes the common
-// "share this filtered view for uploads too" case one click.
 const seedStamp = (conditions: QueryCondition[]): StampRow[] =>
   conditions
     .filter(
@@ -116,11 +109,8 @@ export function ShareCreateDialog({
     ...new Set(conditions.filter((c) => !isStampableKey(c.key)).map((c) => c.key)),
   ];
   const writeBlocked = blockingKeys.length > 0;
-  // Plain-language summary of what's shared, instead of raw query syntax (KEV-8).
   const summary = describeFilter(conditions);
 
-  // Sharing from an unsaved filter (no viewId) saves a view first, then builds
-  // the grant on it — so a link always rests on a real, sidebar-visible view.
   const mutation = useMutation({
     mutationFn: async ({
       grant,

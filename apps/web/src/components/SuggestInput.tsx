@@ -43,8 +43,6 @@ export function SuggestInput({
   onBlur,
 }: SuggestInputProps) {
   const [open, setOpen] = useState(false);
-  // Tracks the currently highlighted suggestion so Enter only submits the form
-  // when the user isn't accepting a completion (the primitive handles that).
   const highlighted = useRef<string | null>(null);
 
   const matches = useMemo(() => {
@@ -67,9 +65,6 @@ export function SuggestInput({
     className,
     onBlur,
     onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
-      // Only intercept Enter when a handler wants it AND the user isn't
-      // accepting a highlighted suggestion — otherwise let it bubble (e.g. to
-      // submit the surrounding form natively).
       if (event.key === "Enter" && onEnter && highlighted.current === null) {
         event.preventDefault();
         onEnter();

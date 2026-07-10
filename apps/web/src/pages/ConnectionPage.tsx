@@ -18,9 +18,6 @@ const TAB_DESCRIPTIONS: Record<ConnectionTab, string> = {
 export function ConnectionPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // The active tab is derived from the URL, never stored separately: a valid
-  // `?tab=` wins, otherwise we fall back to MCP without touching the address
-  // bar until the user actually picks a tab.
   const tab: ConnectionTab = searchParams.get("tab") === "api" ? "api" : "mcp";
 
   const setTab = useCallback(

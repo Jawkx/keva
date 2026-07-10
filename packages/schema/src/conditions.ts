@@ -14,8 +14,6 @@ interface Candidate {
   readonly value: PropertyValue | string | number | null;
 }
 
-// Resolve a key against an item: declared fields (id, name, system.*) read from
-// their column accessor; every other key resolves against the property blob.
 const itemValueAt = (item: KevaItem, key: string): Candidate => {
   const field = FIELD_BY_KEY.get(key);
   if (field) {

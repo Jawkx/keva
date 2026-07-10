@@ -16,7 +16,6 @@ describe("share token format", () => {
     expect(parseShareTokenParts("nope")).toBeNull();
     expect(parseShareTokenParts("keva_sh_onlyonepart")).toBeNull();
     expect(parseShareTokenParts("")).toBeNull();
-    // An API token (keva_sk_) is not a share token (keva_sh_).
     expect(parseShareTokenParts("keva_sk_abc_def")).toBeNull();
   });
 });

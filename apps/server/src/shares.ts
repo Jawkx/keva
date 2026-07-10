@@ -90,8 +90,6 @@ const shareRecord = (row: ShareRow): ShareGrantRecord => ({
   lastUsedAt: iso(row.last_used_at),
 });
 
-// The resolved principal carries the grant's conditions, write stamp, and quota
-// limits, so the engine enforces access without ever re-reading the grant row.
 const shareGrantPrincipal = (row: ShareRow): Principal => ({
   tenantId: row.tenant_id,
   scopes: [...row.scopes],
@@ -150,9 +148,6 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
         const secret = randomTokenPart(32);
         const plaintext = `keva_sh_${id}_${secret}`;
         const secretHash = await hashSecret(secret);
-        // Insert then join the referenced view back in, so the returned record
-        // carries the live view conditions in one round trip. The view_id FK
-        // guarantees the view exists (the route also pre-checks tenant ownership).
         const rows = await sql<ShareRow[]>`
           with g as (
             insert into share_grants (

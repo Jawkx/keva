@@ -268,11 +268,11 @@ const seedAndSourceUsage = async (store: MetadataStoreService) => {
     size,
   });
   const rows: KevaItem[] = [
-    row("11", tenant, "share:g1", "ready", 100, 100), // counts
-    row("12", tenant, "share:g1", "pending", 200, null), // counts (declaredSize)
-    row("13", tenant, "share:g1", "deleting", 400, 400), // excluded (status)
-    row("14", tenant, "share:g2", "ready", 800, 800), // excluded (source)
-    row("15", other, "share:g1", "ready", 1600, 1600), // excluded (tenant)
+    row("11", tenant, "share:g1", "ready", 100, 100),
+    row("12", tenant, "share:g1", "pending", 200, null),
+    row("13", tenant, "share:g1", "deleting", 400, 400),
+    row("14", tenant, "share:g2", "ready", 800, 800),
+    row("15", other, "share:g1", "ready", 1600, 1600),
   ];
   for (const item of rows) await Effect.runPromise(store.insert(item));
   return Effect.runPromise(store.sourceUsage(tenant, "share:g1"));
@@ -280,8 +280,6 @@ const seedAndSourceUsage = async (store: MetadataStoreService) => {
 
 const EXPECTED_SOURCE_USAGE = { count: 2, bytes: 300 };
 
-// Includes a same-timestamp pair (id-desc tiebreak) and out-of-scope rows for
-// another item and another tenant.
 const seedAndListEvents = async (store: MetadataStoreService) => {
   const tenant = crypto.randomUUID();
   const other = crypto.randomUUID();
@@ -427,7 +425,6 @@ describe("store query equivalence", () => {
     it("matches memory for item event listing and pagination", async () => {
       const memory = await seedAndListEvents(makeMemoryMetadataStore());
       const pg = await seedAndListEvents(makePostgresMetadataStore(sql));
-      // Tenants differ per seeding run; compare everything but tenantId.
       const normalize = (result: typeof memory) => ({
         pageCursors: result.pageCursors,
         events: result.events.map(({ tenantId: _tenantId, ...event }) => event),

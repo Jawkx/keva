@@ -52,9 +52,6 @@ export function SharesSection() {
   const shares = sharesQuery.data ?? [];
   const error = sharesQuery.error ? handleError(sharesQuery.error) : null;
 
-  // "New share link" flow (KEV-7): pick an existing view to build the link on
-  // (a link always rests on a view). Creating a fresh filter still happens on
-  // the Files page, so we link there when there are no views yet.
   const viewsQuery = useQuery({ queryKey: viewsQueryKey, queryFn: listViews });
   const views = viewsQuery.data ?? [];
   const [shareView, setShareView] = useState<ViewRecord | null>(null);

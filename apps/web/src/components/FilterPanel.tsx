@@ -98,8 +98,6 @@ function ConditionRow({
   onUpdate: (patch: ConditionDraftPatch) => void;
   onRemove: () => void;
 }) {
-  // Only fetch value suggestions once the key names a known property and the
-  // condition actually takes a scalar value (booleans use a fixed dropdown).
   const trimmedKey = row.key.trim();
   const valuesEnabled =
     row.op !== "exists" && row.valueType !== "boolean" && keyOptions.includes(trimmedKey);

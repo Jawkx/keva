@@ -425,8 +425,6 @@ function PDFViewerLoadingSkeleton({
   );
 }
 
-// Rendered while the engine or document is not ready: same frame as the
-// full viewer, with only the upload control usable.
 function PDFViewerFallbackShell({
   className,
   showToolbar,
@@ -1222,8 +1220,6 @@ function PDFViewerScrollAreaViewport({
   );
 }
 
-// Captures the scrollable viewport element so the imperative handle can expose
-// it.
 function PDFViewerViewportBridge({
   viewportElementRef,
 }: {
@@ -2442,7 +2438,6 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
     [src],
   );
 
-  // Plugin registrations are created once per viewer instance.
   const [plugins] = React.useState(() => [
     createPluginRegistration(DocumentManagerPluginPackage),
     createPluginRegistration(ViewportPluginPackage, {

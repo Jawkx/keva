@@ -12,18 +12,6 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type S3Mock, startS3Mock } from "./test/s3-mock.js";
 
-/**
- * Real (SigV4-signed) S3 byte flow against an in-memory S3-compatible mock:
- *  - a file uploads to STAGING, confirm copies it to the IMMUTABLE FINAL key;
- *  - the server never streams bytes (presigned upload/download + server-side
- *    copy);
- *  - an abandoned `pending` is reaped to `deleting` and swept to completion;
- *  - replaying a still-valid staging PUT cannot alter a `ready` item.
- *
- * Lives in @keva/server (not @keva/core) because the mock needs Node's http
- * server types, which only this package depends on.
- */
-
 const principal: Principal = {
   tenantId: "t1",
   scopes: ["read", "write", "delete", "admin"],
@@ -144,8 +132,6 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     await putToPresigned(initiated.uploadUrl, original, "text/plain");
     await runtime.runPromise(engine.confirm(id));
 
-    // Replay the (still-unexpired) staging PUT with different bytes. This only
-    // rewrites the staging key — the immutable final key was already copied.
     await putToPresigned(initiated.uploadUrl, tampered, "text/plain");
 
     const dl = await runtime.runPromise(engine.download(id));

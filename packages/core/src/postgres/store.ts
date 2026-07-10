@@ -120,8 +120,6 @@ const decodeCursor = (cursor: string): Effect.Effect<readonly [string, string], 
 type Fragment = ReturnType<Sql["unsafe"]>;
 type CursorPredicate = (cursor: readonly [string, string]) => Fragment;
 
-// A query key backed by a real column (declared in the schema field registry),
-// as opposed to a key that lives inside the `properties` JSONB blob.
 const systemColumn = (
   sql: Sql,
   key: string,
@@ -393,8 +391,6 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   sourceUsage: (tenantId, source) =>
     attempt(async () => {
-      // Served by items_tenant_source_idx. count/sum arrive as bigint strings
-      // from postgres.js; cast like usage does.
       const rows = await sql<{ count: string; bytes: string }[]>`
         select count(*)::bigint as count,
                coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
@@ -421,9 +417,6 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   propertyValues: (tenantId, key) =>
     attempt(async () => {
-      // Only scalar values can seed a single-line input; arrays/objects/nulls
-      // are filtered out by jsonb_typeof. The driver parses jsonb back to JS
-      // scalars, so `value` is already a string/number/boolean.
       const rows = await sql<{ value: PropertyScalar }[]>`
         select distinct properties -> ${key} as value
         from items

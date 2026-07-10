@@ -14,7 +14,6 @@ const OPTIONS = [
 
 export function AppearanceCard() {
   const { theme, setTheme } = useTheme();
-  // next-themes has no value until mounted; avoid rendering a stale selection.
   const [mounted, setMounted] = useState(false);
   useMountEffect(() => setMounted(true));
 

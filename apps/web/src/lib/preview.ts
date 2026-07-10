@@ -1,6 +1,3 @@
-// Preview eligibility for item content, shared by the owner's FileDetail and the
-// public share detail. Keyed only on content type and size, so it works for both
-// the full KevaItem and the redacted SharedItem shape.
 export interface Previewable {
   contentType: string;
   size: number | null;

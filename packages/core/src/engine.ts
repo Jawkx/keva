@@ -248,8 +248,6 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* requireScope(principal, "write");
       const metadata = yield* MetadataStore;
       const current = yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id));
-      // Route each key to its column (user-writable fields like `name`) or the
-      // property blob, rejecting writes to system-owned or reserved keys.
       const routed = routePatch(patch.set, patch.unset);
       if (!routed.ok) {
         return yield* new ValidationError({

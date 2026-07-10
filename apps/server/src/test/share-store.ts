@@ -17,12 +17,6 @@ interface StoredGrant {
   lastUsedAt: string | null;
 }
 
-// A minimal in-memory ShareGrantStore for server tests: mints
-// `keva_sh_<id>_<secret>` tokens and resolves them back to a share principal.
-// Conditions are read live from the referenced view (pass the same `views` Map
-// used by the in-memory ViewStore), mirroring the Postgres store's JOIN. Non-
-// share suites use it as an empty store (resolve → null); the shares suite
-// drives the full create → redeem → list → revoke flow without Postgres.
 export const makeInMemoryShareGrantStore = (
   views: Map<string, ViewRecord> = new Map(),
 ): ShareGrantStoreService => {

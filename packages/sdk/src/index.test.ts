@@ -249,7 +249,6 @@ describe("ShareClient", () => {
 
     const result = await withFetch.query();
     expect(result.items[0]!.name).toBe("shared.txt");
-    // SharedItem has no tenant-internal fields.
     expect(result.items[0]).not.toHaveProperty("storageKey");
     await withFetch.self();
     expect(authHeaders).toEqual(["Bearer keva_sh_abc_def", "Bearer keva_sh_abc_def"]);

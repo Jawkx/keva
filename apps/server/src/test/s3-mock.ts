@@ -2,13 +2,7 @@ import { createHash } from "node:crypto";
 import { type IncomingMessage, type Server, ServerResponse, createServer } from "node:http";
 import { type AddressInfo } from "node:net";
 
-/**
- * Minimal in-memory S3-compatible server for tests (no Docker/MinIO needed).
- * Implements the subset the BlobStore uses: PUT (incl. CopyObject via
- * x-amz-copy-source), GET, HEAD, DELETE, path-style. It does NOT validate
- * signatures — it exists to exercise the real SigV4-signed HTTP requests the
- * S3BlobStore emits and the staging → copy → final → delete byte flow.
- */
+// Does not validate signatures; exercises the S3BlobStore's signed HTTP requests.
 
 interface StoredObject {
   bytes: Buffer;
@@ -33,7 +27,6 @@ const readBody = (req: IncomingMessage): Promise<Buffer> =>
     req.on("error", reject);
   });
 
-/** Parse "/bucket/key/with/slashes" → { bucket, key } (decoding each segment). */
 const parsePath = (pathname: string): { bucket: string; key: string } => {
   const parts = pathname.replace(/^\//, "").split("/").map(decodeURIComponent);
   return { bucket: parts[0] ?? "", key: parts.slice(1).join("/") };

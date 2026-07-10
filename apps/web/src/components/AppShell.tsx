@@ -44,8 +44,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-// "Files" now lives in the Views group as the default "All" entry (Linear-style,
-// where the all-items list is itself a view), so it's dropped from this static nav.
 const NAV = [
   { title: "Share", url: "/shares", icon: Share03Icon, exact: false },
 ] satisfies readonly { title: string; url: string; icon: IconSvgElement; exact: boolean }[];
@@ -75,9 +73,6 @@ function AppSidebar() {
   const isActive = (url: string, exact: boolean) =>
     exact ? location.pathname === url : location.pathname.startsWith(url);
 
-  // When collapsed, clicking any empty part of the sidebar expands it, while
-  // clicking a menu item still just navigates. The guard bails on clicks that
-  // originated inside a menu button so icons keep behaving as links.
   const expandOnEmptyClick =
     state === "collapsed"
       ? (event: MouseEvent) => {
@@ -89,11 +84,6 @@ function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        {/* The expanded row (wordmark + collapse trigger) and the collapsed
-            icon button are layered in the same box and cross-fade on collapse,
-            so the swap eases with the sidebar's width transition instead of
-            snapping. overflow-hidden clips the wide wordmark once it has faded
-            out so it can't disturb the collapsed layout. */}
         <div className="relative h-12 overflow-hidden transition-[height] duration-200 group-data-[collapsible=icon]:h-8">
           <div className="flex h-full items-center justify-between gap-2 opacity-100 transition-opacity duration-200 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
             <Link to="/" className="flex items-center rounded-md px-2">
@@ -109,8 +99,6 @@ function AppSidebar() {
             aria-label="Expand sidebar"
             className="group/logo pointer-events-none absolute inset-0 m-auto flex size-8 items-center justify-center rounded-md opacity-0 transition-opacity duration-200 hover:bg-sidebar-accent group-data-[collapsible=icon]:pointer-events-auto group-data-[collapsible=icon]:opacity-100"
           >
-            {/* Logo and expand icon stack in the same spot and cross-fade on
-                hover so the swap eases in/out rather than snapping. */}
             <img
               src="/main-icon.png"
               alt="Keva"
@@ -132,8 +120,6 @@ function AppSidebar() {
           <SidebarGroupLabel>Views</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {/* Default "All" — the unfiltered file list at the root. Active in
-                    root mode (`/` or `/items/*`), i.e. whenever no view is open. */}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={isActive("/", true) || location.pathname.startsWith("/items/")}
@@ -254,12 +240,8 @@ function AppSidebar() {
 
 export function AppShell() {
   const location = useLocation();
-  // Callback ref: publishing the mounted header element via state re-renders
-  // the provider so the portal target becomes available to route content.
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
 
-  // The Files screen owns its own full-height, edge-to-edge master/detail
-  // layout; every other page gets the centered, padded container.
   const fullBleed =
     location.pathname === "/" ||
     location.pathname.startsWith("/items/") ||
@@ -271,8 +253,6 @@ export function AppShell() {
 
       <SidebarInset className="h-svh min-w-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-2 px-4">
-          {/* Desktop collapses via the in-sidebar trigger; on mobile the sidebar
-              is an off-canvas sheet, so keep a trigger here to open it. */}
           <SidebarTrigger className="-ml-1 md:hidden" />
           <div ref={setHeaderSlot} className="flex min-w-0 flex-1 items-center gap-2" />
         </header>

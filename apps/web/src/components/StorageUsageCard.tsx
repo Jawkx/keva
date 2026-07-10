@@ -5,9 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-// Fixed-order categorical ramp (the design system's chart tokens). Segments are
-// the tenant's largest content types by bytes; anything past the ramp folds into
-// a single neutral "Other" bucket — never a cycled/extended palette.
 const PALETTE = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5"] as const;
 const TOP = PALETTE.length;
 

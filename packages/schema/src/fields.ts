@@ -1,17 +1,8 @@
 import { Schema } from "effect";
 import type { KevaItem, PropertyValue } from "./index.js";
 
-// An item is a tenant-scoped bag of key→value pairs. Most keys are undeclared
-// *user properties*: owned by the user, stored loosely-typed in the JSON blob.
-// A field descriptor exists only for a key that DEVIATES from that default —
-// because the system owns it, or because it is materialized into its own column
-// for indexing / typing / required-ness.
-//
-// `owner` is the only thing that governs writability ("user" → patchable,
-// "system" → read-only). Storage (`column` for SQL, `itemField` for the
-// in-memory record) is an implementation detail that never surfaces in the API.
-// This list is the single source of truth: query-key validation, patch routing,
-// and both stores' key mappings all derive from it.
+// Field descriptors are the single source of truth for query validation, patch
+// routing, and storage mappings; `owner` governs API writability.
 
 export const PROPERTY_LIMITS = {
   keys: 256,
@@ -27,7 +18,6 @@ const RESERVED_PREFIXES = ["system.", "keva."] as const;
 export const isReservedKey = (key: string): boolean =>
   RESERVED_PREFIXES.some((prefix) => key.startsWith(prefix));
 
-// A key a user may freely set/unset as a property (the open long tail).
 export const isPropertyKey = (key: string): boolean =>
   queryKeyPattern.test(key) && key.length <= PROPERTY_LIMITS.keyLength && !isReservedKey(key);
 
@@ -35,19 +25,12 @@ export type FieldOwner = "user" | "system";
 export type FieldQueryType = "string" | "number" | "nullable-string" | "timestamp";
 
 export interface FieldDescriptor {
-  /** Canonical key in the unified key-space (e.g. "name", "system.size"). */
   readonly key: string;
-  /** "user" → user-writable; "system" → engine-owned, read-only. */
   readonly owner: FieldOwner;
-  /** Settable but never unsettable (NOT NULL column). */
   readonly required: boolean;
-  /** Physical SQL column — storage detail, never part of the API. */
   readonly column: string;
-  /** Accessor on the in-memory KevaItem record — storage detail. */
   readonly itemField: keyof KevaItem;
-  /** How this column compares in queries. */
   readonly queryType: FieldQueryType;
-  /** Stricter value schema enforced on user writes (user-owned keys only). */
   readonly valueSchema?: Schema.Schema<string, string>;
 }
 
@@ -145,7 +128,6 @@ export const isQueryKey = (key: string): boolean =>
   FIELD_BY_KEY.has(key) || (!key.startsWith("system.") && queryKeyPattern.test(key));
 
 export interface RoutedPatch {
-  /** User-writable column fields, keyed by canonical field key (e.g. "name"). */
   readonly fields: Readonly<Record<string, PropertyValue>>;
   readonly set: Readonly<Record<string, PropertyValue>>;
   readonly unset: readonly string[];
@@ -156,10 +138,7 @@ export interface PatchRouteError {
   readonly reason: string;
 }
 
-// Routes a flat {set, unset} patch over the unified key-space into a column
-// write (user-owned declared fields) plus a property merge (everything else),
-// rejecting any write to a system-owned or otherwise-invalid key. This is the
-// one place the user/system writability boundary is enforced.
+// This is the sole user/system writability boundary for patches.
 export const routePatch = (
   set: Readonly<Record<string, PropertyValue>>,
   unset: readonly string[],

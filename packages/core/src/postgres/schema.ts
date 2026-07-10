@@ -48,7 +48,6 @@ export const items = pgTable(
     index("items_tenant_size_idx").on(table.tenantId, table.size),
     index("items_tenant_created_id_idx").on(table.tenantId, table.createdAt, table.id),
     index("items_properties_gin_idx").using("gin", table.properties),
-    // Serves sourceUsage(tenantId, source) — read on every share upload initiate.
     index("items_tenant_source_idx").on(table.tenantId, table.source),
     check("items_status_check", sql`${table.status} in ('pending', 'ready', 'deleting')`),
   ],
@@ -100,9 +99,6 @@ export const apiTokens = pgTable(
   (table) => [index("api_tokens_tenant_created_idx").on(table.tenantId, table.createdAt)],
 );
 
-// A named, saved filter — the owner's first-class navigation object. `conditions`
-// are ANDed against a tenant's items. A share grant references a view and reads
-// its conditions live, so editing a view updates any link built on it.
 export const views = pgTable(
   "views",
   {

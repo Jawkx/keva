@@ -31,8 +31,6 @@ const sharePrincipal = (tenantId: string, options: ShareOptions = {}): Principal
   },
 });
 
-// Upload through a share principal (initiate → devPut → confirm), returning the
-// confirmed item. Mirrors `upload` but drives the share write path.
 const shareUpload = (p: Principal, name: string, bytes: Uint8Array) =>
   Effect.gen(function* () {
     const engine = makeKevaEngine(p);
@@ -381,7 +379,6 @@ describe("KevaEngine item history", () => {
       const blobs = yield* BlobStore;
       yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
       yield* engine.confirm(initiated.item.id);
-      // Idempotent re-confirm must not duplicate the uploaded event.
       yield* engine.confirm(initiated.item.id);
       // Same-millisecond events tie-break on a random id; sleeps keep the
       // expected order deterministic.
@@ -390,7 +387,6 @@ describe("KevaEngine item history", () => {
       yield* Effect.sleep(2);
       yield* engine.patch(initiated.item.id, { set: { priority: "high" }, unset: [] });
       yield* Effect.sleep(2);
-      // No-op set (same value) plus a real change and an unset.
       yield* engine.patch(initiated.item.id, {
         set: { priority: "high", status2: "done" },
         unset: ["priority"],
@@ -629,8 +625,6 @@ describe("KevaEngine share access", () => {
       );
     }).pipe(Effect.provide(layer()));
 
-    // maxItems=1: a single *pending* (unconfirmed) initiate must already exhaust
-    // the count quota, proving pending items count toward usage.
     const itemCount = Effect.gen(function* () {
       const p = sharePrincipal("tenant-a", {
         scopes: ["read", "write"],
@@ -662,12 +656,12 @@ describe("KevaEngine share access", () => {
         writeStamp: stamp,
         limits: { maxItemBytes: null, maxTotalBytes: 5, maxItems: null },
       });
-      yield* shareUpload(p, "three.txt", new TextEncoder().encode("abc")); // 3 bytes ready
+      yield* shareUpload(p, "three.txt", new TextEncoder().encode("abc"));
       return yield* Effect.either(
         makeKevaEngine(p).initiate({
           name: "more",
           contentType: "text/plain",
-          size: 3, // 3 + 3 > 5
+          size: 3,
           source: "upload",
           properties: {},
         }),

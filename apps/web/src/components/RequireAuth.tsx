@@ -3,9 +3,6 @@ import { Navigate, useLocation } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { Spinner } from "@/components/ui/spinner";
 
-// Guards authed routes: while the session is loading we show a placeholder,
-// and when there is no session we redirect to /login (remembering where the
-// user was headed so the login page can send them back).
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { data, isPending } = authClient.useSession();
   const location = useLocation();

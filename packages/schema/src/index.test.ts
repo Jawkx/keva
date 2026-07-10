@@ -38,7 +38,6 @@ describe("schema", () => {
         where: [{ key: "system.unknown", op: "exists" }],
       }),
     ).toThrow();
-    // `in` takes a non-empty scalar array; a scalar or empty array is rejected.
     expect(
       Schema.decodeUnknownSync(Query)({
         where: [{ key: "system.content_type", op: "in", value: ["text/", "application/pdf"] }],
@@ -123,7 +122,6 @@ describe("condition evaluator", () => {
     expect(itemMatchesCondition(item, { key: "tags", op: "contains", value: "x" })).toBe(true);
     expect(itemMatchesCondition(item, { key: "tags", op: "contains", value: "z" })).toBe(false);
     expect(itemMatchesCondition(item, { key: "project", op: "neq", value: "beta" })).toBe(true);
-    // `in` — OR of `contains` over the listed values.
     expect(itemMatchesCondition(item, { key: "project", op: "in", value: ["beta", "alpha"] })).toBe(
       true,
     );
@@ -161,9 +159,6 @@ describe("condition evaluator", () => {
   });
 });
 
-// A grant now references a view by id; conditions live on the view, so the two
-// condition-dependent write invariants are enforced server-side (see the app
-// test). The schema keeps only what it can check from the payload alone.
 describe("CreateShareGrant", () => {
   const base = {
     name: "Client drop",

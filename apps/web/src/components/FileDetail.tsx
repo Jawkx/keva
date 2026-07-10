@@ -57,16 +57,9 @@ const PANEL_LABELS: Record<Panel, string> = {
   activity: "Activity",
 };
 
-// The panels available for an item, in display order. Preview is offered only
-// when the content can actually be rendered; Properties (system metadata plus
-// the user's own keys) and Activity (the item's history) always exist.
 const panelsFor = (o: KevaItem): Panel[] =>
   isPreviewable(o) ? ["preview", "properties", "activity"] : ["properties", "activity"];
 
-// Where the file extension begins, for pre-selecting just the stem when
-// renaming (so a careless keystroke replaces "report" but keeps ".pdf"). A
-// leading-dot name (".gitignore") or an extension-less name has no stem to
-// isolate, so the whole value is selected.
 const extensionStart = (name: string): number => {
   const dot = name.lastIndexOf(".");
   return dot <= 0 ? name.length : dot;
@@ -74,22 +67,14 @@ const extensionStart = (name: string): number => {
 
 interface FileDetailProps {
   itemId: string;
-  // Renders a close affordance in the header when provided (used by the
-  // side panel; the bottom sheet supplies its own close button).
   onClose?: () => void;
-  // Called after a successful delete so the container can clear its selection.
   onDeleted: () => void;
 }
 
-// Detail view for a single item — metadata, a best-effort preview, and the
-// property editor. Shared by the resizable side panel (wide screens) and the
-// bottom sheet (narrow screens). Loads its own data on mount; remount it with a
-// `key={itemId}` so a new selection re-runs the load.
 export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
-  // Rename editor: null when idle, otherwise the in-progress draft name.
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -102,8 +87,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const loading = itemQuery.isLoading;
   const error = itemQuery.error ? errorMessage(itemQuery.error) : null;
 
-  // Content bytes are cached (immutable per id), so re-opening a file is
-  // instant and never re-downloads. The Blob is built once here and shared.
   const contentQuery = useQuery({
     queryKey: ["content", itemId],
     enabled: Boolean(item) && isPreviewable(item!),
@@ -120,9 +103,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   });
   const previewLoading = contentQuery.isLoading;
 
-  // Derive the preview from cached bytes. `objectUrlFor` is an LRU keyed by id,
-  // so reading it during render reuses the same URL; entries are revoked on LRU
-  // eviction or explicit delete. Best-effort: content errors are ignored here.
   const preview = useMemo<Preview | null>(() => {
     if (!item || !contentQuery.data) return null;
     const { bytes, blob } = contentQuery.data;
@@ -136,13 +116,8 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     return { kind: "text", text: new TextDecoder().decode(bytes).slice(0, 5000) };
   }, [item, contentQuery.data, itemId]);
 
-  // Which panels this item exposes (Preview is dropped for non-previewable
-  // files). The first entry is the default — Preview when available, else Info.
   const panels = useMemo(() => (item ? panelsFor(item) : []), [item]);
 
-  // The active panel is derived from the URL, never stored separately: a valid
-  // `?panel=` wins, otherwise we fall back to the default without touching the
-  // address bar until the user actually picks a tab.
   const paramPanel = searchParams.get("panel") as Panel | null;
   const activePanel: Panel =
     paramPanel && panels.includes(paramPanel) ? paramPanel : (panels[0] ?? "properties");
@@ -178,8 +153,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     mutationFn: () => keva.delete(itemId),
     onSuccess: () => {
       toast.success(`Deleted ${item?.name ?? "item"}`);
-      // Drop the row from any cached list (whatever search is active) so it
-      // disappears without a refetch; free its preview URL; then navigate away.
       queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
         old ? removeItemsFromPages(old, [itemId]) : old,
       );
@@ -195,7 +168,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
       keva.patch(itemId, vars),
     onSuccess: (updated) => {
       queryClient.setQueryData(["item", itemId], updated);
-      // Keep the list rows in sync (e.g. a rename) without a refetch.
       queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
         old ? replaceItemInPages(old, updated) : old,
       );
@@ -221,7 +193,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
 
   const commitRename = async () => {
     const next = renameDraft?.trim() ?? "";
-    // Nothing to do on an empty or unchanged name — just leave the editor.
     if (!item || next === "" || next === item.name) {
       setRenameDraft(null);
       return;
@@ -229,9 +200,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     try {
       await patchMutation.mutateAsync({ set: { name: next }, unset: [] });
       setRenameDraft(null);
-    } catch {
-      // onError already surfaced a toast; stay in edit mode so they can retry.
-    }
+    } catch {}
   };
 
   const onImageLoad = useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
@@ -246,8 +215,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
       <header className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           {renameDraft !== null ? (
-            // Enter commits, Escape/blur cancels — a careless click-away never
-            // silently overwrites the name. The stem is pre-selected on focus.
             <input
               ref={renameInputRef}
               value={renameDraft}
@@ -402,9 +369,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
         ) : activePanel === "preview" ? (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {previewLoading ? (
-              // Mirror the shape of the content that will replace it: image
-              // previews use a ratio-stable frame, while pdf/csv/text viewers
-              // stretch to flex-1.
               isImage(item) ? (
                 <Skeleton className="aspect-video w-full max-w-full rounded-md" />
               ) : (
@@ -438,9 +402,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                 className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
               />
             ) : preview?.kind === "text" ? (
-              // The scroll container is pinned to the content width (w-full
-              // min-w-0); the <pre> keeps its natural width and scrolls
-              // inside it, so long lines never widen the panel.
               <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md bg-muted/50">
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>
               </div>
@@ -453,11 +414,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
             <FileActivity itemId={itemId} />
           </section>
         ) : (
-          // Info and properties are one surface: an item is just a bag of
-          // key→value pairs. The system-owned keys (read-only) and the user's
-          // own properties (editable) render as one list, told apart by the
-          // leading icon on each row rather than by separate sections. Content
-          // type and size live in the header above; these carry the rest.
           <section className="min-w-0">
             <PropertiesEditor
               properties={item.properties}

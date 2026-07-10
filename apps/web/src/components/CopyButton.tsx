@@ -24,7 +24,6 @@ export function CopyButton({
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
-      // Transient confirmation reset — event-driven timer, not a lifecycle effect.
       setTimeout(() => setCopied(false), 1500);
     } catch {
       toast.error("Could not copy to clipboard");

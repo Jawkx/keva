@@ -1,10 +1,3 @@
-// MCP OAuth (Better Auth `mcp` plugin) browser helpers. The consumer dashboard
-// doubles as the authorization server's login + consent UI for agents
-// connecting to keva over MCP.
-
-// The MCP authorize endpoint. Better Auth bounces an unauthenticated user to
-// /login with the original authorize query (which always carries client_id);
-// after sign-in we resume the flow by returning to this endpoint with it.
 const MCP_AUTHORIZE_PATH = "/api/auth/mcp/authorize";
 const CONSENT_PATH = "/api/auth/oauth2/consent";
 
@@ -30,9 +23,6 @@ export const parseConsentRequest = (search: string): ConsentRequest | null => {
   };
 };
 
-// Records the user's decision and returns where to send the browser next: the
-// client's redirect_uri carrying an authorization code, or an access_denied
-// error back to the same URI.
 export const submitConsent = async (accept: boolean, consentCode: string): Promise<string> => {
   const response = await fetch(CONSENT_PATH, {
     method: "POST",
@@ -56,8 +46,6 @@ export const submitConsent = async (accept: boolean, consentCode: string): Promi
   return redirectURI;
 };
 
-// Human-readable descriptions for the consent screen. keva scopes are the ones
-// that matter to the user; OIDC scopes are shown for completeness.
 export const SCOPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "keva:read": "Read your items, their metadata, and file contents",
   "keva:write": "Create and update item properties",

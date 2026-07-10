@@ -15,19 +15,6 @@ import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
 
-/**
- * Server-level token subsystem. In the merged implementation, token management
- * is gated behind an *admin session* (`requireAdminSession`): a static API
- * token (via: "token") is rejected with Forbidden, and only a session with the
- * `admin` scope may mint / list / revoke. We drive the session via a
- * `sessionResolver` and back the store with an in-memory `ApiTokenStore` so the
- * full mint → use → scope-enforce → list → revoke flow runs without Postgres.
- *
- * Note: in merged, token-store ops surface StorageUnavailable on a DB error
- * (not the old `orDie`); these tests assert the happy-path HTTP behaviour, not
- * that legacy.
- */
-
 const STATIC = "static-token";
 const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
@@ -152,8 +139,6 @@ describe("server token subsystem", () => {
 
   it("rejects token management without an admin session (Forbidden)", async () => {
     const app = makeApp();
-    // A static API token authenticates (via: "token") but is NOT an admin
-    // session, so token management is Forbidden.
     const response = await app.request("/api/tokens", {
       method: "POST",
       headers: {

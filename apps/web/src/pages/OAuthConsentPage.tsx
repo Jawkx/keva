@@ -8,16 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 
-// The OAuth consent screen for agents connecting to keva over MCP. Better Auth
-// redirects here (see the mcp plugin's `consentPage`) with consent_code,
-// client_id, and the requested scope. We show what is being granted and POST
-// the decision back, then follow the returned redirect to the client.
 export function OAuthConsentPage() {
   const request = parseConsentRequest(window.location.search);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // A missing consent_code means a stale or hand-edited link — nothing to grant.
   useMountEffect(() => {
     if (!request) setError("This authorization link is invalid or has expired.");
   });

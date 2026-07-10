@@ -2,9 +2,6 @@ import type { ViewRecord } from "@keva/schema";
 import { Effect } from "effect";
 import type { ViewStoreService } from "../views.js";
 
-// A minimal in-memory ViewStore for server tests. Pass a shared `views` Map to
-// link it with an in-memory ShareGrantStore (a grant reads its conditions live
-// from the view it references), or omit it for an empty store.
 export const makeInMemoryViewStore = (
   views: Map<string, ViewRecord> = new Map(),
 ): ViewStoreService => ({

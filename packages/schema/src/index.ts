@@ -57,9 +57,6 @@ export type Properties = typeof Properties.Type;
 export const Scope = Schema.Literal("read", "write", "delete", "admin");
 export type Scope = typeof Scope.Type;
 
-// Principal is defined below, after QueryCondition — a share principal carries
-// the grant's conditions, which reuse the QueryCondition schema.
-
 export const ItemStatus = Schema.Literal("pending", "ready", "deleting");
 export type ItemStatus = typeof ItemStatus.Type;
 
@@ -116,8 +113,6 @@ export const QueryCondition = Schema.Struct({
       if (value === undefined) return false;
       if (op === "contains")
         return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-      // `in` matches when the field satisfies `contains` against ANY listed
-      // value (an OR over alternatives), so it takes a non-empty scalar array.
       if (op === "in")
         return (
           Array.isArray(value) &&
@@ -136,8 +131,6 @@ export const QueryCondition = Schema.Struct({
 );
 export type QueryCondition = typeof QueryCondition.Type;
 
-// The two scopes a share grant can carry. Distinct from the tenant-wide `Scope`
-// (which includes delete/admin) — a share is only ever read and/or write.
 export const ShareScope = Schema.Literal("read", "write");
 export type ShareScope = typeof ShareScope.Type;
 
@@ -206,15 +199,11 @@ export const QueryResult = Schema.Struct({
 });
 export type QueryResult = typeof QueryResult.Type;
 
-// Distinct property keys used across a tenant's items — powers key autocomplete
-// in the editor and filter UIs.
 export const PropertyKeysResult = Schema.Struct({
   keys: Schema.Array(Schema.String),
 });
 export type PropertyKeysResult = typeof PropertyKeysResult.Type;
 
-// Distinct scalar values seen for a single property key across a tenant's items.
-// Arrays and nulls are excluded — only values a single-line input can suggest.
 export const PropertyScalar = Schema.Union(Schema.String, Schema.Number, Schema.Boolean);
 export type PropertyScalar = typeof PropertyScalar.Type;
 
@@ -223,9 +212,6 @@ export const PropertyValuesResult = Schema.Struct({
 });
 export type PropertyValuesResult = typeof PropertyValuesResult.Type;
 
-// Storage usage for a tenant: totals plus a per-content-type breakdown. Derived
-// live from `ready` items, so `sum(byType.bytes) === totalBytes` and
-// `sum(byType.count) === itemCount` always hold.
 export const ContentTypeUsage = Schema.Struct({
   contentType: Schema.String,
   count: Schema.Number,
@@ -291,8 +277,6 @@ export const DownloadResult = Schema.Struct({
 });
 export type DownloadResult = typeof DownloadResult.Type;
 
-// ── Item events ──────────────────────────────────────────────────────────
-
 export const ItemEventAction = Schema.Literal(
   "uploaded",
   "renamed",
@@ -301,8 +285,6 @@ export const ItemEventAction = Schema.Literal(
 );
 export type ItemEventAction = typeof ItemEventAction.Type;
 
-// Per-action fields: uploaded → size/contentType/source; renamed → from/to;
-// properties_changed → set (new values), previous (old values), unset.
 export const ItemEventPayload = Schema.Struct({
   size: Schema.optional(Schema.NullOr(Schema.Number)),
   contentType: Schema.optional(Schema.String),
@@ -359,11 +341,6 @@ export const MintTokenResult = Schema.Struct({
 });
 export type MintTokenResult = typeof MintTokenResult.Type;
 
-// ── Views ────────────────────────────────────────────────────────────────
-
-// A named, saved filter — the owner's first-class navigation object. `conditions`
-// reuse the QueryCondition schema; a share grant references a view and reads its
-// conditions live, so editing a view updates any link built on it.
 export const ViewRecord = Schema.Struct({
   id: Schema.String,
   tenantId: Schema.String,
@@ -383,8 +360,6 @@ export const CreateView = Schema.Struct({
 });
 export type CreateView = typeof CreateView.Type;
 
-// All fields optional so a caller can rename, re-icon, or re-filter
-// independently. An empty patch is a no-op the store tolerates.
 export const UpdateView = Schema.Struct({
   name: Schema.optional(Schema.NonEmptyString),
   icon: Schema.optional(Schema.String),
@@ -392,9 +367,6 @@ export const UpdateView = Schema.Struct({
 });
 export type UpdateView = typeof UpdateView.Type;
 
-// ── Sharing ──────────────────────────────────────────────────────────────
-
-// A stored share grant as returned to its owner. Never includes the secret.
 // Nullable fields serialize as `null` (not absent) so the frontend can rely on
 // their presence.
 export const ShareGrantRecord = Schema.Struct({
@@ -403,8 +375,6 @@ export const ShareGrantRecord = Schema.Struct({
   viewId: Schema.String,
   name: Schema.NonEmptyString,
   scopes: Schema.Array(ShareScope),
-  // Read live from the referenced view (not stored on the grant), so the owner
-  // UI can render what the link exposes and it tracks view edits.
   conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.NullOr(Properties),
   maxItemBytes: Schema.NullOr(Schema.Number),

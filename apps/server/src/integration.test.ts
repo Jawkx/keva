@@ -8,17 +8,6 @@ import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
 
-/**
- * Server-level acceptance: the full create → upload (loopback) → confirm →
- * query → download roundtrip over HTTP through the in-process Hono app, plus
- * forced NotFound / Unauthorized / ValidationError arriving as the correct
- * status and typed `_tag` error body.
- *
- * Bytes are PUT to the presigned upload URL and GET from the presigned
- * download URL, both of which loop back into the same app's `/__dev/blobs`
- * routes — the server itself never streams item bytes.
- */
-
 const TOKEN = "secret-token";
 
 const makeApp = () =>
@@ -40,7 +29,6 @@ const makeApp = () =>
 
 const auth = { authorization: `Bearer ${TOKEN}` };
 
-// Route an absolute presigned URL (loopback) back into the app.
 const loopback = (app: ReturnType<typeof makeApp>, absoluteUrl: string, init?: RequestInit) => {
   const url = new URL(absoluteUrl);
   return app.request(`${url.pathname}${url.search}`, init);
@@ -170,7 +158,6 @@ describe("server integration — HTTP roundtrip", () => {
       body: JSON.stringify({ ids: [a, b, unknown] }),
     });
     expect(response.status).toBe(200);
-    // A missing item is a no-op delete, so it lands in `deleted`, not `failed`.
     const body = (await response.json()) as {
       deleted: string[];
       failed: { id: string }[];

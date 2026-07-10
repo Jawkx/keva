@@ -30,7 +30,6 @@ export function SignupPage() {
         setError(result.error.message ?? "Sign up failed.");
         return;
       }
-      // Resume an in-progress OAuth authorize if an agent sent the user here.
       const continuation = oauthContinuation(window.location.search);
       if (continuation) {
         window.location.href = continuation;

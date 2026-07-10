@@ -30,8 +30,6 @@ function ShareReadView({ canWrite }: { canWrite: boolean }) {
   const isWide = useMediaQuery("(min-width: 1024px)");
   const splitOpen = Boolean(selectedId) && isWide;
 
-  // Always call the hook (rules of hooks); its result is only wired in for
-  // grants that can actually upload.
   const upload = useShareUpload();
 
   const list = (

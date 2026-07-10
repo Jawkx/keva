@@ -128,10 +128,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-// A curated, searchable set of HugeIcons a view can display in the sidebar. Each
-// entry's `key` is the stable string persisted on `view.icon`; the icon itself
-// is resolved client-side (icons are JS objects, not serialisable). `keywords`
-// widen search matches beyond the label.
 type ViewIconEntry = {
   key: string;
   label: string;
@@ -139,7 +135,6 @@ type ViewIconEntry = {
   keywords?: string;
 };
 
-// The look a view falls back to when it has no chosen icon (`view.icon == null`).
 export const DEFAULT_VIEW_ICON_KEY = "box";
 
 export const VIEW_ICONS: readonly ViewIconEntry[] = [
@@ -272,17 +267,11 @@ export const VIEW_ICONS: readonly ViewIconEntry[] = [
 
 const ICONS_BY_KEY = new Map(VIEW_ICONS.map((entry) => [entry.key, entry]));
 
-// Resolve a stored key to its icon, falling back to the default box for null,
-// undefined, or a key that's no longer in the registry.
 export function viewIcon(key: string | null | undefined): IconSvgElement {
   const entry = (key && ICONS_BY_KEY.get(key)) || ICONS_BY_KEY.get(DEFAULT_VIEW_ICON_KEY)!;
   return entry.icon;
 }
 
-// A popover with a search box over a grid of icons. By default the trigger is an
-// outline button showing the current selection; pass `trigger` to anchor the
-// popover to any element (e.g. the view icon with a hover overlay). Picking an
-// icon reports its key and closes the popover.
 export function ViewIconPicker({
   value,
   onChange,

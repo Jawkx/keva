@@ -333,8 +333,6 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
-  // Storage usage: totals + per-content-type breakdown for the tenant.
-  // Read-scoped, like /query.
   app.get("/api/usage", (context) =>
     runRoute(
       context,
@@ -345,8 +343,6 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
-  // Autocomplete sources: distinct property keys across the tenant, and distinct
-  // scalar values for one key (`?key=`). Read-scoped, like /query.
   app.get("/api/properties/keys", (context) =>
     runRoute(
       context,
@@ -410,7 +406,6 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
-  // View management: named saved filters, admin-session-only like tokens.
   app.post("/api/views", async (context) =>
     runRoute(
       context,
@@ -479,8 +474,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
-  // Share management: create/list/revoke, all admin-session-only like tokens.
-  // A grant references a view; write-soundness invariants that depend on the
+  // Write-soundness invariants that depend on the
   // view's conditions are enforced here (the CreateShareGrant schema can only
   // check the writeStamp-presence invariant, since conditions live on the view).
   app.post("/api/shares", async (context) =>
@@ -540,9 +534,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
-  // Public self-descriptor for a share link: the visitor sees the share name,
-  // its scopes, expiry, and (for write shares) upload limits + current usage.
-  // Conditions and the write stamp are deliberately withheld.
+  // Deliberately withhold conditions and write stamps: they may encode private tenant taxonomy.
   app.get("/api/shares/self", (context) =>
     runRoute(
       context,

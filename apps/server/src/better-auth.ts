@@ -117,7 +117,6 @@ export const makeMcpAuthorizationServer = (auth: KevaAuth): McpAuthorizationServ
   };
 };
 
-// The first authenticated request provisions a user's personal organization.
 export const betterAuthSessionResolver =
   (auth: KevaAuth): SessionResolver =>
   async (headers) => {

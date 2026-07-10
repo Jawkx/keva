@@ -48,8 +48,6 @@ export interface BlobStoreService {
 
 export class BlobStore extends Context.Tag("@keva/core/BlobStore")<BlobStore, BlobStoreService>() {}
 
-// Caps on autocomplete aggregations so responses stay small even for tenants
-// with many distinct keys/values. Shared by every MetadataStore implementation.
 export const SUGGESTION_KEY_LIMIT = 500;
 export const SUGGESTION_VALUE_LIMIT = 100;
 
@@ -61,9 +59,6 @@ export interface ItemTransition {
   readonly updatedAt: string;
 }
 
-// A routed patch: `fields` holds user-writable column values keyed by canonical
-// field key (e.g. "name") — each store maps the key to its own storage via the
-// schema field registry — while `set`/`unset` carry the property-blob merge.
 export interface ItemPatchInput {
   readonly fields: Readonly<Record<string, PropertyValue>>;
   readonly set: Readonly<Record<string, PropertyValue>>;
@@ -94,7 +89,6 @@ export interface MetadataStoreService {
     expectedStatus: ItemStatus,
   ) => Effect.Effect<boolean, KevaError>;
   readonly query: (tenantId: string, query: Query) => Effect.Effect<QueryResult, KevaError>;
-  // Storage totals + per-content-type breakdown across a tenant's ready items.
   readonly usage: (tenantId: string) => Effect.Effect<UsageResult, KevaError>;
   // Count + byte-sum of a tenant's items attributed to one `source`, across
   // pending AND ready (pending counts so concurrent share initiates can't blow
@@ -105,9 +99,7 @@ export interface MetadataStoreService {
     tenantId: string,
     source: string,
   ) => Effect.Effect<{ readonly count: number; readonly bytes: number }, KevaError>;
-  // Distinct property keys across a tenant's ready items, for key autocomplete.
   readonly propertyKeys: (tenantId: string) => Effect.Effect<ReadonlyArray<string>, KevaError>;
-  // Distinct scalar values seen for one property key, for value autocomplete.
   readonly propertyValues: (
     tenantId: string,
     key: string,
