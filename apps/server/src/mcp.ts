@@ -15,25 +15,35 @@ import type { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppServices } from "./app.js";
 import { mcpScopesToKevaScopes } from "./auth.js";
-import type { ConnectionStore, McpAuthorizationServer } from "./better-auth.js";
+import type { ConnectionStore, McpActorNames, McpAuthorizationServer } from "./better-auth.js";
 
 type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;
 
 export interface McpAccessToken {
   readonly userId: string;
   readonly scopes: string;
+  readonly clientId: string;
 }
 
 export interface McpDeps {
   readonly authorizationServer: McpAuthorizationServer;
   readonly resolveTenant: (userId: string) => Promise<string | null>;
+  readonly resolveActorNames: (userId: string, clientId: string) => Promise<McpActorNames>;
   readonly connections: ConnectionStore;
 }
 
-export const principalFromMcpToken = (token: McpAccessToken, tenantId: string): Principal => ({
+export const principalFromMcpToken = (
+  token: McpAccessToken,
+  tenantId: string,
+  names: McpActorNames,
+): Principal => ({
   tenantId,
   scopes: mcpScopesToKevaScopes(token.scopes),
   via: "token",
+  actor: {
+    user: { id: token.userId, name: names.userName ?? token.userId },
+    agent: { clientId: token.clientId, name: names.clientName ?? token.clientId },
+  },
 });
 
 const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
@@ -140,7 +150,8 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
             { status: 403 },
           );
         }
-        const principal = principalFromMcpToken(session, tenantId);
+        const names = await deps.resolveActorNames(session.userId, session.clientId);
+        const principal = principalFromMcpToken(session, tenantId, names);
         const engine = makeMcpEngine(principal, runtime);
         const server = createKevaMcpServer(engine, { scopes: principal.scopes });
         // Fresh server and transport per request keeps the MCP edge stateless.

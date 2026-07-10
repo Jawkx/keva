@@ -1,6 +1,8 @@
 import type {
   PropertyScalar,
   PropertyValue,
+  ItemEvent,
+  ItemEventsResult,
   KevaError,
   KevaItem,
   ItemStatus,
@@ -78,12 +80,14 @@ export interface MetadataStoreService {
     patch: ItemTransition,
     olderThan?: string,
   ) => Effect.Effect<boolean, KevaError>;
+  // `previous` is the row read inside the update's critical section, so
+  // callers can diff before/after accurately even when patches race.
   readonly patch: (
     tenantId: string,
     id: string,
     patch: ItemPatchInput,
     updatedAt: string,
-  ) => Effect.Effect<KevaItem | null, KevaError>;
+  ) => Effect.Effect<ItemPatchResult | null, KevaError>;
   readonly remove: (
     tenantId: string,
     id: string,
@@ -113,6 +117,23 @@ export interface MetadataStoreService {
     limit: number,
     olderThan?: string,
   ) => Effect.Effect<ReadonlyArray<KevaItem>, KevaError>;
+  readonly appendEvent: (event: ItemEvent) => Effect.Effect<void, KevaError>;
+  // Newest-first keyset pagination, same cursor format as `query`.
+  readonly listEvents: (
+    tenantId: string,
+    itemId: string,
+    options: ListEventsOptions,
+  ) => Effect.Effect<ItemEventsResult, KevaError>;
+}
+
+export interface ListEventsOptions {
+  readonly limit: number;
+  readonly cursor?: string | undefined;
+}
+
+export interface ItemPatchResult {
+  readonly previous: KevaItem;
+  readonly updated: KevaItem;
 }
 
 export class MetadataStore extends Context.Tag("@keva/core/MetadataStore")<

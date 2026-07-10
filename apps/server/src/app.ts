@@ -246,6 +246,29 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
+  app.get("/api/items/:id/events", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        const limitRaw = context.req.query("limit");
+        const limit =
+          limitRaw === undefined
+            ? undefined
+            : yield* decode(
+                Schema.NumberFromString.pipe(Schema.int(), Schema.between(1, 200)),
+                limitRaw,
+              );
+        const cursor = context.req.query("cursor");
+        return yield* makeKevaEngine(principal).events(id, {
+          ...(limit !== undefined ? { limit } : {}),
+          ...(cursor !== undefined ? { cursor } : {}),
+        });
+      }),
+    ),
+  );
+
   app.patch("/api/items/:id", async (context) =>
     runRoute(
       context,

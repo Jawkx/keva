@@ -6,6 +6,7 @@ import {
   betterAuthSessionResolver,
   createBetterAuth,
   makeConnectionStore,
+  makeMcpActorResolver,
   makeMcpAuthorizationServer,
   makeUserTenantResolver,
 } from "./better-auth.js";
@@ -58,6 +59,7 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
           mcp: {
             authorizationServer: makeMcpAuthorizationServer(auth.auth),
             resolveTenant: makeUserTenantResolver(auth.db),
+            resolveActorNames: makeMcpActorResolver(auth.db),
             connections: makeConnectionStore(auth.db),
           },
           dispose: auth.dispose,

@@ -7,16 +7,19 @@ import {
   ValidationError,
   itemMatchesCondition,
   routePatch,
+  type ItemEventAction,
+  type ItemEventPayload,
   type ItemPatch,
   type InitiateUpload,
   type KevaItem,
   type Principal,
+  type PropertyValue,
   type Query,
   type Scope,
   type ShareGrantContext,
 } from "@keva/schema";
 import { Effect } from "effect";
-import { BlobStore, MetadataStore } from "./services.js";
+import { BlobStore, MetadataStore, type MetadataStoreService } from "./services.js";
 
 const now = (): string => new Date().toISOString();
 
@@ -58,6 +61,30 @@ const shareVisible = (principal: Principal, item: KevaItem): Effect.Effect<KevaI
     ? Effect.succeed(item)
     : Effect.fail(new NotFound({ message: "Item not found" }));
 };
+
+// Best-effort: an append failure never fails the mutation it describes.
+const recordEvent = (
+  metadata: MetadataStoreService,
+  principal: Principal,
+  item: KevaItem,
+  action: ItemEventAction,
+  payload: ItemEventPayload,
+) =>
+  metadata
+    .appendEvent({
+      id: crypto.randomUUID(),
+      tenantId: principal.tenantId,
+      itemId: item.id,
+      itemName: item.name,
+      action,
+      actor: principal.actor ?? null,
+      payload,
+      createdAt: now(),
+    })
+    .pipe(Effect.ignore);
+
+const sameValue = (a: PropertyValue | undefined, b: PropertyValue | undefined): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 export const makeKevaEngine = (principal: Principal) => ({
   initiate: (input: InitiateUpload) =>
@@ -183,8 +210,15 @@ export const makeKevaEngine = (principal: Principal) => ({
         return yield* new Conflict({ message: "Upload expired while confirming" });
       }
       yield* blobs.delete(item.stagingKey).pipe(Effect.ignore);
-      const confirmed = yield* metadata.get(principal.tenantId, id);
-      return yield* readyOrNotFound(confirmed);
+      const confirmed = yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id));
+      // Only the caller that won the transition logs, so idempotent
+      // re-confirms don't duplicate the event.
+      yield* recordEvent(metadata, principal, confirmed, "uploaded", {
+        size: confirmed.size,
+        contentType: confirmed.contentType,
+        source: confirmed.source,
+      });
+      return confirmed;
     }),
 
   get: (id: string) =>
@@ -243,8 +277,50 @@ export const makeKevaEngine = (principal: Principal) => ({
           message: "Property limits exceeded",
         });
       }
-      const updated = yield* metadata.patch(principal.tenantId, id, routed.routed, now());
-      return yield* readyOrNotFound(updated);
+      const patched = yield* metadata.patch(principal.tenantId, id, routed.routed, now());
+      if (!patched) return yield* new NotFound({ message: "Item not found" });
+      const { previous, updated } = patched;
+      // Diff the store's transactional before/after — not the earlier `current`
+      // read — so racing patches log accurate diffs and duplicates are no-ops.
+      if (previous.name !== updated.name) {
+        yield* recordEvent(metadata, principal, updated, "renamed", {
+          from: previous.name,
+          to: updated.name,
+        });
+      }
+      const changedSet: Record<string, PropertyValue> = {};
+      const previousValues: Record<string, PropertyValue> = {};
+      for (const [key, value] of Object.entries(updated.properties)) {
+        if (sameValue(previous.properties[key], value)) continue;
+        changedSet[key] = value;
+        if (key in previous.properties) previousValues[key] = previous.properties[key]!;
+      }
+      const removed = Object.keys(previous.properties).filter(
+        (key) => !(key in updated.properties),
+      );
+      for (const key of removed) previousValues[key] = previous.properties[key]!;
+      if (Object.keys(changedSet).length > 0 || removed.length > 0) {
+        yield* recordEvent(metadata, principal, updated, "properties_changed", {
+          ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
+          ...(Object.keys(previousValues).length > 0 ? { previous: previousValues } : {}),
+          ...(removed.length > 0 ? { unset: removed } : {}),
+        });
+      }
+      return updated;
+    }),
+
+  // Events outlive deletion, so this does not require the item to exist.
+  // Shares never see history — it carries actor names and property values
+  // beyond the grant's conditions.
+  events: (id: string, options?: { readonly limit?: number; readonly cursor?: string }) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "read item history");
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      return yield* metadata.listEvents(principal.tenantId, id, {
+        limit: options?.limit ?? 50,
+        ...(options?.cursor !== undefined ? { cursor: options.cursor } : {}),
+      });
     }),
 
   query: (query: Query) =>
@@ -297,6 +373,8 @@ export const makeKevaEngine = (principal: Principal) => ({
           updatedAt: now(),
         });
         if (!claimed) return;
+        // Recorded at claim time — sweepDeleting has no principal to attribute.
+        yield* recordEvent(metadata, principal, current, "deleted", {});
       }
       yield* blobs.delete(current.storageKey);
       yield* blobs.delete(current.stagingKey);

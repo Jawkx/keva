@@ -79,6 +79,7 @@ export interface BetterAuthSessionApi {
 export interface McpOAuthSession {
   readonly userId: string;
   readonly scopes: string;
+  readonly clientId: string;
 }
 
 export interface McpAuthorizationServer {
@@ -106,7 +107,11 @@ export const makeMcpAuthorizationServer = (auth: KevaAuth): McpAuthorizationServ
     protectedResourceMetadata: oAuthProtectedResourceMetadata(runtime),
     withMcpAuth: (handler) =>
       withMcpAuth(runtime, (request, session) =>
-        handler(request, { userId: session.userId, scopes: session.scopes }),
+        handler(request, {
+          userId: session.userId,
+          scopes: session.scopes,
+          clientId: session.clientId,
+        }),
       ),
     sessionApi: betterAuthSessionApi(auth),
   };
@@ -151,7 +156,14 @@ export const betterAuthSessionResolver =
     if (!tenantId) return null;
 
     // A signed-in user currently controls their personal tenant fully.
-    return { tenantId, scopes: ["read", "write", "delete", "admin"] };
+    return {
+      tenantId,
+      scopes: ["read", "write", "delete", "admin"],
+      user: {
+        id: result.user.id,
+        name: result.user.name?.trim() || result.user.email,
+      },
+    };
   };
 
 // MCP tokens carry user identity, not active-organization session state.
@@ -165,6 +177,34 @@ export const makeUserTenantResolver =
       .orderBy(authSchema.member.createdAt)
       .limit(1);
     return rows[0]?.organizationId ?? null;
+  };
+
+// The client name is self-asserted via OAuth dynamic client registration —
+// display-only, never an authorization input.
+export interface McpActorNames {
+  readonly userName: string | null;
+  readonly clientName: string | null;
+}
+
+export const makeMcpActorResolver =
+  (db: PostgresJsDatabase<typeof authSchema>) =>
+  async (userId: string, clientId: string): Promise<McpActorNames> => {
+    const [users, clients] = await Promise.all([
+      db
+        .select({ name: authSchema.user.name, email: authSchema.user.email })
+        .from(authSchema.user)
+        .where(eq(authSchema.user.id, userId))
+        .limit(1),
+      db
+        .select({ name: authSchema.oauthApplication.name })
+        .from(authSchema.oauthApplication)
+        .where(eq(authSchema.oauthApplication.clientId, clientId))
+        .limit(1),
+    ]);
+    return {
+      userName: users[0] ? users[0].name?.trim() || users[0].email : null,
+      clientName: clients[0]?.name ?? null,
+    };
   };
 
 export interface ConnectionSummary {

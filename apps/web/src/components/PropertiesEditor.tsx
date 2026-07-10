@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import {
   Add01Icon,
   Alert02Icon,
@@ -329,7 +329,7 @@ function CustomRow({
   value: PropertyValue;
   busy: boolean;
   known: boolean;
-  onCommit: (value: PropertyValue) => void;
+  onCommit: (value: PropertyValue) => Promise<void>;
   onRemove: () => void;
 }) {
   const [type, setType] = useState<ScalarType>(editTypeOf(value));
@@ -337,8 +337,18 @@ function CustomRow({
   const valueSuggestions = usePropertyValues(propKey, known);
   const isArray = Array.isArray(value);
 
+  // Diff against the last value this row *sent*, not the `value` prop — the
+  // prop lags the patch response, so rapid double-triggers (Enter then blur)
+  // would pass a prop-based guard and double-send the same patch.
+  const lastCommitted = useRef(value);
+
   const commitScalar = (next: PropertyValue) => {
-    if (next !== value) onCommit(next);
+    if (next === lastCommitted.current) return;
+    const rollback = lastCommitted.current;
+    lastCommitted.current = next;
+    onCommit(next).catch(() => {
+      lastCommitted.current = rollback;
+    });
   };
 
   return (
@@ -478,7 +488,7 @@ function RowsField({
           value={value}
           busy={busy}
           known={knownSet.has(key)}
-          onCommit={(next) => void onSet(key, next)}
+          onCommit={(next) => onSet(key, next)}
           onRemove={() => void onUnset(key)}
         />
       ))}

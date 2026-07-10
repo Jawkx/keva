@@ -12,6 +12,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
+import { FileActivity, itemEventsQueryKey } from "./FileActivity";
 import { PropertiesEditor } from "./PropertiesEditor";
 import { CopyButton } from "./CopyButton";
 import { ZoomMode } from "@embedpdf/plugin-zoom";
@@ -48,19 +49,19 @@ type Preview =
   | { kind: "csv"; text: string }
   | { kind: "text"; text: string };
 
-type Panel = "preview" | "properties";
+type Panel = "preview" | "properties" | "activity";
 
 const PANEL_LABELS: Record<Panel, string> = {
   preview: "Preview",
   properties: "Properties",
+  activity: "Activity",
 };
 
 // The panels available for an item, in display order. Preview is offered only
 // when the content can actually be rendered; Properties (system metadata plus
-// the user's own keys) always exists. With a single panel the segmented
-// control is hidden, so a non-previewable item shows Properties directly.
+// the user's own keys) and Activity (the item's history) always exist.
 const panelsFor = (o: KevaItem): Panel[] =>
-  isPreviewable(o) ? ["preview", "properties"] : ["properties"];
+  isPreviewable(o) ? ["preview", "properties", "activity"] : ["properties", "activity"];
 
 // Where the file extension begins, for pre-selecting just the stem when
 // renaming (so a careless keystroke replaces "report" but keeps ".pdf"). A
@@ -198,6 +199,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
       queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
         old ? replaceItemInPages(old, updated) : old,
       );
+      void queryClient.invalidateQueries({ queryKey: itemEventsQueryKey(itemId) });
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
@@ -445,6 +447,10 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
             ) : (
               <p className="text-sm text-muted-foreground">Preview unavailable.</p>
             )}
+          </section>
+        ) : activePanel === "activity" ? (
+          <section className="min-w-0">
+            <FileActivity itemId={itemId} />
           </section>
         ) : (
           // Info and properties are one surface: an item is just a bag of

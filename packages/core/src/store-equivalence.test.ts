@@ -1,4 +1,4 @@
-import type { KevaItem, Principal, Query, QueryOrder } from "@keva/schema";
+import type { ItemEvent, KevaItem, Principal, Query, QueryOrder } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -280,6 +280,70 @@ const seedAndSourceUsage = async (store: MetadataStoreService) => {
 
 const EXPECTED_SOURCE_USAGE = { count: 2, bytes: 300 };
 
+// Includes a same-timestamp pair (id-desc tiebreak) and out-of-scope rows for
+// another item and another tenant.
+const seedAndListEvents = async (store: MetadataStoreService) => {
+  const tenant = crypto.randomUUID();
+  const other = crypto.randomUUID();
+  const itemId = "00000000-0000-4000-8000-000000000021";
+  const event = (
+    idSuffix: string,
+    tenantId: string,
+    targetItemId: string,
+    action: ItemEvent["action"],
+    createdAt: string,
+    payload: ItemEvent["payload"] = {},
+  ): ItemEvent => ({
+    id: `00000000-0000-4000-8000-0000000000${idSuffix}`,
+    tenantId,
+    itemId: targetItemId,
+    itemName: "history.txt",
+    action,
+    actor: { token: { id: "tok-1", name: "CI token" } },
+    payload,
+    createdAt,
+  });
+  const rows: ItemEvent[] = [
+    event("31", tenant, itemId, "uploaded", "2026-01-01T00:00:00.000Z", {
+      size: 1,
+      contentType: "text/plain",
+      source: "upload",
+    }),
+    event("32", tenant, itemId, "renamed", "2026-01-01T00:01:00.000Z", {
+      from: "a.txt",
+      to: "b.txt",
+    }),
+    event("33", tenant, itemId, "properties_changed", "2026-01-01T00:02:00.000Z", {
+      set: { rating: 5 },
+      previous: { rating: 1 },
+    }),
+    event("34", tenant, itemId, "deleted", "2026-01-01T00:02:00.000Z"),
+    event(
+      "35",
+      tenant,
+      "00000000-0000-4000-8000-000000000022",
+      "uploaded",
+      "2026-01-01T00:03:00.000Z",
+    ),
+    event("36", other, itemId, "uploaded", "2026-01-01T00:03:00.000Z"),
+  ];
+  for (const row of rows) await Effect.runPromise(store.appendEvent(row));
+
+  const pages: ItemEvent[][] = [];
+  const pageCursors: boolean[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await Effect.runPromise(
+      store.listEvents(tenant, itemId, { limit: 2, ...(cursor ? { cursor } : {}) }),
+    );
+    pages.push([...page.events]);
+    pageCursors.push(Boolean(page.nextCursor));
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return { events: pages.flat(), pageCursors };
+};
+
 describe("store query equivalence", () => {
   it("the in-memory store matches the specified semantics", async () => {
     const got = await seedAndRun(makeMemoryMetadataStore());
@@ -294,6 +358,14 @@ describe("store query equivalence", () => {
   it("the in-memory store sums source usage over pending+ready of one tenant/source", async () => {
     const usage = await seedAndSourceUsage(makeMemoryMetadataStore());
     expect(usage).toEqual(EXPECTED_SOURCE_USAGE);
+  });
+
+  it("the in-memory store lists item events newest-first with keyset pagination", async () => {
+    const { events, pageCursors } = await seedAndListEvents(makeMemoryMetadataStore());
+    expect(events.map((event) => event.id.slice(-2))).toEqual(["34", "33", "32", "31"]);
+    expect(pageCursors).toEqual([true, false]);
+    expect(events[1]!.payload).toEqual({ set: { rating: 5 }, previous: { rating: 1 } });
+    expect(events[3]!.actor).toEqual({ token: { id: "tok-1", name: "CI token" } });
   });
 
   it("the in-memory store paginates explicit created-time orders", async () => {
@@ -350,6 +422,17 @@ describe("store query equivalence", () => {
         const pg = await collectPaginatedOrder(makePostgresMetadataStore(sql), order);
         expect(pg).toEqual(memory);
       }
+    });
+
+    it("matches memory for item event listing and pagination", async () => {
+      const memory = await seedAndListEvents(makeMemoryMetadataStore());
+      const pg = await seedAndListEvents(makePostgresMetadataStore(sql));
+      // Tenants differ per seeding run; compare everything but tenantId.
+      const normalize = (result: typeof memory) => ({
+        pageCursors: result.pageCursors,
+        events: result.events.map(({ tenantId: _tenantId, ...event }) => event),
+      });
+      expect(normalize(pg)).toEqual(normalize(memory));
     });
   });
 });

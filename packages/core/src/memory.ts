@@ -3,6 +3,7 @@ import {
   FIELD_BY_KEY,
   Internal,
   itemMatchesCondition,
+  type ItemEvent,
   type PropertyScalar,
   type PropertyValue,
   type KevaItem,
@@ -64,8 +65,17 @@ const isAfterCursor = (order: QueryOrder, item: KevaItem, cursor: readonly [stri
     ? item.createdAt < cursor[0] || (item.createdAt === cursor[0] && item.id < cursor[1])
     : item.createdAt > cursor[0] || (item.createdAt === cursor[0] && item.id > cursor[1]);
 
+const compareEventsDesc = (a: ItemEvent, b: ItemEvent): number => {
+  const byCreatedAt = b.createdAt.localeCompare(a.createdAt);
+  return byCreatedAt === 0 ? b.id.localeCompare(a.id) : byCreatedAt;
+};
+
+const encodeEventCursor = (event: ItemEvent): string =>
+  btoa(JSON.stringify([event.createdAt, event.id]));
+
 export const makeMemoryMetadataStore = (): MetadataStoreService => {
   const items = new Map<string, KevaItem>();
+  const events: ItemEvent[] = [];
   const mapKey = (tenantId: string, id: string) => `${tenantId}\0${id}`;
 
   return {
@@ -112,7 +122,7 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           }
         }
         items.set(key, cloneItem(updated));
-        return cloneItem(updated);
+        return { previous: cloneItem(item), updated: cloneItem(updated) };
       }),
     remove: (tenantId, id, expectedStatus) =>
       Effect.sync(() => {
@@ -213,6 +223,31 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           .slice(0, limit)
           .map(cloneItem),
       ),
+    appendEvent: (event) =>
+      Effect.sync(() => {
+        events.push(structuredClone(event));
+      }),
+    listEvents: (tenantId, itemId, options) =>
+      Effect.sync(() => {
+        const cursor = options.cursor ? decodeCursor(options.cursor) : null;
+        let rows = events
+          .filter((event) => event.tenantId === tenantId && event.itemId === itemId)
+          .sort(compareEventsDesc);
+        if (cursor) {
+          rows = rows.filter(
+            (event) =>
+              event.createdAt < cursor[0] ||
+              (event.createdAt === cursor[0] && event.id < cursor[1]),
+          );
+        }
+        const page = rows.slice(0, options.limit + 1);
+        const hasMore = page.length > options.limit;
+        const result = page.slice(0, options.limit).map((event) => structuredClone(event));
+        return {
+          events: result,
+          ...(hasMore && result.at(-1) ? { nextCursor: encodeEventCursor(result.at(-1)!) } : {}),
+        };
+      }),
   };
 };
 

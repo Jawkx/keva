@@ -30,6 +30,9 @@ With no DB/S3 env vars it falls back to in-memory metadata + loopback blob adapt
 ## Conventions
 
 - Prefer `pnpm --filter <pkg> <script>` for package-scoped work.
+- Do not add code comments unless necessary: only for constraints or invariants the
+  code cannot express itself (max 1–2 lines). Never narrate what the code does, why a
+  change is correct, or restate names/types.
 - Do not call `useEffect` directly — enforced by `pnpm lint:no-direct-use-effect`.
 - SDK base URL points at the `/api` prefix, not the server root.
 - Run `pnpm typecheck`, `pnpm lint`, and `pnpm format:check` before finishing changes.

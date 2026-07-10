@@ -26,7 +26,7 @@ const baseLayer = () =>
   );
 
 const stubAuthorizationServer = (overrides: {
-  mcpSession?: { userId: string; scopes: string } | null;
+  mcpSession?: { userId: string; scopes: string; clientId: string } | null;
   session?: { user: { id: string } } | null;
 }): McpAuthorizationServer => ({
   authorizationServerMetadata: () => Response.json({ issuer: "http://localhost:8787" }),
@@ -49,12 +49,13 @@ const stubAuthorizationServer = (overrides: {
 });
 
 const stubMcpDeps = (overrides: {
-  mcpSession?: { userId: string; scopes: string } | null;
+  mcpSession?: { userId: string; scopes: string; clientId: string } | null;
   session?: { user: { id: string } } | null;
   connections?: McpDeps["connections"];
 }): McpDeps => ({
   authorizationServer: stubAuthorizationServer(overrides),
   resolveTenant: async () => "test-tenant",
+  resolveActorNames: async () => ({ userName: "Test User", clientName: "Test Client" }),
   connections: overrides.connections ?? {
     list: async () => [],
     revoke: async () => false,
@@ -84,15 +85,41 @@ describe("mcpScopesToKevaScopes", () => {
 describe("principalFromMcpToken", () => {
   it("produces a token principal scoped to the resolved tenant", () => {
     const principal = principalFromMcpToken(
-      { userId: "u1", scopes: "keva:read keva:write" },
+      { userId: "u1", scopes: "keva:read keva:write", clientId: "client-1" },
       "tenant-a",
+      { userName: "Kai", clientName: "Claude" },
     );
-    expect(principal).toEqual({ tenantId: "tenant-a", scopes: ["read", "write"], via: "token" });
+    expect(principal).toEqual({
+      tenantId: "tenant-a",
+      scopes: ["read", "write"],
+      via: "token",
+      actor: {
+        user: { id: "u1", name: "Kai" },
+        agent: { clientId: "client-1", name: "Claude" },
+      },
+    });
   });
 
   it("preserves an empty granted keva scope set", () => {
-    const principal = principalFromMcpToken({ userId: "u1", scopes: "" }, "tenant-a");
-    expect(principal).toEqual({ tenantId: "tenant-a", scopes: [], via: "token" });
+    const principal = principalFromMcpToken(
+      { userId: "u1", scopes: "", clientId: "client-1" },
+      "tenant-a",
+      { userName: null, clientName: null },
+    );
+    expect(principal.scopes).toEqual([]);
+    expect(principal.via).toBe("token");
+  });
+
+  it("falls back to raw ids when display names are unresolved", () => {
+    const principal = principalFromMcpToken(
+      { userId: "u1", scopes: "keva:read", clientId: "client-1" },
+      "tenant-a",
+      { userName: null, clientName: null },
+    );
+    expect(principal.actor).toEqual({
+      user: { id: "u1", name: "u1" },
+      agent: { clientId: "client-1", name: "client-1" },
+    });
   });
 });
 

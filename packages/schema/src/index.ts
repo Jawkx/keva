@@ -159,13 +159,26 @@ export const ShareGrantContext = Schema.Struct({
 });
 export type ShareGrantContext = typeof ShareGrantContext.Type;
 
+// Who performed an action. An OAuth-MCP call carries both the authorizing
+// `user` and the acting `agent`; names are display snapshots — `agent.name` is
+// self-asserted via dynamic client registration, never authorize on it.
+export const Actor = Schema.Struct({
+  user: Schema.optional(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  agent: Schema.optional(Schema.Struct({ clientId: Schema.String, name: Schema.String })),
+  token: Schema.optional(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  share: Schema.optional(Schema.Struct({ grantId: Schema.String, name: Schema.String })),
+});
+export type Actor = typeof Actor.Type;
+
 // `share` is present iff `via === "share"`; the engine treats its presence, not
-// the discriminant alone, as the switch for share-scoped enforcement.
+// the discriminant alone, as the switch for share-scoped enforcement. `actor`
+// is attribution-only and never gates access.
 export const Principal = Schema.Struct({
   tenantId: Schema.NonEmptyString,
   scopes: Schema.Array(Scope),
   via: Schema.Literal("session", "token", "share"),
   share: Schema.optional(ShareGrantContext),
+  actor: Schema.optional(Actor),
 });
 export type Principal = typeof Principal.Type;
 
@@ -277,6 +290,50 @@ export const DownloadResult = Schema.Struct({
   expiresAt: Schema.String,
 });
 export type DownloadResult = typeof DownloadResult.Type;
+
+// ── Item events ──────────────────────────────────────────────────────────
+
+export const ItemEventAction = Schema.Literal(
+  "uploaded",
+  "renamed",
+  "properties_changed",
+  "deleted",
+);
+export type ItemEventAction = typeof ItemEventAction.Type;
+
+// Per-action fields: uploaded → size/contentType/source; renamed → from/to;
+// properties_changed → set (new values), previous (old values), unset.
+export const ItemEventPayload = Schema.Struct({
+  size: Schema.optional(Schema.NullOr(Schema.Number)),
+  contentType: Schema.optional(Schema.String),
+  source: Schema.optional(Schema.String),
+  from: Schema.optional(Schema.String),
+  to: Schema.optional(Schema.String),
+  set: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
+  previous: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
+  unset: Schema.optional(Schema.Array(Schema.String)),
+});
+export type ItemEventPayload = typeof ItemEventPayload.Type;
+
+// `itemName` and `actor` are write-time snapshots; events outlive the item and
+// the acting credential. `actor` is null for unattributed (backfilled) events.
+export const ItemEvent = Schema.Struct({
+  id: Schema.String,
+  tenantId: Schema.String,
+  itemId: ItemId,
+  itemName: Schema.String,
+  action: ItemEventAction,
+  actor: Schema.NullOr(Actor),
+  payload: ItemEventPayload,
+  createdAt: Schema.String,
+});
+export type ItemEvent = typeof ItemEvent.Type;
+
+export const ItemEventsResult = Schema.Struct({
+  events: Schema.Array(ItemEvent),
+  nextCursor: Schema.optional(Schema.String),
+});
+export type ItemEventsResult = typeof ItemEventsResult.Type;
 
 export const TokenRecord = Schema.Struct({
   id: Schema.String,

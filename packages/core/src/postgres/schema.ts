@@ -1,4 +1,13 @@
-import type { Properties, ItemStatus, QueryCondition, Scope, ShareScope } from "@keva/schema";
+import type {
+  Actor,
+  ItemEventAction,
+  ItemEventPayload,
+  Properties,
+  ItemStatus,
+  QueryCondition,
+  Scope,
+  ShareScope,
+} from "@keva/schema";
 import {
   bigint,
   check,
@@ -42,6 +51,34 @@ export const items = pgTable(
     // Serves sourceUsage(tenantId, source) — read on every share upload initiate.
     index("items_tenant_source_idx").on(table.tenantId, table.source),
     check("items_status_check", sql`${table.status} in ('pending', 'ready', 'deleting')`),
+  ],
+);
+
+// Append-only history of item metadata mutations. Deliberately no FK to items
+// — events outlive deletion; `item_name` and `actor` are write-time snapshots.
+export const itemEvents = pgTable(
+  "item_events",
+  {
+    id: uuid("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    itemName: text("item_name").notNull(),
+    action: text("action").$type<ItemEventAction>().notNull(),
+    actor: jsonb("actor").$type<Actor>(),
+    payload: jsonb("payload").$type<ItemEventPayload>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  },
+  (table) => [
+    index("item_events_tenant_item_created_idx").on(
+      table.tenantId,
+      table.itemId,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "item_events_action_check",
+      sql`${table.action} in ('uploaded', 'renamed', 'properties_changed', 'deleted')`,
+    ),
   ],
 );
 

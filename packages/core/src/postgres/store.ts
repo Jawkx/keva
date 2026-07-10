@@ -3,6 +3,9 @@ import {
   ITEM_ID_PATTERN,
   Internal,
   ValidationError,
+  type Actor,
+  type ItemEvent,
+  type ItemEventPayload,
   type KevaError,
   type KevaItem,
   type PropertyScalar,
@@ -63,6 +66,31 @@ const mapRow = (row: ItemRow): KevaItem => ({
   updatedAt: asIso(row.updated_at),
   properties: row.properties,
 });
+
+interface ItemEventRow {
+  readonly id: string;
+  readonly tenant_id: string;
+  readonly item_id: string;
+  readonly item_name: string;
+  readonly action: ItemEvent["action"];
+  readonly actor: Actor | null;
+  readonly payload: ItemEventPayload;
+  readonly created_at: Date | string;
+}
+
+const mapEventRow = (row: ItemEventRow): ItemEvent => ({
+  id: row.id,
+  tenantId: row.tenant_id,
+  itemId: row.item_id,
+  itemName: row.item_name,
+  action: row.action,
+  actor: row.actor,
+  payload: row.payload,
+  createdAt: asIso(row.created_at),
+});
+
+const encodeEventCursor = (event: ItemEvent): string =>
+  btoa(JSON.stringify([event.createdAt, event.id]));
 
 const dbFailure = (): Internal => new Internal({ message: "Metadata store unavailable" });
 
@@ -288,7 +316,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           returning *
         `;
-        return updated[0] ? mapRow(updated[0]) : null;
+        return updated[0] ? { previous: mapRow(row), updated: mapRow(updated[0]) } : null;
       });
     }),
   remove: (tenantId, id, expectedStatus) =>
@@ -420,6 +448,43 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             order by created_at asc limit ${limit}
           `;
       return rows.map(mapRow);
+    }),
+  appendEvent: (event) =>
+    attempt(async () => {
+      await sql`
+        insert into item_events (
+          id, tenant_id, item_id, item_name, action, actor, payload, created_at
+        ) values (
+          ${event.id}, ${event.tenantId}, ${event.itemId}, ${event.itemName},
+          ${event.action}, ${event.actor ? sql.json(event.actor) : null},
+          ${sql.json(event.payload)}, ${event.createdAt}
+        )
+      `;
+    }),
+  listEvents: (tenantId, itemId, options) =>
+    Effect.gen(function* () {
+      const predicates: Fragment[] = [sql`tenant_id = ${tenantId}`, sql`item_id = ${itemId}`];
+      if (options.cursor) {
+        const cursor = yield* decodeCursor(options.cursor);
+        predicates.push(sql`(created_at, id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`);
+      }
+      const where = predicates.reduce((left, right) => sql`${left} and ${right}`);
+      const rows = yield* attempt(
+        () =>
+          sql<ItemEventRow[]>`
+          select * from item_events
+          where ${where}
+          order by created_at desc, id desc
+          limit ${options.limit + 1}
+        `,
+      );
+      const events = rows.slice(0, options.limit).map(mapEventRow);
+      return {
+        events,
+        ...(rows.length > options.limit && events.at(-1)
+          ? { nextCursor: encodeEventCursor(events.at(-1)!) }
+          : {}),
+      };
     }),
 });
 

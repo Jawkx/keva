@@ -96,6 +96,7 @@ const shareGrantPrincipal = (row: ShareRow): Principal => ({
   tenantId: row.tenant_id,
   scopes: [...row.scopes],
   via: "share",
+  actor: { share: { grantId: row.id, name: row.name } },
   share: {
     grantId: row.id,
     conditions: [...row.view_conditions],

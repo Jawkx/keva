@@ -356,6 +356,124 @@ describe("KevaEngine", () => {
   });
 });
 
+describe("KevaEngine item history", () => {
+  const layer = () => Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
+
+  const actorPrincipal: Principal = {
+    tenantId: "tenant-a",
+    scopes: ["read", "write", "delete", "admin"],
+    via: "token",
+    actor: { token: { id: "tok-1", name: "CI token" } },
+  };
+
+  it("records the full lifecycle with actor snapshots and diffs, newest-first", async () => {
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(actorPrincipal);
+      const bytes = new TextEncoder().encode("history");
+      const initiated = yield* engine.initiate({
+        name: "report.txt",
+        contentType: "text/plain",
+        size: bytes.byteLength,
+        source: "upload",
+        properties: {},
+      });
+      const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
+      const blobs = yield* BlobStore;
+      yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
+      yield* engine.confirm(initiated.item.id);
+      // Idempotent re-confirm must not duplicate the uploaded event.
+      yield* engine.confirm(initiated.item.id);
+      // Same-millisecond events tie-break on a random id; sleeps keep the
+      // expected order deterministic.
+      yield* Effect.sleep(2);
+      yield* engine.patch(initiated.item.id, { set: { name: "final.txt" }, unset: [] });
+      yield* Effect.sleep(2);
+      yield* engine.patch(initiated.item.id, { set: { priority: "high" }, unset: [] });
+      yield* Effect.sleep(2);
+      // No-op set (same value) plus a real change and an unset.
+      yield* engine.patch(initiated.item.id, {
+        set: { priority: "high", status2: "done" },
+        unset: ["priority"],
+      });
+      yield* Effect.sleep(2);
+      yield* engine.delete(initiated.item.id);
+      const events = yield* engine.events(initiated.item.id);
+      const otherTenant = yield* makeKevaEngine(principal("tenant-b")).events(initiated.item.id);
+      return { ...events, otherTenant };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.otherTenant.events).toHaveLength(0);
+    expect(result.events.map((event) => event.action)).toEqual([
+      "deleted",
+      "properties_changed",
+      "properties_changed",
+      "renamed",
+      "uploaded",
+    ]);
+    const [deleted, second, first, renamed, uploaded] = result.events;
+    for (const event of result.events) {
+      expect(event.actor).toEqual({ token: { id: "tok-1", name: "CI token" } });
+      expect(event.tenantId).toBe("tenant-a");
+    }
+    expect(uploaded!.payload).toEqual({
+      size: 7,
+      contentType: "text/plain",
+      source: "upload",
+    });
+    expect(uploaded!.itemName).toBe("report.txt");
+    expect(renamed!.payload).toEqual({ from: "report.txt", to: "final.txt" });
+    expect(renamed!.itemName).toBe("final.txt");
+    expect(first!.payload).toEqual({ set: { priority: "high" } });
+    expect(second!.payload).toEqual({
+      set: { status2: "done" },
+      previous: { priority: "high" },
+      unset: ["priority"],
+    });
+    expect(deleted!.payload).toEqual({});
+  });
+
+  it("paginates events with a keyset cursor", async () => {
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(actorPrincipal);
+      const item = yield* upload("tenant-a", "page.txt", new TextEncoder().encode("x"));
+      yield* Effect.sleep(2);
+      yield* engine.patch(item.id, { set: { a: 1 }, unset: [] });
+      yield* Effect.sleep(2);
+      yield* engine.patch(item.id, { set: { b: 2 }, unset: [] });
+      const firstPage = yield* engine.events(item.id, { limit: 2 });
+      const secondPage = yield* engine.events(item.id, {
+        limit: 2,
+        cursor: firstPage.nextCursor!,
+      });
+      return { firstPage, secondPage };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.firstPage.events).toHaveLength(2);
+    expect(result.firstPage.nextCursor).toBeDefined();
+    expect(result.secondPage.events.map((event) => event.action)).toEqual(["uploaded"]);
+    expect(result.secondPage.nextCursor).toBeUndefined();
+    const ids = [...result.firstPage.events, ...result.secondPage.events].map((e) => e.id);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it("records no event for a fully no-op patch", async () => {
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(actorPrincipal);
+      const item = yield* upload("tenant-a", "noop.txt", new TextEncoder().encode("x"));
+      yield* Effect.sleep(2);
+      yield* engine.patch(item.id, { set: { keep: "same" }, unset: [] });
+      yield* Effect.sleep(2);
+      yield* engine.patch(item.id, { set: { keep: "same" }, unset: ["never-existed"] });
+      const { events } = yield* engine.events(item.id);
+      return events.map((event) => event.action);
+    }).pipe(Effect.provide(layer()));
+
+    expect(await Effect.runPromise(program)).toEqual(["properties_changed", "uploaded"]);
+  });
+});
+
 describe("KevaEngine share access", () => {
   const layer = () => Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
 
@@ -591,6 +709,18 @@ describe("KevaEngine share access", () => {
     const result = await Effect.runPromise(program);
     expect(result._tag).toBe("Left");
     if (result._tag === "Left") expect(result.left._tag).toBe("NotFound");
+  });
+
+  it("forbids reading item history", async () => {
+    const program = Effect.gen(function* () {
+      const { alpha } = yield* seedTagged();
+      const share = makeKevaEngine(sharePrincipal("tenant-a", { scopes: ["read"] }));
+      return yield* Effect.either(share.events(alpha.id));
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") expect(result.left._tag).toBe("Forbidden");
   });
 
   it("forbids patch, delete, usage, and property autocomplete for shares", async () => {

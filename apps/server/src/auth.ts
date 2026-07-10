@@ -31,6 +31,8 @@ export type AuthStrategy = (
   request: AuthRequest,
 ) => Effect.Effect<Principal | null, StorageUnavailable>;
 
+const STATIC_TOKEN_ACTOR = { token: { id: "static", name: "Static token" } } as const;
+
 export const secureEqual = (left: string, right: string): boolean => {
   const leftBytes = new TextEncoder().encode(left);
   const rightBytes = new TextEncoder().encode(right);
@@ -56,6 +58,7 @@ export const StaticTokenAuthLive = (config: {
             tenantId: config.tenantId,
             scopes: [...(config.scopes ?? ["read", "write", "delete", "admin"])],
             via: "token" as const,
+            actor: STATIC_TOKEN_ACTOR,
           })
         : Effect.fail(new Unauthorized({ message: "Invalid credential" }));
     },
@@ -90,6 +93,7 @@ export const staticTokenStrategy =
             tenantId: config.tenantId,
             scopes: [...(config.scopes ?? ["read", "write", "delete", "admin"])],
             via: "token" as const,
+            actor: STATIC_TOKEN_ACTOR,
           }
         : null,
     );
@@ -198,6 +202,7 @@ export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
           tenantId: row.tenant_id,
           scopes: [...row.scopes],
           via: "token" as const,
+          actor: { token: { id: row.id, name: row.name } },
         };
       },
       catch: storageError,
@@ -320,6 +325,7 @@ export const TokenAndStaticAuthFromStoreLive = (config: {
 export type SessionResolver = (headers: Headers) => Promise<{
   readonly tenantId: string;
   readonly scopes?: ReadonlyArray<Scope>;
+  readonly user?: { readonly id: string; readonly name: string };
 } | null>;
 
 export const sessionStrategy =
@@ -336,6 +342,7 @@ export const sessionStrategy =
               tenantId: session.tenantId,
               scopes: [...(session.scopes ?? ["read", "write", "delete", "admin"])],
               via: "session" as const,
+              ...(session.user ? { actor: { user: session.user } } : {}),
             }
           : null,
       ),

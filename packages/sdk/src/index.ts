@@ -8,6 +8,7 @@ import {
   DownloadResult,
   InitiateUpload,
   InitiateUploadResult,
+  ItemEventsResult,
   KevaError,
   KevaItem,
   PropertyKeysResult,
@@ -30,6 +31,8 @@ import {
   type CreateView as CreateViewType,
   type DownloadResult as DownloadResultType,
   type InitiateUpload as InitiateUploadType,
+  type ItemEvent as ItemEventType,
+  type ItemEventsResult as ItemEventsResultType,
   type KevaError as KevaErrorType,
   type KevaItem as KevaItemType,
   type Query as QueryType,
@@ -53,6 +56,8 @@ export type {
   UpdateViewType as UpdateView,
   ViewRecordType as ViewRecord,
   InitiateUploadType as InitiateUpload,
+  ItemEventType as ItemEvent,
+  ItemEventsResultType as ItemEventsResult,
   KevaErrorType as KevaError,
   KevaItemType as KevaItem,
   QueryType as Query,
@@ -256,6 +261,22 @@ export class KevaClient {
       `/items/${encodeURIComponent(id)}`,
       KevaItem,
       decode(ItemPatch, patch),
+    );
+  }
+
+  /** Per-item history, newest-first. Events outlive deleted items. */
+  events(
+    id: string,
+    options: { readonly limit?: number; readonly cursor?: string } = {},
+  ): Promise<ItemEventsResultType> {
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.cursor !== undefined) params.set("cursor", options.cursor);
+    const query = params.size > 0 ? `?${params}` : "";
+    return this.#request(
+      "GET",
+      `/items/${encodeURIComponent(id)}/events${query}`,
+      ItemEventsResult,
     );
   }
 
