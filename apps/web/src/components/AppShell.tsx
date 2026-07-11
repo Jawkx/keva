@@ -91,7 +91,7 @@ function AppSidebar() {
                 Keva
               </span>
             </Link>
-            <SidebarTrigger className="size-8" />
+            <SidebarTrigger size="icon-lg" className="[&_svg:not([class*='size-'])]:size-4.5" />
           </div>
           <button
             type="button"
