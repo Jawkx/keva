@@ -1,1 +1,0 @@
-ALTER TABLE "share_grants" DROP COLUMN "conditions";

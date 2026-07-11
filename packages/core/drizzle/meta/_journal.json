@@ -5,64 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1781953666740,
-      "tag": "0000_wandering_spiral",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1782717630693,
-      "tag": "0001_rename_objects_to_items",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1782837707996,
-      "tag": "0002_worthless_thena",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1783252415155,
-      "tag": "0003_new_black_panther",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1783338840035,
-      "tag": "0004_low_shocker",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1783338852800,
-      "tag": "0005_cloudy_purifiers",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1783510433494,
-      "tag": "0006_neat_emma_frost",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1783678974774,
-      "tag": "0007_modern_randall",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1783741811605,
-      "tag": "0008_faithful_champions",
+      "when": 1783776861334,
+      "tag": "0000_misty_sentry",
       "breakpoints": true
     }
   ]
