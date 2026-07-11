@@ -74,6 +74,48 @@ const upload = (tenantId: string, name: string, bytes: Uint8Array) =>
   });
 
 describe("KevaEngine", () => {
+  it("reserves quota for pending uploads and releases it on deletion", async () => {
+    const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
+    const program = Effect.gen(function* () {
+      const metadata = yield* MetadataStore;
+      const engine = makeKevaEngine(principal("tenant-a"));
+      yield* metadata.setQuota("tenant-a", 5);
+      const first = yield* engine.initiate({
+        name: "first.txt",
+        contentType: "text/plain",
+        size: 4,
+        source: "upload",
+        properties: {},
+      });
+      const rejected = yield* Effect.flip(
+        engine.initiate({
+          name: "too-large.txt",
+          contentType: "text/plain",
+          size: 2,
+          source: "upload",
+          properties: {},
+        }),
+      );
+      yield* engine.delete(first.item.id);
+      const afterDelete = yield* engine.initiate({
+        name: "after-delete.txt",
+        contentType: "text/plain",
+        size: 2,
+        source: "upload",
+        properties: {},
+      });
+      return { rejected, afterDelete, usage: yield* engine.usage() };
+    }).pipe(Effect.provide(layer));
+
+    const result = await Effect.runPromise(program);
+    expect(result.rejected).toMatchObject({
+      _tag: "QuotaExceeded",
+      message: "Storage limit reached",
+    });
+    expect(result.afterDelete.item.status).toBe("pending");
+    expect(result.usage).toMatchObject({ quotaBytes: 5, remainingBytes: 3 });
+  });
+
   it("runs an upload/query/download roundtrip with tenant isolation", async () => {
     const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
     const program = Effect.gen(function* () {

@@ -2,6 +2,7 @@ import {
   FIELD_BY_KEY,
   ITEM_ID_PATTERN,
   Internal,
+  QuotaExceeded,
   ValidationError,
   type Actor,
   type ItemEvent,
@@ -17,6 +18,7 @@ import postgres, { type Sql } from "postgres";
 import {
   MetadataStore,
   type MetadataStoreService,
+  DEFAULT_STORAGE_QUOTA_BYTES,
   SUGGESTION_KEY_LIMIT,
   SUGGESTION_VALUE_LIMIT,
 } from "../services.js";
@@ -242,20 +244,45 @@ const queryOrder = (
 
 export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   insert: (item) =>
-    attempt(async () => {
-      await sql`
-        insert into items (
-          id, tenant_id, name, content_type, declared_size, size, etag,
-          checksum, source, status, storage_key, staging_key, created_at,
-          updated_at, properties
-        ) values (
-          ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
-          ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
-          ${item.source}, ${item.status}, ${item.storageKey},
-          ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
-          ${sql.json(item.properties)}
-        )
-      `;
+    Effect.gen(function* () {
+      const reserved = yield* attempt(() =>
+        sql.begin(async (transaction) => {
+          await transaction`
+            insert into tenant_usage (tenant_id, used_bytes, quota_bytes)
+            values (${item.tenantId}, 0, ${DEFAULT_STORAGE_QUOTA_BYTES})
+            on conflict (tenant_id) do nothing
+          `;
+          const usage = await transaction<{ used_bytes: string; quota_bytes: string | null }[]>`
+            select used_bytes, quota_bytes from tenant_usage
+            where tenant_id = ${item.tenantId}
+            for update
+          `;
+          const current = usage[0]!;
+          const usedBytes = Number(current.used_bytes);
+          const quotaBytes = current.quota_bytes === null ? null : Number(current.quota_bytes);
+          if (quotaBytes !== null && usedBytes + item.declaredSize > quotaBytes) return false;
+          await transaction`
+            update tenant_usage
+            set used_bytes = used_bytes + ${item.declaredSize}
+            where tenant_id = ${item.tenantId}
+          `;
+          await transaction`
+            insert into items (
+              id, tenant_id, name, content_type, declared_size, size, etag,
+              checksum, source, status, storage_key, staging_key, created_at,
+              updated_at, properties
+            ) values (
+              ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
+              ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
+              ${item.source}, ${item.status}, ${item.storageKey},
+              ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
+              ${transaction.json(item.properties)}
+            )
+          `;
+          return true;
+        }),
+      );
+      if (!reserved) return yield* new QuotaExceeded({ message: "Storage limit reached" });
     }),
   get: (tenantId, id) =>
     attempt(async () => {
@@ -319,12 +346,22 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   remove: (tenantId, id, expectedStatus) =>
     attempt(async () => {
-      const rows = await sql`
-        delete from items
-        where tenant_id = ${tenantId} and id = ${id} and status = ${expectedStatus}
-        returning id
-      `;
-      return rows.length === 1;
+      return sql.begin(async (transaction) => {
+        const rows = await transaction<{ size: string | null; declared_size: string }[]>`
+          delete from items
+          where tenant_id = ${tenantId} and id = ${id} and status = ${expectedStatus}
+          returning size, declared_size
+        `;
+        const row = rows[0];
+        if (!row) return false;
+        const releasedBytes = Number(row.size ?? row.declared_size);
+        await transaction`
+          update tenant_usage
+          set used_bytes = greatest(0, used_bytes - ${releasedBytes})
+          where tenant_id = ${tenantId}
+        `;
+        return true;
+      });
     }),
   query: (tenantId, query) =>
     Effect.gen(function* () {
@@ -387,7 +424,38 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         totalBytes += bytes;
         return { contentType: row.content_type, count, bytes };
       });
-      return { itemCount, totalBytes, byType };
+      const quotaRows = await sql<{ used_bytes: string; quota_bytes: string | null }[]>`
+        select used_bytes, quota_bytes from tenant_usage where tenant_id = ${tenantId}
+      `;
+      const quotaBytes = quotaRows[0]
+        ? quotaRows[0].quota_bytes === null
+          ? null
+          : Number(quotaRows[0].quota_bytes)
+        : DEFAULT_STORAGE_QUOTA_BYTES;
+      const accountedBytes = quotaRows[0] ? Number(quotaRows[0].used_bytes) : totalBytes;
+      return {
+        itemCount,
+        totalBytes,
+        quotaBytes,
+        remainingBytes: quotaBytes === null ? null : Math.max(0, quotaBytes - accountedBytes),
+        byType,
+      };
+    }),
+  setQuota: (tenantId, quotaBytes) =>
+    attempt(async () => {
+      await sql`
+        insert into tenant_usage (tenant_id, used_bytes, quota_bytes)
+        values (
+          ${tenantId},
+          (
+            select coalesce(sum(coalesce(size, declared_size)), 0)::bigint
+            from items
+            where tenant_id = ${tenantId} and status in ('pending', 'ready')
+          ),
+          ${quotaBytes}
+        )
+        on conflict (tenant_id) do update set quota_bytes = excluded.quota_bytes
+      `;
     }),
   sourceUsage: (tenantId, source) =>
     attempt(async () => {

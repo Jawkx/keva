@@ -1,14 +1,12 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
 // The dev API runs on 127.0.0.1:8787. We proxy every API path prefix through
 // Vite so the browser talks to a single same-origin host (5173) and the auth
 // cookie stays first-party. The SDK is created with baseUrl: "/api" so Keva
 // API requests stay relative to the web origin.
-const API_TARGET = "http://127.0.0.1:8787";
-
 // The API surface lives under /api (including /api/auth). /health and /__dev
 // stay at the root, as do the MCP resource server (/mcp) and the OAuth
 // discovery documents (/.well-known/*) so a local MCP client pointed at the web
@@ -17,25 +15,31 @@ const API_TARGET = "http://127.0.0.1:8787";
 // link falls through to Vite and loads the SPA instead of hitting the API.
 const proxyPaths = ["/api", "/health", "/__dev", "/mcp", "/.well-known"];
 
-export default defineConfig({
-  plugins: [
-    react({
-      babel: {
-        plugins: [["babel-plugin-react-compiler", { target: "19" }]],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const apiTarget = env.VITE_API_TARGET ?? "http://127.0.0.1:8787";
+  return {
+    plugins: [
+      react({
+        babel: {
+          plugins: [["babel-plugin-react-compiler", { target: "19" }]],
+        },
+      }),
+      tailwindcss(),
+    ],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
+        "@keva/schema": fileURLToPath(
+          new URL("../../packages/schema/src/index.ts", import.meta.url),
+        ),
+        "@keva/sdk": fileURLToPath(new URL("../../packages/sdk/src/index.ts", import.meta.url)),
       },
-    }),
-    tailwindcss(),
-  ],
-  resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@keva/schema": fileURLToPath(new URL("../../packages/schema/src/index.ts", import.meta.url)),
-      "@keva/sdk": fileURLToPath(new URL("../../packages/sdk/src/index.ts", import.meta.url)),
     },
-  },
-  server: {
-    proxy: Object.fromEntries(
-      proxyPaths.map((path) => [path, { target: API_TARGET, changeOrigin: true }]),
-    ),
-  },
+    server: {
+      proxy: Object.fromEntries(
+        proxyPaths.map((path) => [path, { target: apiTarget, changeOrigin: true }]),
+      ),
+    },
+  };
 });

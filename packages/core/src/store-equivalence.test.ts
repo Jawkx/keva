@@ -238,6 +238,8 @@ const seedAndUsage = async (store: MetadataStoreService) => {
 const EXPECTED_USAGE = {
   itemCount: 3,
   totalBytes: 15,
+  quotaBytes: 10_737_418_240,
+  remainingBytes: 10_737_418_225,
   byType: [
     { contentType: "application/pdf", count: 1, bytes: 5 },
     { contentType: "image/png", count: 1, bytes: 5 },

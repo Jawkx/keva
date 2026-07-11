@@ -38,6 +38,7 @@ const appOptions = createServerOptions({
   ...(process.env.DATABASE_URL ? { databaseUrl: process.env.DATABASE_URL } : {}),
   ...(process.env.BETTER_AUTH_SECRET ? { betterAuthSecret: process.env.BETTER_AUTH_SECRET } : {}),
   ...(process.env.BETTER_AUTH_URL ? { betterAuthUrl: process.env.BETTER_AUTH_URL } : {}),
+  ...(process.env.KEVA_ADMIN_TOKEN ? { adminToken: process.env.KEVA_ADMIN_TOKEN } : {}),
   trustedOrigins,
   ...(s3 ? { s3 } : {}),
 });

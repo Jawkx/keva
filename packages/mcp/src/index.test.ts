@@ -7,7 +7,13 @@ const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   queryItems: async () => ({ items: [] }),
   getItem: async () => ({ id: "item-1", name: "a.txt" }),
   getContentUrl: async () => ({ url: "https://blob/x", expiresAt: "2030-01-01T00:00:00Z" }),
-  getUsage: async () => ({ itemCount: 0, totalBytes: 0, byType: [] }),
+  getUsage: async () => ({
+    itemCount: 0,
+    totalBytes: 0,
+    quotaBytes: 10_737_418_240,
+    remainingBytes: 10_737_418_240,
+    byType: [],
+  }),
   listPropertyKeys: async () => ({ keys: ["tag"] }),
   listPropertyValues: async () => ({ values: ["x"] }),
   setProperties: async () => ({ id: "item-1", properties: { tag: "x" } }),
@@ -140,6 +146,8 @@ describe("createKevaMcpServer tool execution", () => {
     const getUsage = vi.fn(async () => ({
       itemCount: 3,
       totalBytes: 15,
+      quotaBytes: 100,
+      remainingBytes: 85,
       byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
     }));
     const { client, close } = await connect(stubEngine({ getUsage }), ["read"]);
@@ -151,6 +159,8 @@ describe("createKevaMcpServer tool execution", () => {
     expect(JSON.parse(textOf(result as never))).toEqual({
       itemCount: 3,
       totalBytes: 15,
+      quotaBytes: 100,
+      remainingBytes: 85,
       byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
     });
     await close();

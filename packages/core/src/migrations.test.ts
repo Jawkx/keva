@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");
 const migrationPath = resolve(migrationDir, "0001_rename_objects_to_items.sql");
 const shareGrantsMigrationPath = resolve(migrationDir, "0003_new_black_panther.sql");
+const tenantUsageMigrationPath = resolve(migrationDir, "0008_faithful_champions.sql");
 
 describe("migrations", () => {
   it("renames objects to items without dropping metadata", async () => {
@@ -26,5 +27,14 @@ describe("migrations", () => {
     // Purely additive: no drops, and no destructive rewrite of items.
     expect(migration).not.toMatch(/drop\s+/i);
     expect(migration).not.toMatch(/alter\s+table\s+"items"/i);
+  });
+
+  it("backfills quota accounting from active items", async () => {
+    const migration = await readFile(tenantUsageMigrationPath, "utf8");
+
+    expect(migration).toContain('CREATE TABLE "tenant_usage"');
+    expect(migration).toContain('INSERT INTO "tenant_usage"');
+    expect(migration).toContain('sum(coalesce("size", "declared_size"))');
+    expect(migration).toContain("\"status\" in ('pending', 'ready')");
   });
 });

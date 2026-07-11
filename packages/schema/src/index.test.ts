@@ -80,6 +80,8 @@ describe("schema", () => {
     const usage = {
       itemCount: 3,
       totalBytes: 4096,
+      quotaBytes: 10_737_418_240,
+      remainingBytes: 10_737_414_144,
       byType: [
         { contentType: "image/png", count: 2, bytes: 3072 },
         { contentType: "text/plain", count: 1, bytes: 1024 },

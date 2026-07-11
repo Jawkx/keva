@@ -53,6 +53,12 @@ export const items = pgTable(
   ],
 );
 
+export const tenantUsage = pgTable("tenant_usage", {
+  tenantId: text("tenant_id").primaryKey(),
+  usedBytes: bigint("used_bytes", { mode: "number" }).notNull().default(0),
+  quotaBytes: bigint("quota_bytes", { mode: "number" }).default(10_737_418_240),
+});
+
 // Append-only history of item metadata mutations. Deliberately no FK to items
 // — events outlive deletion; `item_name` and `actor` are write-time snapshots.
 export const itemEvents = pgTable(

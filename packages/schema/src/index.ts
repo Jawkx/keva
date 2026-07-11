@@ -222,6 +222,8 @@ export type ContentTypeUsage = typeof ContentTypeUsage.Type;
 export const UsageResult = Schema.Struct({
   itemCount: Schema.Number,
   totalBytes: Schema.Number,
+  quotaBytes: Schema.NullOr(Schema.Number),
+  remainingBytes: Schema.NullOr(Schema.Number),
   byType: Schema.Array(ContentTypeUsage),
 });
 export type UsageResult = typeof UsageResult.Type;

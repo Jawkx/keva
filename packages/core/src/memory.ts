@@ -2,6 +2,7 @@ import {
   Conflict,
   FIELD_BY_KEY,
   Internal,
+  QuotaExceeded,
   itemMatchesCondition,
   type ItemEvent,
   type PropertyScalar,
@@ -15,6 +16,7 @@ import {
   type BlobStoreService,
   MetadataStore,
   type MetadataStoreService,
+  DEFAULT_STORAGE_QUOTA_BYTES,
   SUGGESTION_KEY_LIMIT,
   SUGGESTION_VALUE_LIMIT,
 } from "./services.js";
@@ -76,6 +78,7 @@ const encodeEventCursor = (event: ItemEvent): string =>
 export const makeMemoryMetadataStore = (): MetadataStoreService => {
   const items = new Map<string, KevaItem>();
   const events: ItemEvent[] = [];
+  const usageByTenant = new Map<string, { usedBytes: number; quotaBytes: number | null }>();
   const mapKey = (tenantId: string, id: string) => `${tenantId}\0${id}`;
 
   return {
@@ -85,6 +88,17 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         if (items.has(key)) {
           return yield* new Internal({ message: "Metadata write failed" });
         }
+        const usage = usageByTenant.get(item.tenantId) ?? {
+          usedBytes: 0,
+          quotaBytes: DEFAULT_STORAGE_QUOTA_BYTES,
+        };
+        if (usage.quotaBytes !== null && usage.usedBytes + item.declaredSize > usage.quotaBytes) {
+          return yield* new QuotaExceeded({ message: "Storage limit reached" });
+        }
+        usageByTenant.set(item.tenantId, {
+          ...usage,
+          usedBytes: usage.usedBytes + item.declaredSize,
+        });
         items.set(key, cloneItem(item));
       }),
     get: (tenantId, id) =>
@@ -127,8 +141,17 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
     remove: (tenantId, id, expectedStatus) =>
       Effect.sync(() => {
         const key = mapKey(tenantId, id);
-        if (items.get(key)?.status !== expectedStatus) return false;
-        return items.delete(key);
+        const item = items.get(key);
+        if (!item || item.status !== expectedStatus) return false;
+        items.delete(key);
+        const usage = usageByTenant.get(tenantId);
+        if (usage) {
+          usageByTenant.set(tenantId, {
+            ...usage,
+            usedBytes: Math.max(0, usage.usedBytes - (item.size ?? item.declaredSize)),
+          });
+        }
+        return true;
       }),
     query: (tenantId, query) =>
       Effect.sync(() => {
@@ -165,14 +188,23 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           entry.bytes += bytes;
           byType.set(item.contentType, entry);
         }
+        const quotaBytes = usageByTenant.get(tenantId)?.quotaBytes ?? DEFAULT_STORAGE_QUOTA_BYTES;
+        const accountedBytes = usageByTenant.get(tenantId)?.usedBytes ?? totalBytes;
         return {
           itemCount,
           totalBytes,
+          quotaBytes,
+          remainingBytes: quotaBytes === null ? null : Math.max(0, quotaBytes - accountedBytes),
           // Match the postgres store's ordering for store-equivalence.
           byType: [...byType.entries()]
             .map(([contentType, value]) => ({ contentType, ...value }))
             .sort((a, b) => b.bytes - a.bytes || a.contentType.localeCompare(b.contentType)),
         };
+      }),
+    setQuota: (tenantId, quotaBytes) =>
+      Effect.sync(() => {
+        const usage = usageByTenant.get(tenantId) ?? { usedBytes: 0, quotaBytes };
+        usageByTenant.set(tenantId, { ...usage, quotaBytes });
       }),
     sourceUsage: (tenantId, source) =>
       Effect.sync(() => {

@@ -57,6 +57,13 @@
       "when": 1783678974774,
       "tag": "0007_modern_randall",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783741811605,
+      "tag": "0008_faithful_champions",
+      "breakpoints": true
     }
   ]
 }

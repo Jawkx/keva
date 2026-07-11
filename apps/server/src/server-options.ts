@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { AppServiceOptions } from "./app.js";
+import { makeAdminStore } from "./admin.js";
 import * as authSchema from "./auth-schema.js";
 import {
   betterAuthSessionResolver,
@@ -21,6 +22,7 @@ export interface ServerOptionsConfig {
   readonly betterAuthSecret?: string;
   readonly betterAuthUrl?: string;
   readonly trustedOrigins?: ReadonlyArray<string>;
+  readonly adminToken?: string;
   readonly s3?: RuntimeConfig["s3"];
 }
 
@@ -36,7 +38,7 @@ const databaseAuth = (config: ServerOptionsConfig) => {
     ...(config.trustedOrigins ? { trustedOrigins: config.trustedOrigins } : {}),
   });
 
-  return { auth, db, dispose: () => sql.end({ timeout: 5 }) };
+  return { auth, db, sql, dispose: () => sql.end({ timeout: 5 }) };
 };
 
 export const createServerOptions = (config: ServerOptionsConfig): AppServiceOptions => {
@@ -56,6 +58,9 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
     ...(auth
       ? {
           authHandler: auth.auth.handler,
+          ...(config.adminToken
+            ? { admin: { token: config.adminToken, store: makeAdminStore(auth.sql) } }
+            : {}),
           mcp: {
             authorizationServer: makeMcpAuthorizationServer(auth.auth),
             resolveTenant: makeUserTenantResolver(auth.db),

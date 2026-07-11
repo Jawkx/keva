@@ -42,6 +42,13 @@ const buildSegments = (usage: UsageResult): Segment[] => {
 
 const plural = (n: number) => (n === 1 ? "item" : "items");
 
+const formatUsagePercent = (percent: number): string => {
+  if (percent === 0) return "0%";
+  if (percent < 0.01) return "<0.01%";
+  if (percent < 1) return `${percent.toFixed(2)}%`;
+  return `${percent.toFixed(0)}%`;
+};
+
 export function StorageUsageCard() {
   const { data: usage, isPending, isError } = useUsage();
 
@@ -60,8 +67,6 @@ export function StorageUsageCard() {
           </div>
         ) : isError ? (
           <p className="text-sm text-muted-foreground">Couldn't load storage usage.</p>
-        ) : usage.itemCount === 0 ? (
-          <p className="text-sm text-muted-foreground">No files stored yet.</p>
         ) : (
           <UsageBreakdown usage={usage} />
         )}
@@ -73,44 +78,104 @@ export function StorageUsageCard() {
 function UsageBreakdown({ usage }: { readonly usage: UsageResult }) {
   const segments = buildSegments(usage);
   const hasBytes = usage.totalBytes > 0;
+  const accountedBytes =
+    usage.quotaBytes === null || usage.remainingBytes === null
+      ? usage.totalBytes
+      : usage.quotaBytes - usage.remainingBytes;
+  const usagePct = usage.quotaBytes === null ? null : (accountedBytes / usage.quotaBytes) * 100;
+  const meterPct = usagePct === null ? 0 : Math.min(100, usagePct);
+  const isAtLimit = usagePct !== null && usagePct >= 100;
+  const isNearLimit = usagePct !== null && usagePct >= 80;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-baseline gap-2">
-        <span className="font-heading text-3xl font-semibold tabular-nums">
-          {formatBytes(usage.totalBytes)}
-        </span>
-        <span className="text-sm text-muted-foreground">
-          used · {usage.itemCount.toLocaleString()} {plural(usage.itemCount)}
-        </span>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-baseline gap-2">
+            <span className="font-heading text-3xl font-semibold tabular-nums">
+              {formatBytes(usage.totalBytes)}
+            </span>
+            <span className="text-sm text-muted-foreground">used</span>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {usage.itemCount.toLocaleString()} {plural(usage.itemCount)}
+          </p>
+        </div>
+        <div className="text-right text-sm">
+          <p className="font-medium tabular-nums">
+            {usage.quotaBytes === null
+              ? "Unlimited storage"
+              : `${formatBytes(usage.quotaBytes)} limit`}
+          </p>
+          <p className="mt-1 text-muted-foreground tabular-nums">
+            {usage.remainingBytes === null
+              ? "No usage limit"
+              : `${formatBytes(usage.remainingBytes)} remaining`}
+          </p>
+        </div>
       </div>
 
-      {hasBytes && (
-        <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-muted">
-          {segments.map((segment) => (
+      {usage.quotaBytes !== null && (
+        <div>
+          <div
+            className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label="Storage used"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.min(100, Math.round(usagePct ?? 0))}
+          >
             <div
-              key={segment.key}
-              className={cn("h-full first:rounded-l-full last:rounded-r-full", segment.color)}
-              style={{ width: `${segment.pct}%` }}
+              className={cn(
+                "h-full rounded-full transition-[width]",
+                isAtLimit ? "bg-destructive" : isNearLimit ? "bg-chart-3" : "bg-chart-2",
+              )}
+              style={{ width: `${meterPct}%` }}
             />
-          ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+            {formatUsagePercent(usagePct ?? 0)} used
+          </p>
         </div>
       )}
 
-      <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-        {segments.map((segment) => (
-          <li key={segment.key} className="flex items-center gap-2 text-sm">
-            <span className={cn("size-2.5 shrink-0 rounded-full", segment.color)} />
-            <span className="min-w-0 flex-1 truncate">{segment.label}</span>
-            <span className="tabular-nums text-muted-foreground">{formatBytes(segment.bytes)}</span>
-            {hasBytes && (
-              <span className="w-9 text-right tabular-nums text-muted-foreground">
-                {segment.pct.toFixed(0)}%
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
+      {isNearLimit && (
+        <p className={cn("text-sm font-medium", isAtLimit ? "text-destructive" : "text-chart-4")}>
+          {isAtLimit
+            ? "Storage limit reached. Delete files before uploading more."
+            : "Storage is above 80%. Consider deleting files you no longer need."}
+        </p>
+      )}
+
+      {hasBytes ? (
+        <>
+          <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-muted">
+            {segments.map((segment) => (
+              <div
+                key={segment.key}
+                className={cn("h-full first:rounded-l-full last:rounded-r-full", segment.color)}
+                style={{ width: `${segment.pct}%` }}
+              />
+            ))}
+          </div>
+          <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {segments.map((segment) => (
+              <li key={segment.key} className="flex items-center gap-2 text-sm">
+                <span className={cn("size-2.5 shrink-0 rounded-full", segment.color)} />
+                <span className="min-w-0 flex-1 truncate">{segment.label}</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {formatBytes(segment.bytes)}
+                </span>
+                <span className="w-9 text-right tabular-nums text-muted-foreground">
+                  {segment.pct.toFixed(0)}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">No files stored yet.</p>
+      )}
     </div>
   );
 }

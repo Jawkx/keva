@@ -50,6 +50,7 @@ export class BlobStore extends Context.Tag("@keva/core/BlobStore")<BlobStore, Bl
 
 export const SUGGESTION_KEY_LIMIT = 500;
 export const SUGGESTION_VALUE_LIMIT = 100;
+export const DEFAULT_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024 * 1024;
 
 export interface ItemTransition {
   readonly status?: ItemStatus;
@@ -90,6 +91,10 @@ export interface MetadataStoreService {
   ) => Effect.Effect<boolean, KevaError>;
   readonly query: (tenantId: string, query: Query) => Effect.Effect<QueryResult, KevaError>;
   readonly usage: (tenantId: string) => Effect.Effect<UsageResult, KevaError>;
+  readonly setQuota: (
+    tenantId: string,
+    quotaBytes: number | null,
+  ) => Effect.Effect<void, KevaError>;
   // Count + byte-sum of a tenant's items attributed to one `source`, across
   // pending AND ready (pending counts so concurrent share initiates can't blow
   // a quota; reapPending releases abandoned holds after the pending TTL).

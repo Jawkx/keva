@@ -1,4 +1,4 @@
-import { BlobStore, makeKevaEngine, MetadataStore } from "@keva/core";
+import { BlobStore, DEFAULT_STORAGE_QUOTA_BYTES, makeKevaEngine, MetadataStore } from "@keva/core";
 import {
   ItemPatch,
   BatchDelete,
@@ -24,6 +24,7 @@ import {
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { Hono, type Context } from "hono";
 import { ApiTokenStore, Authenticator, requireAdminSession } from "./auth.js";
+import type { AdminStore } from "./admin.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
 import { ViewStore } from "./views.js";
@@ -84,6 +85,7 @@ const redactItem = (principal: Principal, item: KevaItem) =>
 export interface AppServiceOptions {
   readonly layer: Layer.Layer<AppServices>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
+  readonly admin?: { readonly token: string; readonly store: AdminStore };
   // Present only when Better Auth is configured (requires a database). Enables
   // the OAuth 2.1 discovery endpoints and the /mcp resource server. In the
   // no-DB/static-token path these routes stay unmounted, mirroring how token
@@ -99,6 +101,7 @@ export type CreateAppOptions =
 interface ResolvedServices {
   readonly runtime: ManagedRuntime.ManagedRuntime<AppServices, never>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
+  readonly admin?: { readonly token: string; readonly store: AdminStore };
   readonly mcp?: McpDeps;
   readonly dispose?: () => Promise<void>;
 }
@@ -111,6 +114,7 @@ const isRequestScoped = (
 const makeServices = (options: AppServiceOptions): ResolvedServices => ({
   runtime: ManagedRuntime.make(options.layer),
   ...(options.authHandler ? { authHandler: options.authHandler } : {}),
+  ...(options.admin ? { admin: options.admin } : {}),
   ...(options.mcp ? { mcp: options.mcp } : {}),
   ...(options.dispose ? { dispose: options.dispose } : {}),
 });
@@ -148,6 +152,52 @@ export const createApp = (options: CreateAppOptions): Hono => {
   );
 
   app.get("/health", (context) => context.json({ ok: true, service: "keva" }));
+
+  const withAdmin = (
+    context: Context,
+    handler: (admin: NonNullable<ResolvedServices["admin"]>) => Response | Promise<Response>,
+  ) =>
+    withServices(context, ({ admin }) => {
+      if (!admin) return context.notFound();
+      const authorization = context.req.header("authorization") ?? "";
+      if (authorization !== `Bearer ${admin.token}`) {
+        return context.json({ message: "Invalid admin token" }, 401);
+      }
+      return handler(admin);
+    });
+
+  app.get("/api/admin/users", (context) =>
+    withAdmin(context, async ({ store }) =>
+      context.json({ users: await store.listUsers(context.req.query("search") ?? "") }),
+    ),
+  );
+
+  app.put("/api/admin/users/:id/quota", async (context) =>
+    withAdmin(context, async ({ store }) => {
+      const body = (await context.req.json().catch(() => null)) as {
+        quotaBytes?: unknown;
+        useDefault?: unknown;
+      } | null;
+      const requestedQuota =
+        body?.useDefault === true ? DEFAULT_STORAGE_QUOTA_BYTES : body?.quotaBytes;
+      if (
+        requestedQuota !== null &&
+        (typeof requestedQuota !== "number" ||
+          !Number.isSafeInteger(requestedQuota) ||
+          requestedQuota < -1)
+      ) {
+        return context.json({ message: "quotaBytes must be an integer, null, 0, or -1" }, 400);
+      }
+      const quotaBytes =
+        requestedQuota === null || requestedQuota === 0 || requestedQuota === -1
+          ? null
+          : requestedQuota;
+      const user = await store.setQuota(context.req.param("id"), quotaBytes);
+      return user
+        ? context.json({ user })
+        : context.json({ message: "User has no storage account" }, 404);
+    }),
+  );
 
   app.put("/__dev/blobs/*", async (context) => {
     const key = decodeURIComponent(context.req.path.slice("/__dev/blobs/".length));
