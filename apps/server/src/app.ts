@@ -403,6 +403,16 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
+  app.get("/api/properties/summary", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        return yield* makeKevaEngine(principal).propertySummary();
+      }),
+    ),
+  );
+
   app.get("/api/properties/values", (context) =>
     runRoute(
       context,

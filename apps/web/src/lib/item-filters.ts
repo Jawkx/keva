@@ -1,54 +1,46 @@
 import type { Operator, QueryCondition } from "@keva/schema";
-import { coerceScalar, scalarToInput, valueType } from "./properties";
+
+export type FilterScalar = string | number | boolean;
 
 export const FILTER_OPERATORS = [
   "eq",
   "neq",
+  "in",
+  "contains",
   "gt",
   "gte",
   "lt",
   "lte",
-  "contains",
   "exists",
 ] as const satisfies readonly Operator[];
 
 export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
   eq: "is",
   neq: "is not",
-  gt: "greater than",
-  gte: "greater than or equal",
-  lt: "less than",
-  lte: "less than or equal",
-  contains: "contains",
   in: "is any of",
+  contains: "contains",
+  gt: "greater than",
+  gte: "at least",
+  lt: "less than",
+  lte: "at most",
   exists: "exists",
 };
 
-export const FILTER_VALUE_TYPES = ["string", "number", "boolean"] as const;
-export type FilterValueType = (typeof FILTER_VALUE_TYPES)[number];
+export const opNeedsValue = (op: Operator): boolean => op !== "exists";
+export const opAllowsMultiple = (op: Operator): boolean => op === "in" || op === "eq";
 
-export interface ConditionDraft {
-  id: string;
-  key: string;
-  op: Operator;
-  valueType: FilterValueType;
-  value: string;
-}
+export const inferScalar = (raw: string): FilterScalar => {
+  const trimmed = raw.trim();
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  return trimmed;
+};
 
-export type ConditionDraftPatch = Partial<Omit<ConditionDraft, "id">>;
+export const formatScalar = (value: FilterScalar): string => String(value);
 
-export type KindFacetId = "all" | "image" | "video" | "audio" | "document";
+export type KindId = "image" | "video" | "audio" | "document";
 export type SizeFacetId = "any" | "sm" | "md" | "lg" | "xl";
-
-export interface FacetOption<Id extends string> {
-  id: Id;
-  label: string;
-}
-
-interface KindFacet extends FacetOption<KindFacetId> {
-  prefix?: string;
-  types?: readonly string[];
-}
 
 const DOCUMENT_TYPES = [
   "application/pdf",
@@ -61,13 +53,46 @@ const DOCUMENT_TYPES = [
   "application/vnd.oasis.opendocument",
 ] as const;
 
-interface SizeFacet extends FacetOption<SizeFacetId> {
+export interface KindOption {
+  id: KindId;
+  label: string;
+  // content_type alternatives matched by prefix/substring (`contains` / `in`)
+  alternatives: readonly string[];
+}
+
+export const KIND_OPTIONS: readonly KindOption[] = [
+  { id: "image", label: "Images", alternatives: ["image/"] },
+  { id: "video", label: "Videos", alternatives: ["video/"] },
+  { id: "audio", label: "Audio", alternatives: ["audio/"] },
+  { id: "document", label: "Documents", alternatives: DOCUMENT_TYPES },
+];
+
+export interface SizeOption {
+  id: SizeFacetId;
+  label: string;
   min?: number;
   max?: number;
 }
 
+const MB = 1024 * 1024;
+
+export const SIZE_OPTIONS: readonly SizeOption[] = [
+  { id: "any", label: "Any size" },
+  { id: "sm", label: "< 1 MB", max: MB },
+  { id: "md", label: "1-10 MB", min: MB, max: 10 * MB },
+  { id: "lg", label: "10-100 MB", min: 10 * MB, max: 100 * MB },
+  { id: "xl", label: "> 100 MB", min: 100 * MB },
+];
+
+export interface ConditionDraft {
+  id: string;
+  key: string;
+  op: Operator;
+  values: FilterScalar[];
+}
+
 export interface FilterDraft {
-  kind: KindFacetId;
+  kinds: KindId[];
   size: SizeFacetId;
   rows: ConditionDraft[];
 }
@@ -82,69 +107,44 @@ const nextConditionId = () => {
   return `condition:${fallbackConditionId}`;
 };
 
-export const createConditionDraft = (): ConditionDraft => ({
-  id: nextConditionId(),
-  key: "",
-  op: "eq",
-  valueType: "string",
-  value: "",
-});
+export const createConditionDraft = (
+  key: string,
+  op: Operator,
+  values: FilterScalar[],
+): ConditionDraft => ({ id: nextConditionId(), key, op, values });
 
-export const createFilterDraft = (): FilterDraft => ({
-  kind: "all",
-  size: "any",
-  rows: [createConditionDraft()],
-});
-
-const MB = 1024 * 1024;
-
-export const KIND_FACETS: readonly KindFacet[] = [
-  { id: "all", label: "All" },
-  { id: "image", label: "Images", prefix: "image/" },
-  { id: "video", label: "Videos", prefix: "video/" },
-  { id: "audio", label: "Audio", prefix: "audio/" },
-  { id: "document", label: "Documents", types: DOCUMENT_TYPES },
-];
-
-export const SIZE_FACETS: readonly SizeFacet[] = [
-  { id: "any", label: "Any size" },
-  { id: "sm", label: "< 1 MB", max: MB },
-  { id: "md", label: "1-10 MB", min: MB, max: 10 * MB },
-  { id: "lg", label: "10-100 MB", min: 10 * MB, max: 100 * MB },
-  { id: "xl", label: "> 100 MB", min: 100 * MB },
-];
+export const createFilterDraft = (): FilterDraft => ({ kinds: [], size: "any", rows: [] });
 
 export const updateConditionDraft = (
   draft: FilterDraft,
   id: string,
-  patch: ConditionDraftPatch,
+  patch: Partial<Omit<ConditionDraft, "id">>,
 ): FilterDraft => ({
   ...draft,
   rows: draft.rows.map((row) => (row.id === id ? { ...row, ...patch } : row)),
 });
 
-export const addConditionDraft = (draft: FilterDraft): FilterDraft => ({
+export const removeConditionDraft = (draft: FilterDraft, id: string): FilterDraft => ({
   ...draft,
-  rows: [...draft.rows, createConditionDraft()],
+  rows: draft.rows.filter((row) => row.id !== id),
 });
-
-export const removeConditionDraft = (draft: FilterDraft, id: string): FilterDraft => {
-  const rows = draft.rows.filter((row) => row.id !== id);
-  return { ...draft, rows: rows.length > 0 ? rows : [createConditionDraft()] };
-};
 
 const CONTENT_TYPE_KEY = "system.content_type";
 const SIZE_KEY = "system.size";
 
-const kindConditions = (id: KindFacetId): QueryCondition[] => {
-  const facet = KIND_FACETS.find((option) => option.id === id);
-  if (facet?.types) return [{ key: CONTENT_TYPE_KEY, op: "in", value: [...facet.types] }];
-  if (facet?.prefix) return [{ key: CONTENT_TYPE_KEY, op: "contains", value: facet.prefix }];
-  return [];
+const kindById = (id: KindId): KindOption => KIND_OPTIONS.find((option) => option.id === id)!;
+
+const kindConditions = (kinds: readonly KindId[]): QueryCondition[] => {
+  if (kinds.length === 0) return [];
+  const alternatives = kinds.flatMap((id) => kindById(id).alternatives);
+  if (alternatives.length === 1) {
+    return [{ key: CONTENT_TYPE_KEY, op: "contains", value: alternatives[0]! }];
+  }
+  return [{ key: CONTENT_TYPE_KEY, op: "in", value: alternatives }];
 };
 
 const sizeConditions = (id: SizeFacetId): QueryCondition[] => {
-  const facet = SIZE_FACETS.find((option) => option.id === id);
+  const facet = SIZE_OPTIONS.find((option) => option.id === id);
   if (!facet) return [];
 
   const conditions: QueryCondition[] = [];
@@ -153,59 +153,66 @@ const sizeConditions = (id: SizeFacetId): QueryCondition[] => {
   return conditions;
 };
 
-const rowConditions = (rows: readonly ConditionDraft[]): QueryCondition[] =>
-  rows
-    .filter((row) => row.key.trim().length > 0)
-    .map((row) =>
-      row.op === "exists"
-        ? { key: row.key.trim(), op: row.op }
-        : { key: row.key.trim(), op: row.op, value: coerceScalar(row.valueType, row.value) },
-    );
-
-export const buildFilterWhere = (draft: FilterDraft): QueryCondition[] => [
-  ...kindConditions(draft.kind),
-  ...sizeConditions(draft.size),
-  ...rowConditions(draft.rows),
-];
-
-const FILTER_VALUE_TYPE_SET = new Set<string>(FILTER_VALUE_TYPES);
-
-const rowValueType = (condition: QueryCondition): FilterValueType => {
-  if (condition.value === undefined) return "string";
-  const type = valueType(condition.value);
-  return FILTER_VALUE_TYPE_SET.has(type) ? (type as FilterValueType) : "string";
+// `in` arrays must be homogeneous per the schema; mixed picks degrade to strings
+const homogeneous = (values: readonly FilterScalar[]): string[] | number[] | boolean[] => {
+  if (values.every((v): v is number => typeof v === "number")) return [...values];
+  if (values.every((v): v is boolean => typeof v === "boolean")) return [...values];
+  return values.map(String);
 };
 
-const sameStringArray = (a: readonly unknown[], b: readonly string[]): boolean =>
-  a.length === b.length && a.every((value, index) => value === b[index]);
-
-const matchKindCondition = (condition: QueryCondition): KindFacetId | null => {
-  if (condition.key !== CONTENT_TYPE_KEY) return null;
-  if (condition.op === "in" && Array.isArray(condition.value)) {
-    const facet = KIND_FACETS.find(
-      (f) => f.types && sameStringArray(condition.value as unknown[], f.types),
-    );
-    return facet?.id ?? null;
+const rowCondition = (row: ConditionDraft): QueryCondition | null => {
+  const key = row.key.trim();
+  if (key.length === 0) return null;
+  if (row.op === "exists") return { key, op: "exists" };
+  if (row.values.length === 0) return null;
+  if (row.values.length > 1 || row.op === "in") {
+    return { key, op: "in", value: homogeneous(row.values) };
   }
+  return { key, op: row.op, value: row.values[0]! };
+};
+
+export const buildFilterWhere = (draft: FilterDraft): QueryCondition[] => [
+  ...kindConditions(draft.kinds),
+  ...sizeConditions(draft.size),
+  ...draft.rows.map(rowCondition).filter((c): c is QueryCondition => c !== null),
+];
+
+const isScalar = (value: unknown): value is FilterScalar =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+const matchKindCondition = (condition: QueryCondition): KindId[] | null => {
+  if (condition.key !== CONTENT_TYPE_KEY) return null;
   if (condition.op === "contains" && typeof condition.value === "string") {
-    const facet = KIND_FACETS.find((f) => f.prefix && f.prefix === condition.value);
-    return facet?.id ?? null;
+    const value = condition.value;
+    const kind = KIND_OPTIONS.find(
+      (option) => option.alternatives.length === 1 && option.alternatives[0] === value,
+    );
+    return kind ? [kind.id] : null;
+  }
+  if (condition.op === "in" && Array.isArray(condition.value)) {
+    const values = new Set(condition.value.map(String));
+    const kinds = KIND_OPTIONS.filter((option) =>
+      option.alternatives.every((alt) => values.has(alt)),
+    );
+    const covered = new Set(kinds.flatMap((option) => option.alternatives));
+    if (kinds.length > 0 && covered.size === values.size) return kinds.map((option) => option.id);
+    return null;
   }
   return null;
 };
 
 const matchSizeFacet = (min: number | undefined, max: number | undefined): SizeFacetId | null => {
-  const facet = SIZE_FACETS.find((f) => f.id !== "any" && f.min === min && f.max === max);
+  const facet = SIZE_OPTIONS.find((f) => f.id !== "any" && f.min === min && f.max === max);
   return facet?.id ?? null;
 };
 
 export const draftFromConditions = (conditions: readonly QueryCondition[]): FilterDraft => {
   const rest = [...conditions];
 
-  let kind: KindFacetId = "all";
+  let kinds: KindId[] = [];
   const kindIndex = rest.findIndex((c) => matchKindCondition(c) !== null);
   if (kindIndex !== -1) {
-    kind = matchKindCondition(rest[kindIndex]!)!;
+    kinds = matchKindCondition(rest[kindIndex]!)!;
     rest.splice(kindIndex, 1);
   }
 
@@ -224,64 +231,16 @@ export const draftFromConditions = (conditions: readonly QueryCondition[]): Filt
     }
   }
 
-  return {
-    kind,
-    size,
-    rows:
-      rest.length > 0
-        ? rest.map((condition) => ({
-            ...createConditionDraft(),
-            key: condition.key,
-            op: condition.op,
-            valueType: rowValueType(condition),
-            value: condition.value === undefined ? "" : scalarToInput(condition.value),
-          }))
-        : [createConditionDraft()],
-  };
-};
+  const rows = rest.map((condition) => {
+    const values = Array.isArray(condition.value)
+      ? condition.value.filter(isScalar)
+      : isScalar(condition.value)
+        ? [condition.value]
+        : [];
+    return createConditionDraft(condition.key, condition.op, values);
+  });
 
-export interface FilterChip {
-  id: string;
-  label: string;
-  remove: (draft: FilterDraft) => FilterDraft;
-}
-
-const OP_LABEL: Partial<Record<Operator, string>> = {
-  neq: "≠",
-  gt: ">",
-  gte: "≥",
-  lt: "<",
-  lte: "≤",
-  contains: "∋",
-  in: "∈",
-};
-
-const rowChipLabel = (row: ConditionDraft): string => {
-  const key = row.key.trim();
-  if (row.op === "exists") return key;
-  if (row.op === "eq") return `${key}:${row.value}`;
-  return `${key} ${OP_LABEL[row.op] ?? row.op} ${row.value}`;
-};
-
-export const filterChips = (draft: FilterDraft): FilterChip[] => {
-  const chips: FilterChip[] = [];
-  if (draft.kind !== "all") {
-    const label = KIND_FACETS.find((f) => f.id === draft.kind)?.label ?? draft.kind;
-    chips.push({ id: "kind", label, remove: (d) => ({ ...d, kind: "all" }) });
-  }
-  if (draft.size !== "any") {
-    const label = SIZE_FACETS.find((f) => f.id === draft.size)?.label ?? draft.size;
-    chips.push({ id: "size", label, remove: (d) => ({ ...d, size: "any" }) });
-  }
-  for (const row of draft.rows) {
-    if (row.key.trim().length === 0) continue;
-    chips.push({
-      id: row.id,
-      label: rowChipLabel(row),
-      remove: (d) => removeConditionDraft(d, row.id),
-    });
-  }
-  return chips;
+  return { kinds, size, rows };
 };
 
 const SIZE_PHRASE: Record<Exclude<SizeFacetId, "any">, string> = {
@@ -291,31 +250,28 @@ const SIZE_PHRASE: Record<Exclude<SizeFacetId, "any">, string> = {
   xl: "Larger than 100 MB",
 };
 
-const ROW_OP_PHRASE: Partial<Record<Operator, string>> = {
-  neq: "is not",
-  gt: "greater than",
-  gte: "at least",
-  lt: "less than",
-  lte: "at most",
-  contains: "contains",
-  in: "is any of",
-};
+const joinOr = (parts: readonly string[]): string =>
+  parts.length <= 1
+    ? (parts[0] ?? "")
+    : `${parts.slice(0, -1).join(", ")} or ${parts[parts.length - 1]}`;
 
 const prettyKey = (key: string): string => key.replace(/^system\./, "");
 
 const rowPhrase = (row: ConditionDraft): string => {
   const key = prettyKey(row.key.trim());
   if (row.op === "exists") return `has ${key}`;
-  if (row.op === "eq") return `${key} is ${row.value}`;
-  return `${key} ${ROW_OP_PHRASE[row.op] ?? row.op} ${row.value}`;
+  const values = joinOr(row.values.map(formatScalar));
+  if (row.op === "eq" && row.values.length <= 1) return `${key} is ${values}`;
+  if (row.values.length > 1 || row.op === "in") return `${key} is any of ${values}`;
+  return `${key} ${FILTER_OPERATOR_LABELS[row.op]} ${values}`;
 };
 
 export const describeFilter = (conditions: readonly QueryCondition[]): string[] => {
   const draft = draftFromConditions(conditions);
   const parts: string[] = [];
-  if (draft.kind !== "all") {
-    const label = KIND_FACETS.find((f) => f.id === draft.kind)?.label ?? draft.kind;
-    parts.push(`All ${label.toLowerCase()}`);
+  if (draft.kinds.length > 0) {
+    const labels = draft.kinds.map((id) => kindById(id).label.toLowerCase());
+    parts.push(`All ${joinOr(labels)}`);
   }
   if (draft.size !== "any") parts.push(SIZE_PHRASE[draft.size]);
   for (const row of draft.rows) {

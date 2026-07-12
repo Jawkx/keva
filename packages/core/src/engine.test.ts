@@ -394,6 +394,32 @@ describe("KevaEngine", () => {
     expect(result.ratings).toEqual({ values: [5] });
     expect(result.tags).toEqual({ values: [] });
   });
+
+  it("summarizes per-key value shapes, surfacing bare nulls as tags", async () => {
+    const layer = Layer.merge(MemoryMetadataStoreLive, MemoryBlobStoreLive());
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(principal("tenant-a"));
+      const one = yield* upload("tenant-a", "a.txt", new TextEncoder().encode("a"));
+      const two = yield* upload("tenant-a", "b.txt", new TextEncoder().encode("b"));
+      yield* engine.patch(one.id, {
+        set: { logo: null, project: "keva", rating: 5, tags: ["x"] },
+        unset: [],
+      });
+      yield* engine.patch(two.id, { set: { project: null, reviewed: true }, unset: [] });
+      return yield* engine.propertySummary();
+    }).pipe(Effect.provide(layer));
+
+    const result = await Effect.runPromise(program);
+    expect(result).toEqual({
+      entries: [
+        { key: "logo", kinds: ["tag"], values: [] },
+        { key: "project", kinds: ["string", "tag"], values: ["keva"] },
+        { key: "rating", kinds: ["number"], values: [5] },
+        { key: "reviewed", kinds: ["boolean"], values: [true] },
+        { key: "tags", kinds: ["array"], values: [] },
+      ],
+    });
+  });
 });
 
 describe("KevaEngine item history", () => {

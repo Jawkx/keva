@@ -1,5 +1,6 @@
 import type {
   PropertyScalar,
+  PropertySummary,
   PropertyValue,
   ItemEvent,
   ItemEventsResult,
@@ -109,6 +110,9 @@ export interface MetadataStoreService {
     tenantId: string,
     key: string,
   ) => Effect.Effect<ReadonlyArray<PropertyScalar>, KevaError>;
+  readonly propertySummary: (
+    tenantId: string,
+  ) => Effect.Effect<ReadonlyArray<PropertySummary>, KevaError>;
   readonly listByStatus: (
     status: ItemStatus,
     limit: number,

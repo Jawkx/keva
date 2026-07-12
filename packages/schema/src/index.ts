@@ -212,6 +212,24 @@ export const PropertyValuesResult = Schema.Struct({
 });
 export type PropertyValuesResult = typeof PropertyValuesResult.Type;
 
+// Observed value shapes for one property key across a tenant's ready items.
+// "tag" is the product name for a bare `null` value (pure membership tag); a
+// key can be mixed, e.g. ["tag", "string"] when some items carry it bare.
+export const PropertyKind = Schema.Literal("tag", "string", "number", "boolean", "array");
+export type PropertyKind = typeof PropertyKind.Type;
+
+export const PropertySummary = Schema.Struct({
+  key: Schema.String,
+  kinds: Schema.Array(PropertyKind),
+  values: Schema.Array(PropertyScalar),
+});
+export type PropertySummary = typeof PropertySummary.Type;
+
+export const PropertySummaryResult = Schema.Struct({
+  entries: Schema.Array(PropertySummary),
+});
+export type PropertySummaryResult = typeof PropertySummaryResult.Type;
+
 export const ContentTypeUsage = Schema.Struct({
   contentType: Schema.String,
   count: Schema.Number,

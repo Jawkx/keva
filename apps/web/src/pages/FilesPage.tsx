@@ -14,11 +14,9 @@ import {
 import {
   Alert02Icon,
   ArrowDown01Icon,
-  Cancel01Icon,
   CloudUploadIcon,
   Delete02Icon,
   Files01Icon,
-  FilterIcon,
   FloppyDiskIcon,
   Loading03Icon,
   MoreVerticalIcon,
@@ -31,8 +29,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
+import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
-import { FilterPanel } from "../components/FilterPanel";
+import { FilterBar, FilterMenuButton } from "../components/FilterBar";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
 import { useAppHeaderSlot } from "../lib/app-header-slot";
@@ -40,10 +39,10 @@ import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
 import {
   buildFilterWhere,
+  createFilterDraft,
   decodeFilterParam,
   draftFromConditions,
   encodeFilterParam,
-  filterChips,
 } from "../lib/item-filters";
 import {
   itemsQueryKey,
@@ -317,7 +316,6 @@ export function FilesPage() {
   const [activeSearch, setActiveSearch] = useState("");
   const [activeWhere, setActiveWhere] = useState<QueryCondition[]>(initialWhere);
   const [filterDraft, setFilterDraft] = useState(() => draftFromConditions(initialWhere));
-  const [showFilters, setShowFilters] = useState(false);
   const searchTimer = useRef<number | undefined>(undefined);
   useMountEffect(() => () => window.clearTimeout(searchTimer.current));
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -369,15 +367,22 @@ export function FilesPage() {
   const [seededFilter, setSeededFilter] = useState(filterKey);
   if (filterKey !== seededFilter) {
     setSeededFilter(filterKey);
+    // Reseed the draft only when the applied conditions actually diverge from
+    // it — self-initiated FilterBar commits round-trip through here and must
+    // keep their row ids (an open chip popover is keyed on them).
     if (viewId) {
       if (view) {
         setActiveWhere([...view.conditions]);
-        setFilterDraft(draftFromConditions(view.conditions));
+        if (!sameConditions(buildFilterWhere(filterDraft), view.conditions)) {
+          setFilterDraft(draftFromConditions(view.conditions));
+        }
       }
     } else {
       const where = decodeFilterParam(searchParams.get("filter"));
       setActiveWhere(where);
-      setFilterDraft(draftFromConditions(where));
+      if (!sameConditions(buildFilterWhere(filterDraft), where)) {
+        setFilterDraft(draftFromConditions(where));
+      }
     }
   }
 
@@ -451,9 +456,9 @@ export function FilesPage() {
 
   const selectMode = Object.values(rowSelection).some(Boolean);
   const filtered = activeSearch.trim().length > 0 || activeWhere.length > 0;
-
-  const appliedDraft = useMemo(() => draftFromConditions(activeWhere), [activeWhere]);
-  const appliedChips = useMemo(() => filterChips(appliedDraft), [appliedDraft]);
+  const draftActive =
+    filterDraft.kinds.length > 0 || filterDraft.size !== "any" || filterDraft.rows.length > 0;
+  const showFilterRow = Boolean(viewId) || filtered || draftActive;
 
   const uploadStamp = useMemo(() => uploadStampFrom(activeWhere), [activeWhere]);
   const uploadStampEntries = Object.entries(uploadStamp);
@@ -515,7 +520,6 @@ export function FilesPage() {
       setRowSelection({});
       if (viewId) {
         setActiveWhere(where);
-        setFilterDraft(draftFromConditions(where));
       } else {
         setSearchParams(
           (prev) => {
@@ -538,7 +542,9 @@ export function FilesPage() {
       const kept = activeWhere.filter(
         (c) => !(c.key === key && (c.op === "eq" || c.op === "exists")),
       );
-      applyWhere([...kept, condition]);
+      const next = [...kept, condition];
+      setFilterDraft(draftFromConditions(next));
+      applyWhere(next);
     },
     [activeWhere, applyWhere],
   );
@@ -609,6 +615,7 @@ export function FilesPage() {
     window.clearTimeout(searchTimer.current);
     setSearch("");
     setActiveSearch("");
+    setFilterDraft(createFilterDraft());
     applyWhere([]);
   };
 
@@ -775,39 +782,12 @@ export function FilesPage() {
                 onChange={onSearchChange}
               />
             </div>
-            <Button variant="outline" onClick={() => setShowFilters((v) => !v)}>
-              <HugeiconsIcon icon={FilterIcon} data-icon="inline-start" />
-              Filters
-              {appliedChips.length > 0 && <Badge className="ml-1">{appliedChips.length}</Badge>}
-            </Button>
             <div className="flex items-center gap-3 sm:ml-auto">
-              {viewId ? (
-                <>
-                  {viewEdited && (
-                    <>
-                      <Badge variant="secondary">Edited</Badge>
-                      <Button variant="ghost" onClick={discardViewEdits}>
-                        Discard
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={saveViewEdits}
-                        disabled={updateViewMutation.isPending}
-                      >
-                        <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
-                        Save
-                      </Button>
-                    </>
-                  )}
-                </>
-              ) : (
-                filtered && (
-                  <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
-                    <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
-                    Save as view
-                  </Button>
-                )
-              )}
+              <FilterMenuButton
+                draft={filterDraft}
+                onDraftChange={setFilterDraft}
+                onApply={applyWhere}
+              />
               <Button onClick={() => uploadInputRef.current?.click()}>
                 <HugeiconsIcon icon={Upload01Icon} data-icon="inline-start" />
                 Upload
@@ -816,45 +796,57 @@ export function FilesPage() {
           </>
         )}
       </div>
-      {!selectMode && (appliedChips.length > 0 || uploadStampEntries.length > 0) && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
-          {appliedChips.map((chip) => (
-            <Badge key={chip.id} variant="secondary" className="gap-1 pr-1">
-              <span className="truncate">{chip.label}</span>
-              <button
-                type="button"
-                aria-label={`Remove filter ${chip.label}`}
-                className="flex size-4 items-center justify-center rounded-sm hover:bg-foreground/10"
-                onClick={() => applyWhere(buildFilterWhere(chip.remove(appliedDraft)))}
-              >
-                <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-              </button>
-            </Badge>
-          ))}
-          {appliedChips.length > 0 && (
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearFilters}>
-              Clear all
+      {!selectMode && showFilterRow && (
+        <div className="mx-3 mb-2 flex shrink-0 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5">
+          <FilterBar
+            draft={filterDraft}
+            onDraftChange={setFilterDraft}
+            onApply={applyWhere}
+            onClear={clearFilters}
+          />
+          <div className="ml-auto flex items-center gap-1.5">
+            {filtered && <ApiSnippetsPopover search={activeSearch} where={activeWhere} />}
+            {viewId ? (
+              viewEdited && (
+                <>
+                  <Badge variant="secondary">Edited</Badge>
+                  <Button variant="ghost" size="sm" onClick={discardViewEdits}>
+                    Discard
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={saveViewEdits}
+                    disabled={updateViewMutation.isPending}
+                  >
+                    <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+                    Save
+                  </Button>
+                </>
+              )
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => setSaveViewOpen(true)}>
+                <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+                Save as view
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={openShare}>
+              <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
+              Share
             </Button>
-          )}
-          {uploadStampEntries.length > 0 && (
-            <span className="ml-1 text-xs text-muted-foreground">
-              New uploads will be tagged{" "}
-              <span className="font-medium text-foreground">
-                {uploadStampEntries.map(([k, v]) => `${k}:${formatPropertyValue(v)}`).join(", ")}
-              </span>
-            </span>
-          )}
+          </div>
         </div>
       )}
-      <FilterPanel
-        open={showFilters}
-        search={activeSearch}
-        draft={filterDraft}
-        onDraftChange={setFilterDraft}
-        onApply={applyWhere}
-        onClear={clearFilters}
-        onClose={() => setShowFilters(false)}
-      />
+      {!selectMode && uploadStampEntries.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
+          <span className="text-xs text-muted-foreground">
+            New uploads will be tagged{" "}
+            <span className="font-medium text-foreground">
+              {uploadStampEntries.map(([k, v]) => `${k}:${formatPropertyValue(v)}`).join(", ")}
+            </span>
+          </span>
+        </div>
+      )}
       <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto">
         {!loading && rows.length === 0 ? (
           <Empty className="py-16">
@@ -949,14 +941,6 @@ export function FilesPage() {
           <HugeiconsIcon icon={Files01Icon} className="size-6 shrink-0" />
           All
         </span>
-      )}
-      {!selectMode && (viewId || filtered) && (
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" onClick={openShare}>
-            <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
-            Share
-          </Button>
-        </div>
       )}
     </>
   );
