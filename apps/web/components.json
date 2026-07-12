@@ -20,7 +20,7 @@
     "hooks": "@/hooks"
   },
   "menuColor": "default",
-  "menuAccent": "bold",
+  "menuAccent": "subtle",
   "registries": {
     "@extend": "https://www.extend.ai/ui/r/{name}.json"
   }
