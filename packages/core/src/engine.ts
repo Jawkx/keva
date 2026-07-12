@@ -357,6 +357,14 @@ export const makeKevaEngine = (principal: Principal) => ({
       return { values: yield* metadata.propertyValues(principal.tenantId, key) };
     }),
 
+  propertySummary: () =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "summarize properties");
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      return { entries: yield* metadata.propertySummary(principal.tenantId) };
+    }),
+
   delete: (id: string) =>
     Effect.gen(function* () {
       yield* forbidShare(principal, "delete items");

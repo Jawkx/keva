@@ -4,6 +4,7 @@ import {
   Internal,
   itemMatchesCondition,
   type ItemEvent,
+  type PropertyKind,
   type PropertyScalar,
   type PropertyValue,
   type KevaItem,
@@ -211,6 +212,39 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         return [...seen.values()]
           .sort((a, b) => String(a).localeCompare(String(b)))
           .slice(0, SUGGESTION_VALUE_LIMIT);
+      }),
+    propertySummary: (tenantId) =>
+      Effect.sync(() => {
+        const entries = new Map<
+          string,
+          { kinds: Set<PropertyKind>; values: Map<string, PropertyScalar> }
+        >();
+        for (const item of items.values()) {
+          if (item.tenantId !== tenantId || item.status !== "ready") continue;
+          for (const [key, value] of Object.entries(item.properties)) {
+            let entry = entries.get(key);
+            if (!entry) {
+              entry = { kinds: new Set(), values: new Map() };
+              entries.set(key, entry);
+            }
+            if (value === null) entry.kinds.add("tag");
+            else if (Array.isArray(value)) entry.kinds.add("array");
+            else if (isScalar(value)) {
+              entry.kinds.add(typeof value as "string" | "number" | "boolean");
+              entry.values.set(JSON.stringify(value), value);
+            }
+          }
+        }
+        return [...entries.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .slice(0, SUGGESTION_KEY_LIMIT)
+          .map(([key, entry]) => ({
+            key,
+            kinds: [...entry.kinds].sort(),
+            values: [...entry.values.values()]
+              .sort((a, b) => String(a).localeCompare(String(b)))
+              .slice(0, SUGGESTION_VALUE_LIMIT),
+          }));
       }),
     listByStatus: (status, limit, olderThan) =>
       Effect.sync(() =>

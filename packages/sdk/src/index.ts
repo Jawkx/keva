@@ -12,6 +12,7 @@ import {
   KevaError,
   KevaItem,
   PropertyKeysResult,
+  PropertySummaryResult,
   PropertyValuesResult,
   Query,
   QueryResult,
@@ -23,7 +24,9 @@ import {
   UpdateView,
   UsageResult,
   ViewRecord,
+  type PropertyKind as PropertyKindType,
   type PropertyScalar as PropertyScalarType,
+  type PropertySummary as PropertySummaryType,
   type ItemPatch as ItemPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
   type CreateShareGrant as CreateShareGrantType,
@@ -63,7 +66,9 @@ export type {
   QueryType as Query,
   QueryResultType as QueryResult,
   DownloadResultType as DownloadResult,
+  PropertyKindType as PropertyKind,
   PropertyScalarType as PropertyScalar,
+  PropertySummaryType as PropertySummary,
   ShareGrantRecordType as ShareGrantRecord,
   ShareSelfType as ShareSelf,
   SharedItemType as SharedItem,
@@ -286,6 +291,11 @@ export class KevaClient {
       PropertyValuesResult,
     );
     return [...values];
+  }
+
+  async propertySummary(): Promise<PropertySummaryType[]> {
+    const { entries } = await this.#request("GET", "/properties/summary", PropertySummaryResult);
+    return [...entries];
   }
 
   async delete(id: string): Promise<void> {

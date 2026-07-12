@@ -8,6 +8,7 @@ import {
   type ItemEventPayload,
   type KevaError,
   type KevaItem,
+  type PropertyKind,
   type PropertyScalar,
   type QueryCondition,
   type QueryOrder,
@@ -426,6 +427,34 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         limit ${SUGGESTION_VALUE_LIMIT}
       `;
       return rows.map((row) => row.value);
+    }),
+  propertySummary: (tenantId) =>
+    attempt(async () => {
+      // jsonb 'null' surfaces as the product kind "tag" (bare membership tag).
+      const rows = await sql<
+        { key: string; kinds: PropertyKind[]; values: PropertyScalar[] | null }[]
+      >`
+        with kv as (
+          select k.key as key,
+                 jsonb_typeof(properties -> k.key) as kind,
+                 properties -> k.key as value
+          from items, lateral jsonb_object_keys(properties) as k(key)
+          where tenant_id = ${tenantId} and status = 'ready'
+        )
+        select key,
+               array_agg(distinct case when kind = 'null' then 'tag' else kind end) as kinds,
+               jsonb_agg(distinct value order by value)
+                 filter (where kind in ('string', 'number', 'boolean')) as values
+        from kv
+        group by key
+        order by key
+        limit ${SUGGESTION_KEY_LIMIT}
+      `;
+      return rows.map((row) => ({
+        key: row.key,
+        kinds: row.kinds,
+        values: (row.values ?? []).slice(0, SUGGESTION_VALUE_LIMIT),
+      }));
     }),
   listByStatus: (status, limit, olderThan) =>
     attempt(async () => {
