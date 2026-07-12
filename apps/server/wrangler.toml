@@ -3,11 +3,14 @@ main = "src/worker.ts"
 compatibility_date = "2026-06-20"
 compatibility_flags = ["nodejs_compat"]
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/mcp", "/mcp/*", "/.well-known/*", "/health", "/__dev/*"]
+run_worker_first = ["/api/*", "/mcp", "/mcp/*", "/.well-known/*", "/health", "/ready", "/__dev/*"]
 
 [env.staging]
 name = "keva-staging"
@@ -17,6 +20,7 @@ KEVA_BASE_URL = "https://staging.usekeva.com"
 BETTER_AUTH_URL = "https://staging.usekeva.com"
 KEVA_TRUSTED_ORIGINS = "https://staging.usekeva.com"
 KEVA_TENANT_ID = "staging"
+KEVA_RUNTIME_MODE = "persistent"
 S3_ENDPOINT = "https://90203c49970ccbafedc99866c91c1b9f.r2.cloudflarestorage.com"
 S3_REGION = "auto"
 S3_BUCKET = "keva-staging"

@@ -8,6 +8,20 @@
       "when": 1783776861334,
       "tag": "0000_misty_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783872600000,
+      "tag": "0001_items_status_created_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783873440000,
+      "tag": "0002_admin_quota_audit",
+      "breakpoints": true
     }
   ]
 }

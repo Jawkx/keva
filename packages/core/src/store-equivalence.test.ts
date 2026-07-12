@@ -282,6 +282,29 @@ const seedAndSourceUsage = async (store: MetadataStoreService) => {
 
 const EXPECTED_SOURCE_USAGE = { count: 2, bytes: 300 };
 
+const patchAtPropertyLimit = async (store: MetadataStoreService) => {
+  const tenant = crypto.randomUUID();
+  const id = crypto.randomUUID();
+  const timestamp = "2026-01-01T00:00:00.000Z";
+  await Effect.runPromise(store.insert(orderedItem(tenant, id, "limit.txt", timestamp)));
+  const properties = Object.fromEntries(
+    Array.from({ length: 256 }, (_, index) => [`key-${index}`, index]),
+  );
+  await Effect.runPromise(
+    store.patch(tenant, id, { fields: {}, set: properties, unset: [] }, timestamp),
+  );
+  const rejected = await Effect.runPromise(
+    Effect.either(
+      store.patch(tenant, id, { fields: {}, set: { overflow: true }, unset: [] }, timestamp),
+    ),
+  );
+  const item = await Effect.runPromise(store.get(tenant, id));
+  return {
+    rejected: rejected._tag === "Left" ? rejected.left._tag : null,
+    properties: item?.properties,
+  };
+};
+
 const seedAndListEvents = async (store: MetadataStoreService) => {
   const tenant = crypto.randomUUID();
   const other = crypto.randomUUID();
@@ -360,6 +383,15 @@ describe("store query equivalence", () => {
     expect(usage).toEqual(EXPECTED_SOURCE_USAGE);
   });
 
+  it("the in-memory store rejects a committed patch over the canonical property limit", async () => {
+    await expect(patchAtPropertyLimit(makeMemoryMetadataStore())).resolves.toMatchObject({
+      rejected: "QuotaExceeded",
+      properties: Object.fromEntries(
+        Array.from({ length: 256 }, (_, index) => [`key-${index}`, index]),
+      ),
+    });
+  });
+
   it("the in-memory store lists item events newest-first with keyset pagination", async () => {
     const { events, pageCursors } = await seedAndListEvents(makeMemoryMetadataStore());
     expect(events.map((event) => event.id.slice(-2))).toEqual(["34", "33", "32", "31"]);
@@ -414,6 +446,14 @@ describe("store query equivalence", () => {
       const pg = await seedAndSourceUsage(makePostgresMetadataStore(sql));
       expect(pg).toEqual(memory);
       expect(pg).toEqual(EXPECTED_SOURCE_USAGE);
+    });
+
+    it("matches memory when a patch exceeds the canonical property limit", async () => {
+      const memory = await patchAtPropertyLimit(makeMemoryMetadataStore());
+      const pg = await patchAtPropertyLimit(makePostgresMetadataStore(sql));
+      expect(pg).toEqual(memory);
+      expect(pg.rejected).toBe("QuotaExceeded");
+      expect(Object.keys(pg.properties ?? {})).toHaveLength(256);
     });
 
     it("matches memory pagination for explicit created-time orders", async () => {

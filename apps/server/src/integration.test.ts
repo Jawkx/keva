@@ -57,7 +57,7 @@ describe("server integration — HTTP roundtrip", () => {
 
     const uploaded = await loopback(app, initiated.uploadUrl, {
       method: "PUT",
-      headers: initiated.headers,
+      headers: { ...auth, ...initiated.headers },
       body: bytes,
     });
     expect(uploaded.status).toBe(200);
@@ -136,7 +136,7 @@ describe("server integration — HTTP roundtrip", () => {
     };
     await loopback(app, initiated.uploadUrl, {
       method: "PUT",
-      headers: initiated.headers,
+      headers: { ...auth, ...initiated.headers },
       body: bytes,
     });
     await app.request(`/api/items/${initiated.item.id}/confirm`, {

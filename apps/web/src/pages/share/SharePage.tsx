@@ -9,6 +9,9 @@ import {
 } from "@tanstack/react-query";
 import { isShareToken, ShareClient } from "@keva/sdk";
 import { isShareGone } from "../../lib/errors";
+import { shareSelfQueryKey } from "../../lib/items-cache";
+import { revokeAllObjectUrls } from "../../lib/object-url-cache";
+import { useMountEffect } from "../../lib/useMountEffect";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { ShareContextProvider } from "./share-context";
 import { ShareFileDetail } from "./ShareFileDetail";
@@ -90,7 +93,7 @@ function ShareReadView({ canWrite }: { canWrite: boolean }) {
 }
 
 function ShareBody({ client, onGone }: { client: ShareClient; onGone: () => void }) {
-  const selfQuery = useQuery({ queryKey: ["share-self"], queryFn: () => client.self() });
+  const selfQuery = useQuery({ queryKey: shareSelfQueryKey, queryFn: () => client.self() });
 
   if (selfQuery.isPending) {
     return (
@@ -126,9 +129,7 @@ function ShareBody({ client, onGone }: { client: ShareClient; onGone: () => void
 // runs its own nested QueryClient so a revoked/expired token surfaces as a
 // friendly "link unavailable" state instead of the app's global login redirect,
 // and so its cache never collides with an owner's own session cache.
-export function SharePage() {
-  const { token = "" } = useParams<{ token: string }>();
-  const valid = isShareToken(token);
+function ShareSession({ token }: { token: string }) {
   const [linkDead, setLinkDead] = useState(false);
   const client = useMemo(() => new ShareClient({ baseUrl: "/api", shareToken: token }), [token]);
   const [queryClient] = useState(() => {
@@ -144,12 +145,22 @@ export function SharePage() {
       },
     });
   });
+  useMountEffect(() => () => {
+    queryClient.clear();
+    revokeAllObjectUrls();
+  });
 
-  if (!valid || linkDead) return <ShareUnavailable />;
+  if (linkDead) return <ShareUnavailable />;
 
   return (
     <QueryClientProvider client={queryClient}>
       <ShareBody client={client} onGone={() => setLinkDead(true)} />
     </QueryClientProvider>
   );
+}
+
+export function SharePage() {
+  const { token = "" } = useParams<{ token: string }>();
+  if (!isShareToken(token)) return <ShareUnavailable />;
+  return <ShareSession key={token} token={token} />;
 }

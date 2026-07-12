@@ -54,10 +54,12 @@ const editTypeOf = (value: PropertyValue): ScalarType => {
   return type === "array" ? "string" : type;
 };
 
-const buildValue = (type: ScalarType, draft: string): PropertyValue => {
-  if ((type === "string" || type === "number") && draft.trim() === "") return null;
-  return coerceScalar(type, draft);
-};
+const buildValue = (type: ScalarType, draft: string) =>
+  type === "string" && draft.trim() === ""
+    ? ({ ok: true, value: null } as const)
+    : type === "number" && draft.trim() === ""
+      ? ({ ok: false, error: "Enter a number" } as const)
+      : coerceScalar(type, draft);
 
 const TYPE_OPTS: { type: ScalarType; label: string; icon: IconSvgElement }[] = [
   { type: "null", label: "Bare tag", icon: Tag01Icon },
@@ -73,7 +75,7 @@ const GHOST_INPUT =
 interface PropertiesEditorProps {
   properties: Properties;
   systemRows: readonly SystemField[];
-  onPatch: (set: Record<string, PropertyValue>, unset: string[]) => Promise<void>;
+  onPatch: (set: Record<string, PropertyValue>, unset: string[]) => Promise<Properties>;
 }
 
 interface FieldProps {
@@ -82,8 +84,8 @@ interface FieldProps {
   busy: boolean;
   knownKeys: readonly string[];
   knownSet: ReadonlySet<string>;
-  onSet: (key: string, value: PropertyValue) => Promise<void>;
-  onUnset: (key: string) => Promise<void>;
+  onSet: (key: string, value: PropertyValue) => Promise<Properties>;
+  onUnset: (key: string) => Promise<Properties>;
 }
 
 export function PropertiesEditor({ properties, systemRows, onPatch }: PropertiesEditorProps) {
@@ -95,7 +97,7 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
   const commit = async (set: Record<string, PropertyValue>, unset: string[]) => {
     setBusy(true);
     try {
-      await onPatch(set, unset);
+      return await onPatch(set, unset);
     } finally {
       setBusy(false);
     }
@@ -326,26 +328,56 @@ function CustomRow({
   value: PropertyValue;
   busy: boolean;
   known: boolean;
-  onCommit: (value: PropertyValue) => Promise<void>;
+  onCommit: (value: PropertyValue) => Promise<Properties>;
   onRemove: () => void;
 }) {
   const [type, setType] = useState<ScalarType>(editTypeOf(value));
   const [draft, setDraft] = useState(scalarToInput(value));
+  const [inputError, setInputError] = useState<string | null>(null);
+  const [baseline, setBaseline] = useState(value);
   const valueSuggestions = usePropertyValues(propKey, known);
   const isArray = Array.isArray(value);
+  const baselineChanged = JSON.stringify(baseline) !== JSON.stringify(value);
+  const dirty = draft !== scalarToInput(baseline) || type !== editTypeOf(baseline);
+  const conflict = dirty && baselineChanged;
+  if (baselineChanged && !dirty) {
+    setBaseline(value);
+    setType(editTypeOf(value));
+    setDraft(scalarToInput(value));
+  }
 
   // Diff against the last value this row *sent*, not the `value` prop — the
   // prop lags the patch response, so rapid double-triggers (Enter then blur)
   // would pass a prop-based guard and double-send the same patch.
   const lastCommitted = useRef(value);
 
-  const commitScalar = (next: PropertyValue) => {
-    if (next === lastCommitted.current) return;
+  const commitScalar = (next: ReturnType<typeof buildValue>) => {
+    if (!next.ok) {
+      setInputError(next.error);
+      return;
+    }
+    setInputError(null);
+    if (next.value === lastCommitted.current) return;
     const rollback = lastCommitted.current;
-    lastCommitted.current = next;
-    onCommit(next).catch(() => {
-      lastCommitted.current = rollback;
-    });
+    lastCommitted.current = next.value;
+    onCommit(next.value)
+      .then((updated) => {
+        const authoritative = updated[propKey];
+        if (authoritative === undefined) return;
+        lastCommitted.current = authoritative;
+        setBaseline(authoritative);
+        setType(editTypeOf(authoritative));
+        setDraft(scalarToInput(authoritative));
+      })
+      .catch(() => {
+        lastCommitted.current = rollback;
+      });
+  };
+
+  const overwrite = () => {
+    setBaseline(value);
+    lastCommitted.current = value;
+    commitScalar(buildValue(type, draft));
   };
 
   return (
@@ -366,7 +398,16 @@ function CustomRow({
       }
       label={propKey}
       mono
-      action={<RemoveButton label={propKey} busy={busy} onClick={onRemove} />}
+      action={
+        <>
+          {conflict && (
+            <Button variant="ghost" size="xs" disabled={busy} onClick={overwrite}>
+              Keep mine
+            </Button>
+          )}
+          <RemoveButton label={propKey} busy={busy} onClick={onRemove} />
+        </>
+      }
     >
       {isArray ? (
         <span className="truncate font-mono text-muted-foreground" title={value.join(" | ")}>
@@ -382,6 +423,8 @@ function CustomRow({
           onCommit={(d) => commitScalar(buildValue(type, d))}
         />
       )}
+      {inputError && <span className="text-xs text-destructive">{inputError}</span>}
+      {conflict && <span className="text-xs text-destructive">Changed elsewhere.</span>}
     </PropRow>
   );
 }
@@ -407,11 +450,13 @@ function AddRow({
   const keyError = trimmedKey ? validateKey(trimmedKey) : null;
   const duplicate = appliedKeys.has(trimmedKey);
   const valueSuggestions = usePropertyValues(trimmedKey, knownSet.has(trimmedKey));
-  const canAdd = trimmedKey !== "" && !keyError && !duplicate;
+  const value = buildValue(type, draft);
+  const canAdd = trimmedKey !== "" && !keyError && !duplicate && value.ok;
 
   const submit = () => {
     if (!canAdd) return;
-    onAdd(trimmedKey, buildValue(type, draft));
+    if (!value.ok) return;
+    onAdd(trimmedKey, value.value);
     setKey("");
     setType("string");
     setDraft("");
@@ -438,7 +483,10 @@ function AddRow({
         <button
           type="button"
           aria-label="Add property"
-          title={keyError ?? (duplicate ? "That key already exists" : "Add property")}
+          title={
+            keyError ??
+            (duplicate ? "That key already exists" : value.ok ? "Add property" : value.error)
+          }
           disabled={busy || !canAdd}
           className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-40 [&>svg]:size-4"
           onClick={submit}
@@ -455,6 +503,7 @@ function AddRow({
         onDraft={setDraft}
         onEnter={submit}
       />
+      {!value.ok && <span className="text-xs text-destructive">{value.error}</span>}
     </PropRow>
   );
 }
@@ -506,23 +555,29 @@ function JsonView({
   busy,
   commit,
 }: FieldProps & {
-  commit: (set: Record<string, PropertyValue>, unset: string[]) => Promise<void>;
+  commit: (set: Record<string, PropertyValue>, unset: string[]) => Promise<Properties>;
 }) {
   const baseline = prettyJson(properties);
-  const [text, setText] = useState(baseline);
+  const [draft, setDraft] = useState({ baseline, text: baseline });
+  const dirty = draft.text !== draft.baseline;
+  const conflict = dirty && draft.baseline !== baseline;
+  if (!dirty && draft.baseline !== baseline) {
+    setDraft({ baseline, text: baseline });
+  }
 
-  const parsed = useMemo(() => parsePropertiesJson(text), [text]);
+  const parsed = useMemo(() => parsePropertiesJson(draft.text), [draft.text]);
   const diff = useMemo(
     () => (parsed.ok ? diffProperties(properties, parsed.value) : null),
     [parsed, properties],
   );
   const changeCount = diff ? Object.keys(diff.set).length + diff.unset.length : 0;
-  const modified = text !== baseline;
+  const modified = draft.text !== baseline;
 
   const save = async () => {
-    if (!parsed.ok || !diff || changeCount === 0) return;
-    await commit(diff.set, diff.unset);
-    setText(prettyJson(parsed.value));
+    if (!parsed.ok || !diff || changeCount === 0 || conflict) return;
+    const updated = await commit(diff.set, diff.unset);
+    const nextBaseline = prettyJson(updated);
+    setDraft({ baseline: nextBaseline, text: nextBaseline });
   };
 
   return (
@@ -531,13 +586,18 @@ function JsonView({
       <Textarea
         spellCheck={false}
         autoComplete="off"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+        value={draft.text}
+        onChange={(e) => setDraft((current) => ({ ...current, text: e.target.value }))}
         aria-invalid={!parsed.ok}
         className="min-h-56 resize-y font-mono text-xs leading-relaxed"
       />
       <div className="flex items-center justify-between gap-3">
-        {!parsed.ok ? (
+        {conflict ? (
+          <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
+            <HugeiconsIcon icon={Alert02Icon} className="size-3.5 shrink-0" />
+            Server properties changed while you were editing.
+          </p>
+        ) : !parsed.ok ? (
           <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
             <HugeiconsIcon icon={Alert02Icon} className="size-3.5 shrink-0" />
             <span className="truncate" title={parsed.error}>
@@ -556,13 +616,23 @@ function JsonView({
             variant="ghost"
             size="sm"
             disabled={busy || !modified}
-            onClick={() => setText(baseline)}
+            onClick={() => setDraft({ baseline, text: baseline })}
           >
             Discard
           </Button>
+          {conflict && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => setDraft((current) => ({ ...current, baseline }))}
+            >
+              Keep mine
+            </Button>
+          )}
           <Button
             size="sm"
-            disabled={busy || !parsed.ok || changeCount === 0}
+            disabled={busy || conflict || !parsed.ok || changeCount === 0}
             onClick={() => void save()}
           >
             <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />

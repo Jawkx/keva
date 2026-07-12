@@ -3,7 +3,13 @@ import { createKevaMcpServer, type McpEngine } from "@keva/mcp";
 import {
   ItemId,
   ItemPatch,
+  DownloadResult,
+  KevaItem,
+  PropertyKeysResult,
+  PropertyValuesResult,
   Query,
+  QueryResult,
+  UsageResult,
   Internal,
   ValidationError,
   type KevaError,
@@ -65,38 +71,58 @@ const runEngine = async <A>(
   throw new Error(error.message);
 };
 
+const runValidated = <A, I>(
+  runtime: AppRuntime,
+  effect: Effect.Effect<A, KevaError, AppServices>,
+  schema: Schema.Schema<A, I, never>,
+): Promise<A> =>
+  runEngine(
+    runtime,
+    effect.pipe(
+      Effect.flatMap((value) =>
+        Schema.decodeUnknown(schema)(value).pipe(
+          Effect.mapError(() => new Internal({ message: "Invalid engine response" })),
+        ),
+      ),
+    ),
+  );
+
 const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => {
   const engine = makeKevaEngine(principal);
   return {
     queryItems: (input) =>
-      runEngine(
+      runValidated(
         runtime,
         Effect.gen(function* () {
           const query = yield* decode(Query, input);
           return yield* engine.query(query);
         }),
+        QueryResult,
       ),
     getItem: (id) =>
-      runEngine(
+      runValidated(
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
           return yield* engine.get(itemId);
         }),
+        KevaItem,
       ),
     getContentUrl: (id) =>
-      runEngine(
+      runValidated(
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
           return yield* engine.download(itemId);
         }),
+        DownloadResult,
       ),
-    getUsage: () => runEngine(runtime, engine.usage()),
-    listPropertyKeys: () => runEngine(runtime, engine.propertyKeys()),
-    listPropertyValues: ({ key }) => runEngine(runtime, engine.propertyValues(key)),
+    getUsage: () => runValidated(runtime, engine.usage(), UsageResult),
+    listPropertyKeys: () => runValidated(runtime, engine.propertyKeys(), PropertyKeysResult),
+    listPropertyValues: ({ key }) =>
+      runValidated(runtime, engine.propertyValues(key), PropertyValuesResult),
     setProperties: (input) =>
-      runEngine(
+      runValidated(
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, input.id);
@@ -106,6 +132,7 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
           });
           return yield* engine.patch(itemId, patch);
         }),
+        KevaItem,
       ),
     deleteItem: (id) =>
       runEngine(

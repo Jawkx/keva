@@ -6,37 +6,47 @@ describe("worker entry", () => {
     KEVA_STATIC_TOKEN: "static-token",
     KEVA_BASE_URL: "http://worker.test",
     KEVA_TENANT_ID: "tenant",
+    KEVA_RUNTIME_MODE: "persistent",
+    HYPERDRIVE: { connectionString: "postgres://worker.test/keva" },
+    S3_ENDPOINT: "https://storage.worker.test",
+    S3_ACCESS_KEY_ID: "access-key",
+    S3_SECRET_ACCESS_KEY: "secret-key",
+    S3_BUCKET: "keva",
   };
 
-  it("serves health and static-token data routes without Better Auth", async () => {
+  it("serves liveness only after persistent Worker configuration is complete", async () => {
     const health = await worker.fetch(new Request("http://worker.test/health"), env);
     expect(health.status).toBe(200);
-
-    const query = await worker.fetch(
-      new Request("http://worker.test/api/query", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer static-token",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ where: [] }),
-      }),
-      env,
-    );
-    expect(query.status).toBe(200);
-    expect(await query.json()).toMatchObject({ items: [] });
   });
 
-  it("fails closed when required Worker secrets are missing", async () => {
+  it("sets no-referrer for public share documents", async () => {
+    const response = await worker.fetch(new Request("http://worker.test/s/keva_sh_secret"), {
+      ASSETS: { fetch: async () => new Response("share") },
+    });
+    expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  });
+
+  it("rejects Worker local-memory mode", async () => {
     await expect(
-      worker.fetch(
-        new Request("http://worker.test/api/query", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ where: [] }),
-        }),
-        { KEVA_BASE_URL: "http://worker.test" },
-      ),
-    ).rejects.toThrow("KEVA_STATIC_TOKEN is required");
+      worker.fetch(new Request("http://worker.test/health"), {
+        KEVA_STATIC_TOKEN: "static-token",
+        KEVA_BASE_URL: "http://worker.test",
+        KEVA_RUNTIME_MODE: "local-memory",
+      }),
+    ).rejects.toThrow('KEVA_RUNTIME_MODE must be "persistent" for Worker deployments');
+  });
+
+  it("fails closed when a persistent Worker binding is missing", async () => {
+    await expect(
+      worker.fetch(new Request("http://worker.test/health"), {
+        KEVA_STATIC_TOKEN: "static-token",
+        KEVA_BASE_URL: "http://worker.test",
+        KEVA_RUNTIME_MODE: "persistent",
+        HYPERDRIVE: { connectionString: "postgres://worker.test/keva" },
+        S3_ENDPOINT: "https://storage.worker.test",
+        S3_ACCESS_KEY_ID: "access-key",
+        S3_BUCKET: "keva",
+      }),
+    ).rejects.toThrow("S3_SECRET_ACCESS_KEY is required");
   });
 });

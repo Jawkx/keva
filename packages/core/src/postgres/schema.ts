@@ -44,6 +44,7 @@ export const items = pgTable(
   (table) => [
     uniqueIndex("items_tenant_id_id_unique").on(table.tenantId, table.id),
     index("items_tenant_status_created_idx").on(table.tenantId, table.status, table.createdAt),
+    index("items_status_created_idx").on(table.status, table.createdAt),
     index("items_tenant_content_type_idx").on(table.tenantId, table.contentType),
     index("items_tenant_size_idx").on(table.tenantId, table.size),
     index("items_tenant_created_id_idx").on(table.tenantId, table.createdAt, table.id),

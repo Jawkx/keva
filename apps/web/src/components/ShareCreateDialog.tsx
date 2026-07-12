@@ -5,7 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { CreateShareGrant, PropertyValue, QueryCondition, ShareScope } from "@keva/schema";
 import { createShare, sharesQueryKey } from "../lib/shares";
-import { createView, viewsQueryKey } from "../lib/views";
+import { viewsQueryKey } from "../lib/views";
 import { describeFilter } from "../lib/item-filters";
 import { useApiError } from "../lib/useApiError";
 import {
@@ -119,17 +119,16 @@ export function ShareCreateDialog({
       grant: Omit<CreateShareGrant, "viewId">;
       conditions: readonly QueryCondition[];
     }) => {
-      let targetViewId = viewId;
-      if (!targetViewId) {
-        const view = await createView({ name: grant.name, conditions: [...where] });
-        targetViewId = view.id;
-        void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
-      }
-      return createShare({ ...grant, viewId: targetViewId });
+      return createShare(
+        viewId
+          ? { ...grant, viewId }
+          : { ...grant, view: { name: grant.name, conditions: [...where] } },
+      );
     },
     onSuccess: (result) => {
       setLink(`${window.location.origin}/s/${result.token}`);
       void queryClient.invalidateQueries({ queryKey: sharesQueryKey });
+      void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
     },
     onError: (err) => toast.error(handleError(err)),
   });
@@ -146,7 +145,9 @@ export function ShareCreateDialog({
       if (!key) continue;
       const keyError = validateKey(key);
       if (keyError) return { error: `“${key}” — ${keyError}` };
-      result[key] = coerceScalar(row.type, row.value);
+      const value = coerceScalar(row.type, row.value);
+      if (!value.ok) return { error: `“${key}” — ${value.error}` };
+      result[key] = value.value;
     }
     return result;
   };

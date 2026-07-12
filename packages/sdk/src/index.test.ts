@@ -96,7 +96,53 @@ describe("KevaClient", () => {
       ),
     ).resolves.toMatchObject({ id: item.id });
     expect(uploadBodies).toEqual([body]);
-    expect(uploadHeaders).toEqual([{ "content-type": "text/plain" }]);
+    expect(uploadHeaders).toEqual([{ "content-type": "text/plain", authorization: "Bearer test" }]);
+  });
+
+  it("resumes confirmation with the original upload session", async () => {
+    const calls: string[] = [];
+    let confirms = 0;
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async (input, init) => {
+        const url = String(input);
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (url.endsWith("/items") && init?.method === "POST") {
+          return Response.json({
+            item,
+            uploadUrl: "https://blob.invalid/upload",
+            expiresAt: "2099-01-01T00:15:00.000Z",
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (url === "https://blob.invalid/upload") return new Response(null, { status: 200 });
+        if (url.endsWith(`/items/${item.id}/confirm`)) {
+          confirms++;
+          return confirms === 1
+            ? Response.json({ _tag: "Internal", message: "Lost response" }, { status: 500 })
+            : Response.json(item);
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+
+    const session = await client.startUpload({
+      name: "hello.txt",
+      contentType: "text/plain",
+      size: 5,
+      source: "upload",
+      properties: {},
+    });
+    await client.putUpload(session, new Blob(["hello"]));
+    await expect(client.completeUpload(session)).rejects.toMatchObject({ _tag: "Internal" });
+    await expect(client.completeUpload(session)).resolves.toMatchObject({ id: item.id });
+    expect(calls).toEqual([
+      "POST https://keva.invalid/api/items",
+      "PUT https://blob.invalid/upload",
+      `POST https://keva.invalid/api/items/${item.id}/confirm`,
+      `POST https://keva.invalid/api/items/${item.id}/confirm`,
+    ]);
   });
 
   it("returns download URLs without fetching blob bytes", async () => {
@@ -190,7 +236,19 @@ describe("KevaClient", () => {
         const url = String(input);
         seen.push({ path: url, body: init?.body });
         if (url.endsWith("/shares") && init?.method === "POST") {
-          return Response.json({ token: "keva_sh_abc_def", record });
+          return Response.json({
+            token: "keva_sh_abc_def",
+            record,
+            view: {
+              id: "view1",
+              tenantId: "tenant",
+              name: "Alpha",
+              icon: null,
+              conditions: record.conditions,
+              createdAt: record.createdAt,
+              updatedAt: record.createdAt,
+            },
+          });
         }
         if (url.endsWith("/shares/grant1") && init?.method === "DELETE") {
           return Response.json({ revoked: true });

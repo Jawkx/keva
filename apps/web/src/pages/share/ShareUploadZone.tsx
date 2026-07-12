@@ -8,8 +8,10 @@ import {
   Upload01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { isUploadSessionExpired, type ShareUploadSession } from "@keva/sdk";
 import { errorMessage, isShareGone, type TaggedError } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
+import { cacheConfirmedShareUpload } from "../../lib/items-cache";
 import { useShare } from "./share-context";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,6 +20,8 @@ interface UploadState {
   readonly id: string;
   readonly file: File;
   readonly status: "uploading" | "done" | "error";
+  readonly session?: ShareUploadSession | undefined;
+  readonly phase: "put" | "confirm";
   readonly error?: string;
 }
 
@@ -37,14 +41,29 @@ export interface ShareUpload {
 export function useShareUpload(): ShareUpload {
   const { client, self, onGone } = useShare();
   const queryClient = useQueryClient();
-  const canRead = self.scopes.includes("read");
   const [uploads, setUploads] = useState<UploadState[]>([]);
 
   const runUpload = async (entry: UploadState) => {
+    let session = entry.session;
+    let phase = entry.phase;
     try {
-      await client.uploadFile(entry.file);
+      if (phase === "put" && session && isUploadSessionExpired(session)) session = undefined;
+      if (!session) {
+        phase = "put";
+        session = await client.startUpload(entry.file);
+        setUploads((prev) =>
+          prev.map((upload) =>
+            upload.id === entry.id ? { ...upload, session, phase, status: "uploading" } : upload,
+          ),
+        );
+      }
+      if (phase === "put") {
+        await client.putUpload(session, entry.file);
+        phase = "confirm";
+      }
+      await client.completeUpload(session);
       setUploads((prev) => prev.map((u) => (u.id === entry.id ? { ...u, status: "done" } : u)));
-      if (canRead) void queryClient.invalidateQueries({ queryKey: ["share-items"] });
+      cacheConfirmedShareUpload(queryClient);
     } catch (err) {
       // A revoked/expired link mid-upload takes down the whole page.
       if (isShareGone(err)) {
@@ -55,7 +74,11 @@ export function useShareUpload(): ShareUpload {
         ? "This share's upload limit has been reached."
         : errorMessage(err);
       setUploads((prev) =>
-        prev.map((u) => (u.id === entry.id ? { ...u, status: "error", error: message } : u)),
+        prev.map((upload) =>
+          upload.id === entry.id
+            ? { ...upload, session, phase, status: "error", error: message }
+            : upload,
+        ),
       );
     }
   };
@@ -66,13 +89,24 @@ export function useShareUpload(): ShareUpload {
       id: `up:${crypto.randomUUID()}`,
       file,
       status: "uploading",
+      phase: "put",
     }));
     setUploads((prev) => [...entries, ...prev]);
     for (const entry of entries) void runUpload(entry);
   };
 
   const retry = (entry: UploadState) => {
-    const reset: UploadState = { id: entry.id, file: entry.file, status: "uploading" };
+    const session =
+      entry.phase === "put" && entry.session && isUploadSessionExpired(entry.session)
+        ? undefined
+        : entry.session;
+    const { error: _error, ...resetBase } = entry;
+    const reset: UploadState = {
+      ...resetBase,
+      session,
+      phase: session ? entry.phase : "put",
+      status: "uploading",
+    };
     setUploads((prev) => prev.map((u) => (u.id === entry.id ? reset : u)));
     void runUpload(reset);
   };

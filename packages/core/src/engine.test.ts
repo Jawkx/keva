@@ -1,4 +1,4 @@
-import type { Principal } from "@keva/schema";
+import type { Principal, SharePrincipal } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { makeKevaEngine, reapPending, sweepDeleting } from "./engine.js";
@@ -14,9 +14,9 @@ const principal = (tenantId: string): Principal => ({
 type ShareOptions = {
   readonly scopes?: Principal["scopes"];
   readonly grantId?: string;
-  readonly conditions?: NonNullable<Principal["share"]>["conditions"];
-  readonly writeStamp?: NonNullable<Principal["share"]>["writeStamp"];
-  readonly limits?: NonNullable<Principal["share"]>["limits"];
+  readonly conditions?: SharePrincipal["share"]["conditions"];
+  readonly writeStamp?: SharePrincipal["share"]["writeStamp"];
+  readonly limits?: SharePrincipal["share"]["limits"];
 };
 
 const sharePrincipal = (tenantId: string, options: ShareOptions = {}): Principal => ({

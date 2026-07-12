@@ -5,8 +5,8 @@ import {
   type UpdateView,
   type ViewRecord,
 } from "@keva/schema";
-import { Context, Effect, Layer } from "effect";
-import postgres, { type Sql } from "postgres";
+import { Context, Effect } from "effect";
+import { type Sql } from "postgres";
 import { randomTokenPart } from "./auth.js";
 
 export interface ViewStoreService {
@@ -105,7 +105,7 @@ export const makePostgresViewStore = (sql: Sql): ViewStoreService => ({
           update views set
             name = coalesce(${input.name ?? null}::text, name),
             icon = coalesce(${input.icon ?? null}::text, icon),
-            conditions = coalesce(${input.conditions ? sql.json(input.conditions) : null}::jsonb, conditions),
+            conditions = coalesce(${input.conditions ? JSON.stringify(input.conditions) : null}::jsonb, conditions),
             updated_at = now()
           where tenant_id = ${tenantId} and id = ${id}
           returning *
@@ -127,15 +127,6 @@ export const makePostgresViewStore = (sql: Sql): ViewStoreService => ({
       catch: storageError,
     }),
 });
-
-export const PostgresViewStoreLive = (url: string): Layer.Layer<ViewStore> =>
-  Layer.scoped(
-    ViewStore,
-    Effect.acquireRelease(
-      Effect.sync(() => postgres(url)),
-      (sql) => Effect.promise(() => sql.end({ timeout: 5 })),
-    ).pipe(Effect.map(makePostgresViewStore)),
-  );
 
 // No Postgres means view management is unreachable (it requires an admin
 // session, which needs a DB); every op surfaces a typed StorageUnavailable

@@ -42,7 +42,7 @@ const seedItem = async (
   const uploadUrl = new URL(initiated.uploadUrl);
   await app.request(`${uploadUrl.pathname}${uploadUrl.search}`, {
     method: "PUT",
-    headers: initiated.headers,
+    headers: { ...auth, ...initiated.headers },
     body: "x",
   });
   await app.request(`/api/items/${initiated.item.id}/confirm`, { method: "POST", headers: auth });
@@ -55,6 +55,20 @@ const seedItem = async (
 };
 
 describe("server API", () => {
+  it("blocks organization-management endpoints", async () => {
+    const app = createApp({ layer });
+    const response = await app.request("/api/auth/organization/create", { method: "POST" });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ _tag: "Forbidden" });
+  });
+
+  it("keeps liveness separate from dependency-aware readiness", async () => {
+    const app = createApp({ layer });
+
+    expect((await app.request("/health")).status).toBe(200);
+    expect((await app.request("/ready")).status).toBe(200);
+  });
+
   it("protects admin usage routes with the separate admin token", async () => {
     const adminUser = {
       id: "user-1",
@@ -129,7 +143,7 @@ describe("server API", () => {
     const uploadUrl = new URL(initiated.uploadUrl);
     const uploaded = await app.request(`${uploadUrl.pathname}${uploadUrl.search}`, {
       method: "PUT",
-      headers: initiated.headers,
+      headers: { ...auth, ...initiated.headers },
       body: "hello",
     });
     expect(uploaded.status).toBe(200);
@@ -154,6 +168,31 @@ describe("server API", () => {
     });
     expect(queried.status).toBe(200);
     expect(((await queried.json()) as { items: unknown[] }).items).toHaveLength(1);
+  });
+
+  it("rejects oversized proxy uploads before staging them", async () => {
+    const app = createApp({ layer });
+    const initiated = (await (
+      await app.request("/api/items", {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ name: "small.txt", contentType: "text/plain", size: 1 }),
+      })
+    ).json()) as { item: { id: string }; uploadUrl: string; headers: Record<string, string> };
+    const uploadUrl = new URL(initiated.uploadUrl);
+
+    const uploaded = await app.request(`${uploadUrl.pathname}${uploadUrl.search}`, {
+      method: "PUT",
+      headers: { ...auth, ...initiated.headers },
+      body: "too large",
+    });
+    expect(uploaded.status).toBe(400);
+
+    const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {
+      method: "POST",
+      headers: auth,
+    });
+    expect(confirmed.status).toBe(409);
   });
 
   it("serves distinct property key and value suggestions", async () => {

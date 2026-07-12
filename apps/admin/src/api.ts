@@ -1,14 +1,14 @@
-export interface AdminUserUsage {
-  readonly id: string;
-  readonly name: string;
-  readonly email: string;
-  readonly tenantId: string | null;
-  readonly usedBytes: number;
-  readonly quotaBytes: number | null;
-  readonly quotaSource: "default" | "custom" | "unlimited";
-}
+import { AdminUsersResult, UpdateAdminQuotaResult, type UpdateAdminQuota } from "@keva/schema";
+import { Schema } from "effect";
 
-const request = async <T>(token: string, path: string, init?: RequestInit): Promise<T> => {
+export type { AdminUserUsage } from "@keva/schema";
+
+const request = async <A, I>(
+  token: string,
+  path: string,
+  schema: Schema.Schema<A, I>,
+  init?: RequestInit,
+): Promise<A> => {
   const response = await fetch(path, {
     ...init,
     headers: {
@@ -17,23 +17,30 @@ const request = async <T>(token: string, path: string, init?: RequestInit): Prom
       ...init?.headers,
     },
   });
-  const body = (await response.json().catch(() => ({}))) as { message?: string };
-  if (!response.ok) throw new Error(body.message ?? `Request failed (${response.status})`);
-  return body as T;
+  const body: unknown = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message =
+      typeof body === "object" &&
+      body !== null &&
+      "message" in body &&
+      typeof body.message === "string"
+        ? body.message
+        : `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return Schema.decodeUnknownSync(schema)(body);
 };
 
-export const listUsers = (token: string, search = "") =>
-  request<{ users: ReadonlyArray<AdminUserUsage> }>(
+export const listUsers = (token: string, search = "", signal?: AbortSignal) =>
+  request(
     token,
     `/api/admin/users${search ? `?search=${encodeURIComponent(search)}` : ""}`,
+    AdminUsersResult,
+    signal ? { signal } : undefined,
   );
 
-export const updateQuota = (
-  token: string,
-  userId: string,
-  input: { readonly quotaBytes: number | null } | { readonly useDefault: true },
-) =>
-  request<{ user: AdminUserUsage }>(token, `/api/admin/users/${encodeURIComponent(userId)}/quota`, {
+export const updateQuota = (token: string, userId: string, input: UpdateAdminQuota) =>
+  request(token, `/api/admin/users/${encodeURIComponent(userId)}/quota`, UpdateAdminQuotaResult, {
     method: "PUT",
     body: JSON.stringify(input),
   });

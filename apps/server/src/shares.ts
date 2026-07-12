@@ -1,5 +1,10 @@
 import {
+  Conflict,
+  NotFound,
   StorageUnavailable,
+  ValidationError,
+  isPropertyKey,
+  propertiesMatchCondition,
   type CreateShareGrant,
   type CreateShareGrantResult,
   type Principal,
@@ -7,9 +12,11 @@ import {
   type QueryCondition,
   type ShareGrantRecord,
   type ShareScope,
+  type UpdateView,
+  type ViewRecord,
 } from "@keva/schema";
-import { Context, Effect, Layer } from "effect";
-import postgres, { type Sql } from "postgres";
+import { Context, Effect } from "effect";
+import { type Sql } from "postgres";
 import { type AuthStrategy, hashSecret, randomTokenPart, secureEqual } from "./auth.js";
 
 // Share tokens mirror API tokens (`keva_sk_…`): a public id and a secret,
@@ -27,7 +34,7 @@ export interface ShareGrantStoreService {
   readonly create: (
     tenantId: string,
     input: CreateShareGrant,
-  ) => Effect.Effect<CreateShareGrantResult, StorageUnavailable>;
+  ) => Effect.Effect<CreateShareGrantResult, StorageUnavailable | NotFound | ValidationError>;
   readonly list: (
     tenantId: string,
   ) => Effect.Effect<ReadonlyArray<ShareGrantRecord>, StorageUnavailable>;
@@ -36,6 +43,11 @@ export interface ShareGrantStoreService {
     id: string,
   ) => Effect.Effect<ShareGrantRecord | null, StorageUnavailable>;
   readonly revoke: (tenantId: string, id: string) => Effect.Effect<boolean, StorageUnavailable>;
+  readonly updateView: (
+    tenantId: string,
+    id: string,
+    input: UpdateView,
+  ) => Effect.Effect<ViewRecord | null, StorageUnavailable | Conflict>;
 }
 
 export class ShareGrantStore extends Context.Tag("@keva/server/ShareGrantStore")<
@@ -64,6 +76,16 @@ interface ShareRow {
   readonly last_used_at: Date | string | null;
 }
 
+interface ViewRow {
+  readonly id: string;
+  readonly tenant_id: string;
+  readonly name: string;
+  readonly icon: string | null;
+  readonly conditions: ReadonlyArray<QueryCondition>;
+  readonly created_at: Date | string;
+  readonly updated_at: Date | string;
+}
+
 const iso = (value: Date | string | null): string | null =>
   value === null
     ? null
@@ -90,6 +112,16 @@ const shareRecord = (row: ShareRow): ShareGrantRecord => ({
   lastUsedAt: iso(row.last_used_at),
 });
 
+const viewRecord = (row: ViewRow): ViewRecord => ({
+  id: row.id,
+  tenantId: row.tenant_id,
+  name: row.name,
+  icon: row.icon,
+  conditions: [...row.conditions],
+  createdAt: iso(row.created_at)!,
+  updatedAt: iso(row.updated_at)!,
+});
+
 const shareGrantPrincipal = (row: ShareRow): Principal => ({
   tenantId: row.tenant_id,
   scopes: [...row.scopes],
@@ -111,6 +143,38 @@ const shareGrantPrincipal = (row: ShareRow): Principal => ({
 // surface StorageUnavailable (-> 502) rather than a silent 401/500.
 const storageError = (): StorageUnavailable =>
   new StorageUnavailable({ message: "Share grant storage unavailable" });
+
+// postgres.js serializes a `.json()` value using the parameter type it resolves
+// for the placeholder. A plain `insert ... values` yields jsonb and an array
+// serializes fine, but inside a CTE insert or a coalesce() the type resolves to
+// unknown, postgres.js then infers a Postgres array from the JS value, and a
+// top-level array (scopes, conditions) throws at Bind. Pre-stringify and cast so
+// the wire value is always text -> jsonb.
+const jsonbParam = (value: unknown): string | null =>
+  value === undefined || value === null ? null : JSON.stringify(value);
+
+const writeGrantValidation = (
+  input: CreateShareGrant,
+  conditions: readonly QueryCondition[],
+): ValidationError | null => {
+  if (!input.scopes.includes("write")) return null;
+  if (!conditions.every((condition) => isPropertyKey(condition.key))) {
+    return new ValidationError({
+      message: "Write grants may only condition on plain property keys",
+    });
+  }
+  if (!conditions.every((condition) => propertiesMatchCondition(input.writeStamp!, condition))) {
+    return new ValidationError({ message: "writeStamp must satisfy every view condition" });
+  }
+  return null;
+};
+
+const incompatibleWriteGrant = (
+  writeStamp: Properties | null,
+  conditions: readonly QueryCondition[],
+): boolean =>
+  !conditions.every((condition) => isPropertyKey(condition.key)) ||
+  !conditions.every((condition) => propertiesMatchCondition(writeStamp ?? {}, condition));
 
 export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService => ({
   resolve: (token) =>
@@ -142,32 +206,63 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
       catch: storageError,
     }),
   create: (tenantId, input) =>
-    Effect.tryPromise({
-      try: async () => {
-        const id = randomTokenPart(9);
-        const secret = randomTokenPart(32);
-        const plaintext = `keva_sh_${id}_${secret}`;
-        const secretHash = await hashSecret(secret);
-        const rows = await sql<ShareRow[]>`
+    Effect.gen(function* () {
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          return sql.begin(async (transaction) => {
+            let view: ViewRow | undefined;
+            if (input.view) {
+              const viewId = randomTokenPart(12);
+              const rows = await transaction<ViewRow[]>`
+                insert into views (id, tenant_id, name, icon, conditions, created_at, updated_at)
+                values (${viewId}, ${tenantId}, ${input.view.name}, ${input.view.icon ?? null}, ${jsonbParam(input.view.conditions)}::jsonb, now(), now())
+                returning *
+              `;
+              view = rows[0];
+            } else {
+              const rows = await transaction<ViewRow[]>`
+                select * from views
+                where tenant_id = ${tenantId} and id = ${input.viewId!}
+                for update
+              `;
+              view = rows[0];
+            }
+            if (!view) return { status: "missing" as const };
+            const validation = writeGrantValidation(input, view.conditions);
+            if (validation) return { status: "invalid" as const, message: validation.message };
+            const id = randomTokenPart(9);
+            const secret = randomTokenPart(32);
+            const plaintext = `keva_sh_${id}_${secret}`;
+            const secretHash = await hashSecret(secret);
+            const rows = await transaction<ShareRow[]>`
           with g as (
             insert into share_grants (
               id, tenant_id, view_id, name, secret_hash, scopes, write_stamp,
               max_item_bytes, max_total_bytes, max_items, created_at, expires_at
             ) values (
-              ${id}, ${tenantId}, ${input.viewId}, ${input.name}, ${secretHash},
-              ${sql.json(input.scopes)},
-              ${input.writeStamp ? sql.json(input.writeStamp) : null},
+              ${id}, ${tenantId}, ${view.id}, ${input.name}, ${secretHash},
+              ${jsonbParam(input.scopes)}::jsonb,
+              ${jsonbParam(input.writeStamp)}::jsonb,
               ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},
               ${input.maxItems ?? null}, now(), ${input.expiresAt ?? null}
             )
             returning *
           )
           select g.*, v.conditions as view_conditions
-          from g join views v on v.id = g.view_id
+            from g join views v on v.id = g.view_id
         `;
-        return { token: plaintext, record: shareRecord(rows[0]!) };
-      },
-      catch: storageError,
+            return {
+              status: "created" as const,
+              result: { token: plaintext, record: shareRecord(rows[0]!), view: viewRecord(view) },
+            };
+          });
+        },
+        catch: storageError,
+      });
+      if (result.status === "missing") return yield* new NotFound({ message: "View not found" });
+      if (result.status === "invalid")
+        return yield* new ValidationError({ message: result.message });
+      return result.result;
     }),
   list: (tenantId) =>
     Effect.tryPromise({
@@ -209,16 +304,50 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
       },
       catch: storageError,
     }),
+  updateView: (tenantId, id, input) =>
+    Effect.gen(function* () {
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          sql.begin(async (transaction) => {
+            const views = await transaction<ViewRow[]>`
+              select * from views where tenant_id = ${tenantId} and id = ${id} for update
+            `;
+            const view = views[0];
+            if (!view) return { status: "missing" as const };
+            const conditions = input.conditions ?? view.conditions;
+            const grants = await transaction<{ id: string; write_stamp: Properties | null }[]>`
+              select id, write_stamp from share_grants
+              where tenant_id = ${tenantId} and view_id = ${id}
+                and scopes @> '["write"]'::jsonb
+                and (expires_at is null or expires_at > now())
+              for update
+            `;
+            const grantIds = grants
+              .filter((grant) => incompatibleWriteGrant(grant.write_stamp, conditions))
+              .map((grant) => grant.id);
+            if (grantIds.length > 0) return { status: "incompatible" as const, grantIds };
+            const updated = await transaction<ViewRow[]>`
+              update views set
+                name = coalesce(${input.name ?? null}::text, name),
+                icon = coalesce(${input.icon ?? null}::text, icon),
+                conditions = coalesce(${jsonbParam(input.conditions)}::jsonb, conditions),
+                updated_at = now()
+              where tenant_id = ${tenantId} and id = ${id}
+              returning *
+            `;
+            return { status: "updated" as const, view: viewRecord(updated[0]!) };
+          }),
+        catch: storageError,
+      });
+      if (result.status === "incompatible") {
+        return yield* new Conflict({
+          message: "Revoke the affected upload links before changing this view's conditions",
+          grantIds: result.grantIds,
+        });
+      }
+      return result.status === "updated" ? result.view : null;
+    }),
 });
-
-export const PostgresShareGrantStoreLive = (url: string): Layer.Layer<ShareGrantStore> =>
-  Layer.scoped(
-    ShareGrantStore,
-    Effect.acquireRelease(
-      Effect.sync(() => postgres(url)),
-      (sql) => Effect.promise(() => sql.end({ timeout: 5 })),
-    ).pipe(Effect.map(makePostgresShareGrantStore)),
-  );
 
 export const shareStrategy =
   (store: ShareGrantStoreService): AuthStrategy =>

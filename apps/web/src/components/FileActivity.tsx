@@ -4,12 +4,11 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { ItemEvent } from "@keva/sdk";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate, formatPropertyValue, formatRelative } from "../lib/format";
+import { itemEventsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-
-export const itemEventsQueryKey = (itemId: string) => ["item-events", itemId] as const;
 
 const actorLabel = (event: ItemEvent): string => {
   const actor = event.actor;

@@ -21,6 +21,59 @@ export interface BetterAuthConfig {
 
 export type KevaAuth = ReturnType<typeof betterAuth>;
 
+export const personalOrganizationSlug = (userId: string): string => `keva-${userId}`;
+
+export const resolvePersonalOrganization = async (
+  db: PostgresJsDatabase<typeof authSchema>,
+  userId: string,
+  label: string,
+): Promise<string | null> => {
+  const slug = personalOrganizationSlug(userId);
+  const existing = await db
+    .select({ id: authSchema.organization.id })
+    .from(authSchema.organization)
+    .where(eq(authSchema.organization.slug, slug))
+    .limit(1);
+  let organizationId = existing[0]?.id;
+  if (!existing[0]) {
+    await db
+      .insert(authSchema.organization)
+      .values({ id: crypto.randomUUID(), name: `${label}'s space`, slug, createdAt: new Date() })
+      .onConflictDoNothing();
+    const created = await db
+      .select({ id: authSchema.organization.id })
+      .from(authSchema.organization)
+      .where(eq(authSchema.organization.slug, slug))
+      .limit(1);
+    organizationId = created[0]?.id;
+    if (!organizationId) return null;
+    await db
+      .insert(authSchema.member)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId,
+        userId,
+        role: "owner",
+        createdAt: new Date(),
+      })
+      .onConflictDoNothing();
+  }
+  const resolvedOrganizationId = organizationId;
+  if (!resolvedOrganizationId) return null;
+  const owner = await db
+    .select({ organizationId: authSchema.member.organizationId })
+    .from(authSchema.member)
+    .where(
+      and(
+        eq(authSchema.member.organizationId, resolvedOrganizationId),
+        eq(authSchema.member.userId, userId),
+        eq(authSchema.member.role, "owner"),
+      ),
+    )
+    .limit(1);
+  return owner[0]?.organizationId ?? null;
+};
+
 export const KEVA_MCP_SCOPES = ["keva:read", "keva:write", "keva:delete"] as const;
 
 export const createBetterAuth = (config: BetterAuthConfig): KevaAuth =>
@@ -118,41 +171,21 @@ export const makeMcpAuthorizationServer = (auth: KevaAuth): McpAuthorizationServ
 };
 
 export const betterAuthSessionResolver =
-  (auth: KevaAuth): SessionResolver =>
+  (auth: KevaAuth, db: PostgresJsDatabase<typeof authSchema>): SessionResolver =>
   async (headers) => {
     const result = await auth.api.getSession({ headers });
     if (!result) return null;
 
-    const api = organizationApi(auth);
-    let tenantId =
-      (
-        result.session as typeof result.session & {
-          readonly activeOrganizationId?: string | null;
-        }
-      ).activeOrganizationId ?? null;
-
-    if (!tenantId) {
-      const existing = await api.listOrganizations({ headers });
-      if (existing.length > 0) {
-        tenantId = existing[0]!.id;
-        await api.setActiveOrganization({
-          headers,
-          body: { organizationId: tenantId },
-        });
-      } else {
-        const label = result.user.name?.trim() || result.user.email;
-        const created = await api
-          .createOrganization({
-            headers,
-            body: { name: `${label}'s space`, slug: `keva-${result.user.id}` },
-          })
-          // A concurrent first request may have already created it; fall back
-          // to whatever now exists rather than failing the whole request.
-          .catch(() => null);
-        tenantId = created?.id ?? (await api.listOrganizations({ headers }))[0]?.id ?? null;
-      }
-    }
+    const tenantId = await resolvePersonalOrganization(
+      db,
+      result.user.id,
+      result.user.name?.trim() || result.user.email,
+    );
     if (!tenantId) return null;
+    await organizationApi(auth).setActiveOrganization({
+      headers,
+      body: { organizationId: tenantId },
+    });
 
     // A signed-in user currently controls their personal tenant fully.
     return {
@@ -168,15 +201,8 @@ export const betterAuthSessionResolver =
 // MCP tokens carry user identity, not active-organization session state.
 export const makeUserTenantResolver =
   (db: PostgresJsDatabase<typeof authSchema>) =>
-  async (userId: string): Promise<string | null> => {
-    const rows = await db
-      .select({ organizationId: authSchema.member.organizationId })
-      .from(authSchema.member)
-      .where(eq(authSchema.member.userId, userId))
-      .orderBy(authSchema.member.createdAt)
-      .limit(1);
-    return rows[0]?.organizationId ?? null;
-  };
+  async (userId: string): Promise<string | null> =>
+    resolvePersonalOrganization(db, userId, "Personal");
 
 // The client name is self-asserted via OAuth dynamic client registration —
 // display-only, never an authorization input.

@@ -9,6 +9,7 @@ import {
   formatRelative,
 } from "../../lib/format";
 import { useMountEffect } from "../../lib/useMountEffect";
+import { shareItemsQueryKey } from "../../lib/items-cache";
 import { useShare } from "./share-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,7 @@ export function ShareItemList({
   };
 
   const itemsQuery = useInfiniteQuery({
-    queryKey: ["share-items", activeSearch],
+    queryKey: shareItemsQueryKey(activeSearch),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       client.query({
@@ -146,7 +147,16 @@ export function ShareItemList({
                           onClick={() => onSelect(item.id)}
                         >
                           <TableCell>
-                            <span className="block truncate font-medium">{item.name}</span>
+                            <button
+                              type="button"
+                              className="block max-w-full truncate text-left font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onSelect(item.id);
+                              }}
+                            >
+                              {item.name}
+                            </button>
                           </TableCell>
                           {!collapsed && (
                             <>

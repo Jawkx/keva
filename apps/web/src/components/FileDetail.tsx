@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,19 +12,22 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
-import { FileActivity, itemEventsQueryKey } from "./FileActivity";
+import { FileActivity } from "./FileActivity";
 import { PropertiesEditor } from "./PropertiesEditor";
 import { CopyButton } from "./CopyButton";
-import { ZoomMode } from "@embedpdf/plugin-zoom";
-import { CsvViewer } from "@/components/ui/csv-viewer";
-import { PDFViewer } from "@/components/ui/pdf-viewer";
+import { CsvPreviewViewer } from "./viewers/CsvPreviewViewer";
+import { PdfPreviewViewer } from "./viewers/PdfPreviewViewer";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate, formatRelative } from "../lib/format";
-import { removeItemsFromPages, replaceItemInPages, type ItemsCache } from "../lib/items-cache";
+import {
+  cachePatchedItem,
+  itemContentQueryKey,
+  itemQueryKey,
+  removeDeletedItemsFromCache,
+} from "../lib/items-cache";
 import { isCsv, isImage, isPdf, isPreviewable } from "../lib/preview";
 import { keva } from "../lib/keva";
-import { objectUrlFor, revokeObjectUrl } from "../lib/object-url-cache";
-import { usageQueryKey } from "../lib/use-usage";
+import { objectUrlFor } from "../lib/object-url-cache";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +51,8 @@ type Preview =
   | { kind: "pdf"; url: string }
   | { kind: "csv"; text: string }
   | { kind: "text"; text: string };
+
+type PreviewContent = { kind: "blob"; blob: Blob } | { kind: "text"; text: string };
 
 type Panel = "preview" | "properties" | "activity";
 
@@ -80,7 +85,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const itemQuery = useQuery({
-    queryKey: ["item", itemId],
+    queryKey: itemQueryKey(itemId),
     queryFn: () => keva.get(itemId),
   });
   const item = itemQuery.data ?? null;
@@ -88,32 +93,36 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const error = itemQuery.error ? errorMessage(itemQuery.error) : null;
 
   const contentQuery = useQuery({
-    queryKey: ["content", itemId],
+    queryKey: itemContentQueryKey(itemId),
     enabled: Boolean(item) && isPreviewable(item!),
     staleTime: Infinity,
+    gcTime: 0,
     queryFn: async () => {
       const bytes = await keva.downloadBytes(itemId);
+      if (isImage(item!) || isPdf(item!)) {
+        return {
+          kind: "blob",
+          blob: new Blob([bytes.slice().buffer as ArrayBuffer], { type: item!.contentType }),
+        } satisfies PreviewContent;
+      }
       return {
-        bytes,
-        blob: new Blob([bytes.slice().buffer as ArrayBuffer], {
-          type: item!.contentType,
-        }),
-      };
+        kind: "text",
+        text: new TextDecoder().decode(bytes).slice(0, 5000),
+      } satisfies PreviewContent;
     },
   });
   const previewLoading = contentQuery.isLoading;
 
   const preview = useMemo<Preview | null>(() => {
     if (!item || !contentQuery.data) return null;
-    const { bytes, blob } = contentQuery.data;
-    if (isImage(item) || isPdf(item)) {
+    if (contentQuery.data.kind === "blob") {
       return {
         kind: isImage(item) ? "image" : "pdf",
-        url: objectUrlFor(itemId, blob),
+        url: objectUrlFor(itemId, contentQuery.data.blob),
       };
     }
-    if (isCsv(item)) return { kind: "csv", text: new TextDecoder().decode(bytes) };
-    return { kind: "text", text: new TextDecoder().decode(bytes).slice(0, 5000) };
+    if (isCsv(item)) return { kind: "csv", text: contentQuery.data.text };
+    return { kind: "text", text: contentQuery.data.text };
   }, [item, contentQuery.data, itemId]);
 
   const panels = useMemo(() => (item ? panelsFor(item) : []), [item]);
@@ -153,11 +162,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     mutationFn: () => keva.delete(itemId),
     onSuccess: () => {
       toast.success(`Deleted ${item?.name ?? "item"}`);
-      queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
-        old ? removeItemsFromPages(old, [itemId]) : old,
-      );
-      void queryClient.invalidateQueries({ queryKey: usageQueryKey });
-      revokeObjectUrl(itemId);
+      removeDeletedItemsFromCache(queryClient, [itemId]);
       onDeleted();
     },
     onError: (err) => toast.error(errorMessage(err)),
@@ -167,11 +172,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     mutationFn: (vars: { set: Record<string, PropertyValue>; unset: string[] }) =>
       keva.patch(itemId, vars),
     onSuccess: (updated) => {
-      queryClient.setQueryData(["item", itemId], updated);
-      queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
-        old ? replaceItemInPages(old, updated) : old,
-      );
-      void queryClient.invalidateQueries({ queryKey: itemEventsQueryKey(itemId) });
+      cachePatchedItem(queryClient, updated);
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
@@ -179,7 +180,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const busy = downloadMutation.isPending || deleteMutation.isPending;
 
   const onPatch = async (set: Record<string, PropertyValue>, unset: string[]) => {
-    await patchMutation.mutateAsync({ set, unset });
+    return (await patchMutation.mutateAsync({ set, unset })).properties;
   };
 
   // Focus the rename field as it mounts and pre-select the stem. A stable
@@ -387,20 +388,20 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                 />
               </div>
             ) : preview?.kind === "pdf" ? (
-              <PDFViewer
-                src={preview.url}
-                fileName={item.name}
-                defaultZoom={ZoomMode.FitWidth}
-                showUpload={false}
-                showDownload={false}
-                className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
-              />
+              <Suspense fallback={<Skeleton className="min-h-0 w-full flex-1" />}>
+                <PdfPreviewViewer
+                  src={preview.url}
+                  fileName={item.name}
+                  className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
+                />
+              </Suspense>
             ) : preview?.kind === "csv" ? (
-              <CsvViewer
-                data={preview.text}
-                search
-                className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
-              />
+              <Suspense fallback={<Skeleton className="min-h-0 w-full flex-1" />}>
+                <CsvPreviewViewer
+                  data={preview.text}
+                  className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
+                />
+              </Suspense>
             ) : preview?.kind === "text" ? (
               <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md bg-muted/50">
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>

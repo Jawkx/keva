@@ -1,11 +1,9 @@
 import { Schema } from "effect";
-import { isPropertyKey, isQueryKey, PROPERTY_LIMITS } from "./fields.js";
+import { isPropertyKey, isQueryKey, PROPERTY_LIMITS, validateProperties } from "./fields.js";
 
 export * from "./fields.js";
 export * from "./conditions.js";
 
-const encodedBytes = (value: unknown): number =>
-  new TextEncoder().encode(JSON.stringify(value)).byteLength;
 export const ITEM_ID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -42,14 +40,8 @@ export const Properties = Schema.Record({
   key: Schema.String,
   value: PropertyValue,
 }).pipe(
-  Schema.filter((properties) => Object.keys(properties).every(isPropertyKey), {
-    message: () => "Invalid or reserved property key",
-  }),
-  Schema.filter((properties) => Object.keys(properties).length <= PROPERTY_LIMITS.keys, {
-    message: () => "An item may have at most 256 properties",
-  }),
-  Schema.filter((properties) => encodedBytes(properties) <= PROPERTY_LIMITS.totalBytes, {
-    message: () => "Properties must be at most 64 KB in total",
+  Schema.filter((properties) => validateProperties(properties) === null, {
+    message: () => "Invalid properties",
   }),
 );
 export type Properties = typeof Properties.Type;
@@ -62,6 +54,41 @@ export type ItemStatus = typeof ItemStatus.Type;
 
 export const ItemId = Schema.String.pipe(Schema.pattern(ITEM_ID_PATTERN));
 export type ItemId = typeof ItemId.Type;
+
+export const isIsoInstant = (value: string): boolean => {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+};
+
+export const isFutureInstant = (value: string, now = Date.now()): boolean =>
+  isIsoInstant(value) && Date.parse(value) > now;
+
+export const IsoInstant = Schema.String.pipe(
+  Schema.filter(isIsoInstant, { message: () => "Expected an ISO-8601 instant" }),
+);
+export type IsoInstant = typeof IsoInstant.Type;
+
+export type Cursor = readonly [createdAt: string, id: string];
+
+export const encodeCursor = (cursor: Cursor): string => btoa(JSON.stringify(cursor));
+
+export const decodeCursor = (cursor: string): Cursor | null => {
+  try {
+    const value = JSON.parse(atob(cursor)) as unknown;
+    if (
+      !Array.isArray(value) ||
+      value.length !== 2 ||
+      typeof value[0] !== "string" ||
+      typeof value[1] !== "string" ||
+      !Number.isFinite(Date.parse(value[0])) ||
+      !ITEM_ID_PATTERN.test(value[1])
+    )
+      return null;
+    return [value[0], value[1]];
+  } catch {
+    return null;
+  }
+};
 
 export const KevaItem = Schema.Struct({
   id: ItemId,
@@ -163,16 +190,26 @@ export const Actor = Schema.Struct({
 });
 export type Actor = typeof Actor.Type;
 
-// `share` is present iff `via === "share"`; the engine treats its presence, not
-// the discriminant alone, as the switch for share-scoped enforcement. `actor`
-// is attribution-only and never gates access.
-export const Principal = Schema.Struct({
+const PrincipalBase = {
   tenantId: Schema.NonEmptyString,
   scopes: Schema.Array(Scope),
-  via: Schema.Literal("session", "token", "share"),
-  share: Schema.optional(ShareGrantContext),
   actor: Schema.optional(Actor),
+};
+
+export const SessionPrincipal = Schema.Struct({ ...PrincipalBase, via: Schema.Literal("session") });
+export type SessionPrincipal = typeof SessionPrincipal.Type;
+
+export const TokenPrincipal = Schema.Struct({ ...PrincipalBase, via: Schema.Literal("token") });
+export type TokenPrincipal = typeof TokenPrincipal.Type;
+
+export const SharePrincipal = Schema.Struct({
+  ...PrincipalBase,
+  via: Schema.Literal("share"),
+  share: ShareGrantContext,
 });
+export type SharePrincipal = typeof SharePrincipal.Type;
+
+export const Principal = Schema.Union(SessionPrincipal, TokenPrincipal, SharePrincipal);
 export type Principal = typeof Principal.Type;
 
 export const QueryOrder = Schema.Literal("created_at_asc", "created_at_desc");
@@ -245,6 +282,38 @@ export const UsageResult = Schema.Struct({
   byType: Schema.Array(ContentTypeUsage),
 });
 export type UsageResult = typeof UsageResult.Type;
+
+export const AdminQuotaSource = Schema.Literal("default", "custom", "unlimited");
+export type AdminQuotaSource = typeof AdminQuotaSource.Type;
+
+export const AdminUserUsage = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+  tenantId: Schema.NullOr(Schema.String),
+  usedBytes: Schema.Number,
+  quotaBytes: Schema.NullOr(Schema.Number),
+  quotaSource: AdminQuotaSource,
+});
+export type AdminUserUsage = typeof AdminUserUsage.Type;
+
+export const AdminUsersResult = Schema.Struct({
+  users: Schema.Array(AdminUserUsage),
+});
+export type AdminUsersResult = typeof AdminUsersResult.Type;
+
+export const UpdateAdminQuota = Schema.Union(
+  Schema.Struct({
+    quotaBytes: Schema.NullOr(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(-1))),
+  }),
+  Schema.Struct({ useDefault: Schema.Literal(true) }),
+);
+export type UpdateAdminQuota = typeof UpdateAdminQuota.Type;
+
+export const UpdateAdminQuotaResult = Schema.Struct({
+  user: AdminUserUsage,
+});
+export type UpdateAdminQuotaResult = typeof UpdateAdminQuotaResult.Type;
 
 export const BatchDelete = Schema.Struct({
   ids: Schema.Array(ItemId).pipe(Schema.minItems(1), Schema.maxItems(1000)),
@@ -351,7 +420,7 @@ export type TokenRecord = typeof TokenRecord.Type;
 export const MintToken = Schema.Struct({
   name: Schema.NonEmptyString,
   scopes: Schema.Array(Scope).pipe(Schema.minItems(1)),
-  expiresAt: Schema.optional(Schema.String),
+  expiresAt: Schema.optional(IsoInstant),
 });
 export type MintToken = typeof MintToken.Type;
 
@@ -416,14 +485,18 @@ const PositiveInt = Schema.Number.pipe(Schema.int(), Schema.greaterThan(0));
 // loads the view and enforces them in ShareGrantStore.create.
 export const CreateShareGrant = Schema.Struct({
   name: Schema.NonEmptyString,
-  viewId: Schema.String,
+  viewId: Schema.optional(Schema.String),
+  view: Schema.optional(CreateView),
   scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
   writeStamp: Schema.optional(Properties),
   maxItemBytes: Schema.optional(PositiveInt),
   maxTotalBytes: Schema.optional(PositiveInt),
   maxItems: Schema.optional(PositiveInt),
-  expiresAt: Schema.optional(Schema.String), // parity with MintToken: no future-date check
+  expiresAt: Schema.optional(IsoInstant),
 }).pipe(
+  Schema.filter((grant) => (grant.viewId === undefined) !== (grant.view === undefined), {
+    message: () => "A share requires exactly one view reference",
+  }),
   Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
     message: () => "Write grants require a writeStamp",
   }),
@@ -433,6 +506,7 @@ export type CreateShareGrant = typeof CreateShareGrant.Type;
 export const CreateShareGrantResult = Schema.Struct({
   token: Schema.String, // one-time plaintext keva_sh_{id}_{secret}
   record: ShareGrantRecord,
+  view: ViewRecord,
 });
 export type CreateShareGrantResult = typeof CreateShareGrantResult.Type;
 
@@ -474,6 +548,17 @@ export const SharedItem = Schema.Struct({
 });
 export type SharedItem = typeof SharedItem.Type;
 
+export const OwnerItem = SharedItem;
+export type OwnerItem = typeof OwnerItem.Type;
+
+export const OwnerInitiateUploadResult = Schema.Struct({
+  item: OwnerItem,
+  uploadUrl: Schema.String,
+  expiresAt: Schema.String,
+  headers: Schema.Record({ key: Schema.String, value: Schema.String }),
+});
+export type OwnerInitiateUploadResult = typeof OwnerInitiateUploadResult.Type;
+
 export const toSharedItem = (item: KevaItem): SharedItem => ({
   id: item.id,
   name: item.name,
@@ -489,11 +574,19 @@ export const toSharedItem = (item: KevaItem): SharedItem => ({
   properties: item.properties,
 });
 
+export const toOwnerItem = (item: KevaItem): OwnerItem => toSharedItem(item);
+
 export const SharedQueryResult = Schema.Struct({
   items: Schema.Array(SharedItem),
   nextCursor: Schema.optional(Schema.String),
 });
 export type SharedQueryResult = typeof SharedQueryResult.Type;
+
+export const OwnerQueryResult = Schema.Struct({
+  items: Schema.Array(OwnerItem),
+  nextCursor: Schema.optional(Schema.String),
+});
+export type OwnerQueryResult = typeof OwnerQueryResult.Type;
 
 export const SharedInitiateUploadResult = Schema.Struct({
   item: SharedItem,
@@ -517,6 +610,7 @@ export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", {
 }) {}
 export class Conflict extends Schema.TaggedError<Conflict>()("Conflict", {
   message: Schema.String,
+  grantIds: Schema.optional(Schema.Array(Schema.String)),
 }) {}
 export class QuotaExceeded extends Schema.TaggedError<QuotaExceeded>()("QuotaExceeded", {
   message: Schema.String,

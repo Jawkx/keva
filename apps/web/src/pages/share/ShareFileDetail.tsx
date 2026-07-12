@@ -1,15 +1,15 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, Suspense, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert02Icon, Cancel01Icon, Download01Icon, LockIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
-import { ZoomMode } from "@embedpdf/plugin-zoom";
 import { CopyButton } from "../../components/CopyButton";
 import { propertyListClass } from "../../components/PropertiesEditor";
-import { CsvViewer } from "@/components/ui/csv-viewer";
-import { PDFViewer } from "@/components/ui/pdf-viewer";
+import { CsvPreviewViewer } from "../../components/viewers/CsvPreviewViewer";
+import { PdfPreviewViewer } from "../../components/viewers/PdfPreviewViewer";
 import { errorMessage } from "../../lib/errors";
 import { formatBytes, formatDate, formatPropertyValue, formatRelative } from "../../lib/format";
+import { shareContentQueryKey, shareItemQueryKey } from "../../lib/items-cache";
 import { objectUrlFor } from "../../lib/object-url-cache";
 import { isCsv, isImage, isPdf, isPreviewable } from "../../lib/preview";
 import { useShare } from "./share-context";
@@ -26,6 +26,8 @@ type Preview =
   | { kind: "pdf"; url: string }
   | { kind: "csv"; text: string }
   | { kind: "text"; text: string };
+
+type PreviewContent = { kind: "blob"; blob: Blob } | { kind: "text"; text: string };
 
 type Panel = "preview" | "info";
 
@@ -45,7 +47,7 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   const [activePanel, setActivePanel] = useState<Panel | null>(null);
 
   const itemQuery = useQuery({
-    queryKey: ["share-item", itemId],
+    queryKey: shareItemQueryKey(itemId),
     queryFn: () => client.get(itemId),
   });
   const item = itemQuery.data ?? null;
@@ -53,27 +55,36 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   const error = itemQuery.error ? errorMessage(itemQuery.error) : null;
 
   const contentQuery = useQuery({
-    queryKey: ["share-content", itemId],
+    queryKey: shareContentQueryKey(itemId),
     enabled: Boolean(item) && isPreviewable(item!),
     staleTime: Infinity,
+    gcTime: 0,
     queryFn: async () => {
       const bytes = await client.downloadBytes(itemId);
+      if (isImage(item!) || isPdf(item!)) {
+        return {
+          kind: "blob",
+          blob: new Blob([bytes.slice().buffer as ArrayBuffer], { type: item!.contentType }),
+        } satisfies PreviewContent;
+      }
       return {
-        bytes,
-        blob: new Blob([bytes.slice().buffer as ArrayBuffer], { type: item!.contentType }),
-      };
+        kind: "text",
+        text: new TextDecoder().decode(bytes).slice(0, 5000),
+      } satisfies PreviewContent;
     },
   });
   const previewLoading = contentQuery.isLoading;
 
   const preview = useMemo<Preview | null>(() => {
     if (!item || !contentQuery.data) return null;
-    const { bytes, blob } = contentQuery.data;
-    if (isImage(item) || isPdf(item)) {
-      return { kind: isImage(item) ? "image" : "pdf", url: objectUrlFor(itemId, blob) };
+    if (contentQuery.data.kind === "blob") {
+      return {
+        kind: isImage(item) ? "image" : "pdf",
+        url: objectUrlFor(itemId, contentQuery.data.blob),
+      };
     }
-    if (isCsv(item)) return { kind: "csv", text: new TextDecoder().decode(bytes) };
-    return { kind: "text", text: new TextDecoder().decode(bytes).slice(0, 5000) };
+    if (isCsv(item)) return { kind: "csv", text: contentQuery.data.text };
+    return { kind: "text", text: contentQuery.data.text };
   }, [item, contentQuery.data, itemId]);
 
   const panels = useMemo<Panel[]>(
@@ -198,20 +209,20 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
                 />
               </div>
             ) : preview?.kind === "pdf" ? (
-              <PDFViewer
-                src={preview.url}
-                fileName={item.name}
-                defaultZoom={ZoomMode.FitWidth}
-                showUpload={false}
-                showDownload={false}
-                className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
-              />
+              <Suspense fallback={<Skeleton className="min-h-0 w-full flex-1" />}>
+                <PdfPreviewViewer
+                  src={preview.url}
+                  fileName={item.name}
+                  className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
+                />
+              </Suspense>
             ) : preview?.kind === "csv" ? (
-              <CsvViewer
-                data={preview.text}
-                search
-                className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
-              />
+              <Suspense fallback={<Skeleton className="min-h-0 w-full flex-1" />}>
+                <CsvPreviewViewer
+                  data={preview.text}
+                  className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
+                />
+              </Suspense>
             ) : preview?.kind === "text" ? (
               <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md bg-muted/50">
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>

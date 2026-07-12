@@ -1,5 +1,7 @@
 import { createApp } from "./app.js";
+import { runLifecycle } from "./lifecycle.js";
 import { trustedOriginsFor } from "./origins.js";
+import { runtimeModeFor, s3For } from "./runtime-mode.js";
 import { createServerOptions } from "./server-options.js";
 import type { AppServiceOptions } from "./app.js";
 
@@ -10,6 +12,7 @@ interface AssetsBinding {
 interface Env {
   readonly ASSETS?: AssetsBinding;
   readonly KEVA_STATIC_TOKEN?: string;
+  readonly KEVA_RUNTIME_MODE?: string;
   readonly KEVA_TENANT_ID?: string;
   readonly KEVA_BASE_URL?: string;
   readonly BETTER_AUTH_SECRET?: string;
@@ -25,9 +28,12 @@ interface Env {
 }
 
 let app: ReturnType<typeof createApp> | undefined;
-let appCacheKey: string | undefined;
 
-const serverPaths = ["/api", "/mcp", "/.well-known", "/health", "/__dev"];
+interface ExecutionContext {
+  waitUntil: (promise: Promise<unknown>) => void;
+}
+
+const serverPaths = ["/api", "/mcp", "/.well-known", "/health", "/ready", "/__dev"];
 
 const isServerPath = (pathname: string): boolean =>
   serverPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -37,55 +43,57 @@ const required = (value: string | undefined, name: string): string => {
   return value;
 };
 
-const cacheKeyFor = (env: Env): string =>
-  JSON.stringify({
-    staticToken: required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN"),
-    tenantId: env.KEVA_TENANT_ID ?? "local",
-    baseUrl: required(env.KEVA_BASE_URL, "KEVA_BASE_URL"),
-    betterAuthSecret: env.BETTER_AUTH_SECRET,
-    betterAuthUrl: env.BETTER_AUTH_URL,
-    trustedOrigins: env.KEVA_TRUSTED_ORIGINS,
-    s3Endpoint: env.S3_ENDPOINT,
-    s3Region: env.S3_REGION,
-    s3AccessKeyId: env.S3_ACCESS_KEY_ID,
-    s3SecretAccessKey: env.S3_SECRET_ACCESS_KEY,
-    s3Bucket: env.S3_BUCKET,
-    s3ForcePathStyle: env.S3_FORCE_PATH_STYLE,
-  });
+const persistentConfigFor = (env: Env) => {
+  const mode = runtimeModeFor(env.KEVA_RUNTIME_MODE);
+  if (mode !== "persistent") {
+    throw new Error('KEVA_RUNTIME_MODE must be "persistent" for Worker deployments');
+  }
+  const databaseUrl = required(env.HYPERDRIVE?.connectionString, "HYPERDRIVE");
+  const s3 = s3For(mode, env);
+  if (!s3) throw new Error("S3 configuration is required");
+  return { mode, databaseUrl, s3 };
+};
 
 const makeServerOptions = (env: Env): AppServiceOptions => {
   const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
-  const s3 =
-    env.S3_ENDPOINT && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY && env.S3_BUCKET
-      ? {
-          endpoint: env.S3_ENDPOINT,
-          region: env.S3_REGION ?? "us-east-1",
-          accessKeyId: env.S3_ACCESS_KEY_ID,
-          secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-          bucket: env.S3_BUCKET,
-          forcePathStyle: env.S3_FORCE_PATH_STYLE !== "false",
-        }
-      : undefined;
-  const databaseUrl = env.HYPERDRIVE?.connectionString;
+  const { mode, databaseUrl, s3 } = persistentConfigFor(env);
 
   return createServerOptions({
+    mode,
     staticToken,
     tenantId: env.KEVA_TENANT_ID ?? "local",
     baseUrl,
-    ...(databaseUrl ? { databaseUrl } : {}),
+    databaseUrl,
     ...(env.BETTER_AUTH_SECRET ? { betterAuthSecret: env.BETTER_AUTH_SECRET } : {}),
     ...(env.BETTER_AUTH_URL ? { betterAuthUrl: env.BETTER_AUTH_URL } : {}),
     trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
-    ...(s3 ? { s3 } : {}),
+    s3,
   });
 };
 
-const makeApp = (env: Env): ReturnType<typeof createApp> => createApp(makeServerOptions(env));
+const serverConfigFor = (env: Env) => ({
+  staticToken: required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN"),
+  baseUrl: required(env.KEVA_BASE_URL, "KEVA_BASE_URL"),
+  ...persistentConfigFor(env),
+});
 
-const makeRequestScopedApp = (): ReturnType<typeof createApp> => {
-  return createApp({
-    getRequestServices: (context) => makeServerOptions(context.env as Env),
+const makeApp = (): ReturnType<typeof createApp> =>
+  createApp({ getRequestServices: (context) => makeServerOptions(context.env as Env) });
+
+const withBrowserSecurityHeaders = (response: Response, share = false): Response => {
+  const headers = new Headers(response.headers);
+  headers.set(
+    "Content-Security-Policy",
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:",
+  );
+  headers.set("Referrer-Policy", share ? "no-referrer" : "strict-origin-when-cross-origin");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 };
 
@@ -93,22 +101,24 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (!isServerPath(url.pathname) && env.ASSETS) {
-      return env.ASSETS.fetch(request);
+      const response = await env.ASSETS.fetch(request);
+      return withBrowserSecurityHeaders(response, url.pathname.startsWith("/s/"));
     }
 
-    if (env.HYPERDRIVE) {
-      if (!app || appCacheKey !== "hyperdrive") {
-        app = makeRequestScopedApp();
-        appCacheKey = "hyperdrive";
-      }
-      return app.fetch(request, env);
-    }
-
-    const cacheKey = cacheKeyFor(env);
-    if (!app || appCacheKey !== cacheKey) {
-      app = makeApp(env);
-      appCacheKey = cacheKey;
-    }
+    serverConfigFor(env);
+    if (!app) app = makeApp();
     return app.fetch(request, env);
+  },
+
+  scheduled(_controller: unknown, env: Env, context: ExecutionContext): void {
+    context.waitUntil(
+      Promise.resolve()
+        .then(() => runLifecycle(persistentConfigFor(env)))
+        .then(
+          (result) =>
+            console.log(JSON.stringify({ event: "lifecycle.cleanup.completed", ...result })),
+          () => console.error(JSON.stringify({ event: "lifecycle.cleanup.failed" })),
+        ),
+    );
   },
 };

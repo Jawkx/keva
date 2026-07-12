@@ -1,4 +1,4 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { listUsers, updateQuota, type AdminUserUsage } from "./api";
 import "./styles.css";
@@ -20,24 +20,33 @@ function App() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const request = useRef<AbortController | null>(null);
 
   const load = async (nextSearch = search) => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
     setLoading(true);
     setError("");
     try {
-      const result = await listUsers(token, nextSearch);
+      const result = await listUsers(token, nextSearch, controller.signal);
+      if (request.current !== controller) return;
       setUsers(result.users);
       setAuthenticated(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load accounts");
+      if (request.current === controller && !controller.signal.aborted) {
+        setError(cause instanceof Error ? cause.message : "Could not load accounts");
+      }
     }
-    setLoading(false);
+    if (request.current === controller) setLoading(false);
   };
 
   const replaceUser = (user: AdminUserUsage) =>
     setUsers((current) => current.map((entry) => (entry.id === user.id ? user : entry)));
 
   const signOut = () => {
+    request.current?.abort();
+    request.current = null;
     setToken("");
     setUsers([]);
     setAuthenticated(false);

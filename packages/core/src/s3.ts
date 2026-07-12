@@ -1,4 +1,4 @@
-import { StorageUnavailable } from "@keva/schema";
+import { StorageUnavailable, ValidationError } from "@keva/schema";
 import { AwsClient } from "aws4fetch";
 import { Effect, Layer } from "effect";
 import { BlobStore, type BlobStoreService } from "./services.js";
@@ -32,6 +32,8 @@ const objectUrl = (config: S3BlobStoreConfig, key: string): string => {
 
 const storageError = (): StorageUnavailable =>
   new StorageUnavailable({ message: "Blob storage unavailable" });
+
+class UploadSizeMismatch extends Error {}
 
 const requestEffect = (
   operation: () => Promise<Response>,
@@ -80,6 +82,41 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
         "content-type": contentType,
       }),
     presignDownload: (key) => presign(key, "GET", config.downloadTtlSeconds ?? 300),
+    put: (key, body, contentType, expectedSize) =>
+      Effect.tryPromise({
+        try: async () => {
+          let size = 0;
+          const bounded = body.pipeThrough(
+            new TransformStream<Uint8Array, Uint8Array>({
+              transform(chunk, controller) {
+                size += chunk.byteLength;
+                if (size > expectedSize) throw new UploadSizeMismatch();
+                controller.enqueue(chunk);
+              },
+            }),
+          );
+          try {
+            const request = new Request(objectUrl(config, key), {
+              method: "PUT",
+              headers: { "content-type": contentType },
+              body: bounded,
+              duplex: "half",
+            } as RequestInit & { duplex: "half" });
+            const signed = await client.sign(request, { aws: { allHeaders: true } });
+            const response = await fetch(signed);
+            if (!response.ok) throw new Error(`PUT failed: ${response.status}`);
+            if (size !== expectedSize) throw new UploadSizeMismatch();
+          } catch (error) {
+            const deletion = await client.sign(objectUrl(config, key), { method: "DELETE" });
+            await fetch(deletion).catch(() => undefined);
+            throw error;
+          }
+        },
+        catch: (error) =>
+          error instanceof UploadSizeMismatch
+            ? new ValidationError({ message: "Upload size does not match declaration" })
+            : storageError(),
+      }),
     head: (key) =>
       Effect.tryPromise({
         try: async () => {

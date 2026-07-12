@@ -71,7 +71,7 @@ const seedItem = async (app: ReturnType<typeof makeApp>, name: string, propertie
   ).json()) as { item: { id: string }; uploadUrl: string; headers: Record<string, string> };
   await loopback(app, initiated.uploadUrl, {
     method: "PUT",
-    headers: initiated.headers,
+    headers: { ...bearer(STATIC), ...initiated.headers },
     body: bytes,
   });
   await app.request(`/api/items/${initiated.item.id}/confirm`, {
@@ -142,6 +142,21 @@ describe("server share subsystem", () => {
     });
     expect(status).toBe(404);
     expect(body).toMatchObject({ _tag: "NotFound" });
+  });
+
+  it("creates an inline backing view and its share as one command", async () => {
+    const app = makeApp();
+    const { status, body } = await createShare(app, {
+      name: "Inline share",
+      scopes: ["read"],
+      view: { name: "Inline view", conditions: ALPHA },
+    });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      record: { name: "Inline share", conditions: ALPHA },
+      view: { name: "Inline view", conditions: ALPHA },
+    });
+    expect(body.record.viewId).toBe(body.view.id);
   });
 
   it("rejects a write grant whose view conditions aren't plain property keys", async () => {
@@ -232,6 +247,29 @@ describe("server share subsystem", () => {
     expect(await namesVia()).toEqual(["later.txt"]);
   });
 
+  it("rejects a view edit that would invalidate an active write grant", async () => {
+    const app = makeApp();
+    const { view } = await createView(app, ALPHA);
+    const { body } = await createShare(app, {
+      name: "Alpha share",
+      viewId: view.id,
+      scopes: ["read", "write"],
+      writeStamp: { project: "alpha" },
+    });
+    const updated = await app.request(`/api/views/${view.id}`, {
+      method: "PATCH",
+      headers: admin,
+      body: JSON.stringify({ conditions: [{ key: "project", op: "eq", value: "beta" }] }),
+    });
+    expect(updated.status).toBe(409);
+    expect(await updated.json()).toMatchObject({
+      _tag: "Conflict",
+      grantIds: [body.record.id],
+    });
+    const current = await app.request(`/api/views/${view.id}`, { headers: admin });
+    expect((await current.json()) as ViewRecord).toMatchObject({ conditions: ALPHA });
+  });
+
   it("stamps share uploads and reports them back through the grant", async () => {
     const app = makeApp();
     const { body } = await shareAlpha(app);
@@ -257,7 +295,7 @@ describe("server share subsystem", () => {
 
     await loopback(app, initiated.uploadUrl, {
       method: "PUT",
-      headers: initiated.headers,
+      headers: { ...bearer(token), ...initiated.headers },
       body: bytes,
     });
     const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {

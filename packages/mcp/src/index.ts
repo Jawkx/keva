@@ -1,20 +1,33 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  DownloadResult,
+  ItemPatch,
+  KevaItem,
+  PropertyKeysResult,
+  PropertyValuesResult,
+  Query,
+  QueryCondition,
+  QueryResult,
+  UsageResult,
+} from "@keva/schema";
 import { z } from "zod";
 
 const propertyScalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-const propertyValue = z.union([propertyScalar, z.array(propertyScalar)]);
+const propertyValue = z.union([
+  propertyScalar,
+  z.array(z.string()),
+  z.array(z.number()),
+  z.array(z.boolean()),
+]);
 
-// Mirrors @keva/schema's Query/QueryCondition. The engine re-decodes input
-// against the canonical Effect schema, so this is the user-facing contract, not
-// the authority on validity.
 const queryArgs = z.object({
   where: z
     .array(
       z.object({
         key: z.string().describe("Property key to match (e.g. 'tag', 'author')."),
-        op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"]),
-        value: propertyScalar
+        op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains", "in", "exists"]),
+        value: propertyValue
           .optional()
           .describe("Comparison value; omit for the 'exists' operator."),
       }),
@@ -33,6 +46,10 @@ const queryArgs = z.object({
     .optional()
     .describe("Max items to return (default 100)."),
   cursor: z.string().optional().describe("Pagination cursor from a previous result."),
+  order: z
+    .enum(["created_at_asc", "created_at_desc"])
+    .optional()
+    .describe("Creation-time ordering (default ascending)."),
 });
 
 const itemIdArgs = z.object({
@@ -43,7 +60,7 @@ const propertyValuesArgs = z.object({
   key: z.string().describe("Property key to list distinct values for (e.g. 'tag', 'author')."),
 });
 
-export type PropertyValuesToolInput = z.infer<typeof propertyValuesArgs>;
+export type PropertyValuesToolInput = { readonly key: string };
 
 const setPropertiesArgs = z.object({
   id: z.string().describe("The item id."),
@@ -62,17 +79,27 @@ const setPropertiesArgs = z.object({
     .describe("Property keys to remove. This is the only way to delete a property."),
 });
 
-export type QueryToolInput = z.infer<typeof queryArgs>;
-export type SetPropertiesToolInput = z.infer<typeof setPropertiesArgs>;
+export type QueryToolInput = {
+  readonly where?: readonly QueryCondition[] | undefined;
+  readonly search?: Query["search"] | undefined;
+  readonly limit?: Query["limit"] | undefined;
+  readonly cursor?: Query["cursor"] | undefined;
+  readonly order?: Query["order"] | undefined;
+};
+export type SetPropertiesToolInput = {
+  readonly id: string;
+  readonly set?: ItemPatch["set"] | undefined;
+  readonly unset?: ItemPatch["unset"] | undefined;
+};
 
 export interface McpEngine {
-  readonly queryItems: (input: QueryToolInput) => Promise<unknown>;
-  readonly getItem: (id: string) => Promise<unknown>;
-  readonly getContentUrl: (id: string) => Promise<unknown>;
-  readonly getUsage: () => Promise<unknown>;
-  readonly listPropertyKeys: () => Promise<unknown>;
-  readonly listPropertyValues: (input: PropertyValuesToolInput) => Promise<unknown>;
-  readonly setProperties: (input: SetPropertiesToolInput) => Promise<unknown>;
+  readonly queryItems: (input: QueryToolInput) => Promise<QueryResult>;
+  readonly getItem: (id: string) => Promise<KevaItem>;
+  readonly getContentUrl: (id: string) => Promise<DownloadResult>;
+  readonly getUsage: () => Promise<UsageResult>;
+  readonly listPropertyKeys: () => Promise<PropertyKeysResult>;
+  readonly listPropertyValues: (input: PropertyValuesToolInput) => Promise<PropertyValuesResult>;
+  readonly setProperties: (input: SetPropertiesToolInput) => Promise<KevaItem>;
   readonly deleteItem: (id: string) => Promise<void>;
 }
 

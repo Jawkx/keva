@@ -1,8 +1,10 @@
 import {
   FIELD_BY_KEY,
-  ITEM_ID_PATTERN,
+  decodeCursor as decodeSharedCursor,
+  encodeCursor,
   Internal,
   QuotaExceeded,
+  validateProperties,
   ValidationError,
   type Actor,
   type ItemEvent,
@@ -81,6 +83,11 @@ interface ItemEventRow {
   readonly created_at: Date | string;
 }
 
+type PatchResult =
+  | { readonly status: "missing" }
+  | { readonly status: "limit-exceeded" }
+  | { readonly status: "updated"; readonly previous: KevaItem; readonly updated: KevaItem };
+
 const mapEventRow = (row: ItemEventRow): ItemEvent => ({
   id: row.id,
   tenantId: row.tenant_id,
@@ -92,6 +99,16 @@ const mapEventRow = (row: ItemEventRow): ItemEvent => ({
   createdAt: asIso(row.created_at),
 });
 
+const insertEvent = async (sql: Sql, event: ItemEvent): Promise<void> => {
+  await sql`
+    insert into item_events (id, tenant_id, item_id, item_name, action, actor, payload, created_at)
+    values (
+      ${event.id}, ${event.tenantId}, ${event.itemId}, ${event.itemName}, ${event.action},
+      ${event.actor ? sql.json(event.actor) : null}, ${sql.json(event.payload)}, ${event.createdAt}
+    )
+  `;
+};
+
 const encodeEventCursor = (event: ItemEvent): string =>
   btoa(JSON.stringify([event.createdAt, event.id]));
 
@@ -100,25 +117,14 @@ const dbFailure = (): Internal => new Internal({ message: "Metadata store unavai
 const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, KevaError> =>
   Effect.tryPromise({ try: operation, catch: dbFailure });
 
-const encodeCursor = (item: KevaItem): string => btoa(JSON.stringify([item.createdAt, item.id]));
-
-const decodeCursor = (cursor: string): Effect.Effect<readonly [string, string], ValidationError> =>
-  Effect.try({
-    try: () => {
-      const value = JSON.parse(atob(cursor)) as unknown;
-      if (
-        !Array.isArray(value) ||
-        value.length !== 2 ||
-        typeof value[0] !== "string" ||
-        typeof value[1] !== "string" ||
-        !Number.isFinite(Date.parse(value[0])) ||
-        !ITEM_ID_PATTERN.test(value[1])
-      )
-        throw new Error("invalid cursor");
-      return [value[0], value[1]] as const;
-    },
-    catch: () => new ValidationError({ message: "Invalid query cursor" }),
-  });
+const decodeCursor = (
+  cursor: string,
+): Effect.Effect<readonly [string, string], ValidationError> => {
+  const decoded = decodeSharedCursor(cursor);
+  return decoded
+    ? Effect.succeed(decoded)
+    : Effect.fail(new ValidationError({ message: "Invalid query cursor" }));
+};
 
 type Fragment = ReturnType<Sql["unsafe"]>;
 type CursorPredicate = (cursor: readonly [string, string]) => Fragment;
@@ -206,7 +212,7 @@ const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
     return sql`properties ? ${key} and not (properties @> ${sql.json({ [key]: value })})`;
   }
   const containsMember = (member: string | number | boolean): Fragment => {
-    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${sql.json([member])})`;
+    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${JSON.stringify([member])}::jsonb)`;
     return typeof member === "string"
       ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${member} in properties ->> ${key}) > 0))`
       : arrayMatch;
@@ -285,6 +291,37 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       );
       if (!reserved) return yield* new QuotaExceeded({ message: "Storage limit reached" });
     }),
+  reserveShareUpload: (reservation) =>
+    Effect.gen(function* () {
+      const reserved = yield* attempt(() =>
+        sql.begin(async (transaction) => {
+          const source = `share:${reservation.grantId}`;
+          if (reservation.item.source !== source) throw new Error("share source mismatch");
+          await transaction`select pg_advisory_xact_lock(hashtextextended(${`${reservation.item.tenantId}:${reservation.grantId}`}, 0))`;
+          const usage = await transaction<{ count: string; bytes: string }[]>`
+            select count(*)::bigint as count,
+                   coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
+            from items
+            where tenant_id = ${reservation.item.tenantId}
+              and source = ${source}
+              and status in ('pending', 'ready')
+          `;
+          const current = usage[0]!;
+          if (
+            (reservation.maxItems !== null && Number(current.count) + 1 > reservation.maxItems) ||
+            (reservation.maxTotalBytes !== null &&
+              Number(current.bytes) + reservation.item.declaredSize > reservation.maxTotalBytes)
+          ) {
+            return false;
+          }
+          await Effect.runPromise(
+            makePostgresMetadataStore(transaction as unknown as Sql).insert(reservation.item),
+          );
+          return true;
+        }),
+      );
+      if (!reserved) return yield* new QuotaExceeded({ message: "Share storage limit reached" });
+    }),
   get: (tenantId, id) =>
     attempt(async () => {
       const rows = await sql<ItemRow[]>`
@@ -317,33 +354,102 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           `;
       return rows.length === 1;
     }),
-  patch: (tenantId, id, patch, updatedAt) =>
-    attempt(async () => {
-      return sql.begin(async (transaction) => {
+  transitionWithEvent: (tenantId, id, from, patch, event) =>
+    attempt(async () =>
+      sql.begin(async (transaction) => {
         const rows = await transaction<ItemRow[]>`
+          select * from items where tenant_id = ${tenantId} and id = ${id} and status in ${transaction(from)} for update
+        `;
+        const row = rows[0];
+        if (!row) return null;
+        const values: Record<string, unknown> = { updated_at: patch.updatedAt };
+        if (patch.status !== undefined) values.status = patch.status;
+        if (patch.size !== undefined) values.size = patch.size;
+        if (patch.etag !== undefined) values.etag = patch.etag;
+        if (patch.contentType !== undefined) values.content_type = patch.contentType;
+        const updated = await transaction<ItemRow[]>`
+          update items set ${transaction(values)} where tenant_id = ${tenantId} and id = ${id} returning *
+        `;
+        if (!updated[0]) return null;
+        const item = mapRow(updated[0]);
+        await insertEvent(transaction as unknown as Sql, event(item));
+        return item;
+      }),
+    ),
+  patch: (tenantId, id, patch, updatedAt) =>
+    Effect.gen(function* () {
+      const result: PatchResult = yield* attempt(async () => {
+        return sql.begin(async (transaction): Promise<PatchResult> => {
+          const rows = await transaction<ItemRow[]>`
           select * from items
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           for update
         `;
-        const row = rows[0];
-        if (!row) return null;
-        const properties = { ...row.properties, ...patch.set };
-        for (const key of patch.unset) delete properties[key];
-        // `updated_at` is always present, so `sql(values)` is never empty and
-        // the inline `properties` clause always has a valid leading comma.
-        const values: Record<string, unknown> = { updated_at: updatedAt };
-        for (const [key, value] of Object.entries(patch.fields)) {
-          const field = FIELD_BY_KEY.get(key);
-          if (field) values[field.column] = value;
-        }
-        const updated = await transaction<ItemRow[]>`
+          const row = rows[0];
+          if (!row) return { status: "missing" };
+          const properties = { ...row.properties, ...patch.set };
+          for (const key of patch.unset) delete properties[key];
+          if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
+          // `updated_at` is always present, so `sql(values)` is never empty and
+          // the inline `properties` clause always has a valid leading comma.
+          const values: Record<string, unknown> = { updated_at: updatedAt };
+          for (const [key, value] of Object.entries(patch.fields)) {
+            const field = FIELD_BY_KEY.get(key);
+            if (field) values[field.column] = value;
+          }
+          const updated = await transaction<ItemRow[]>`
           update items
           set ${transaction(values)}, properties = ${transaction.json(properties)}
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           returning *
         `;
-        return updated[0] ? { previous: mapRow(row), updated: mapRow(updated[0]) } : null;
+          return updated[0]
+            ? { status: "updated", previous: mapRow(row), updated: mapRow(updated[0]) }
+            : { status: "missing" };
+        });
       });
+      if (result.status === "limit-exceeded") {
+        return yield* new QuotaExceeded({ message: "Property limits exceeded" });
+      }
+      return result.status === "updated"
+        ? { previous: result.previous, updated: result.updated }
+        : null;
+    }),
+  patchWithEvent: (tenantId, id, patch, updatedAt, event) =>
+    Effect.gen(function* () {
+      const result: PatchResult = yield* attempt(async () =>
+        sql.begin(async (transaction): Promise<PatchResult> => {
+          const rows = await transaction<ItemRow[]>`
+            select * from items where tenant_id = ${tenantId} and id = ${id} and status = 'ready' for update
+          `;
+          const row = rows[0];
+          if (!row) return { status: "missing" };
+          const properties = { ...row.properties, ...patch.set };
+          for (const key of patch.unset) delete properties[key];
+          if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
+          const values: Record<string, unknown> = { updated_at: updatedAt };
+          for (const [key, value] of Object.entries(patch.fields)) {
+            const field = FIELD_BY_KEY.get(key);
+            if (field) values[field.column] = value;
+          }
+          const updated = await transaction<ItemRow[]>`
+            update items set ${transaction(values)}, properties = ${transaction.json(properties)}
+            where tenant_id = ${tenantId} and id = ${id} and status = 'ready' returning *
+          `;
+          if (!updated[0]) return { status: "missing" };
+          const previous = mapRow(row);
+          const next = mapRow(updated[0]);
+          const nextEvent = event(previous, next);
+          if (nextEvent) await insertEvent(transaction as unknown as Sql, nextEvent);
+          return { status: "updated", previous, updated: next };
+        }),
+      );
+      if (result.status === "limit-exceeded") {
+        return yield* new QuotaExceeded({ message: "Property limits exceeded" });
+      }
+      return result.status === "updated"
+        ? { previous: result.previous, updated: result.updated }
+        : null;
     }),
   remove: (tenantId, id, expectedStatus) =>
     attempt(async () => {
@@ -398,7 +504,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       return {
         items,
         ...(rows.length > query.limit && items.at(-1)
-          ? { nextCursor: encodeCursor(items.at(-1)!) }
+          ? { nextCursor: encodeCursor([items.at(-1)!.createdAt, items.at(-1)!.id]) }
           : {}),
       };
     }),
@@ -508,20 +614,33 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
                  properties -> k.key as value
           from items, lateral jsonb_object_keys(properties) as k(key)
           where tenant_id = ${tenantId} and status = 'ready'
+        ), kinds as (
+          select key,
+                 array_agg(distinct case when kind = 'null' then 'tag' else kind end) as kinds
+          from kv
+          group by key
+        ), scalar_values as (
+          select distinct key, value
+          from kv
+          where kind in ('string', 'number', 'boolean')
+        ), ranked_values as (
+          select key, value,
+                 row_number() over (partition by key order by value) as rank
+          from scalar_values
         )
-        select key,
-               array_agg(distinct case when kind = 'null' then 'tag' else kind end) as kinds,
-               jsonb_agg(distinct value order by value)
-                 filter (where kind in ('string', 'number', 'boolean')) as values
-        from kv
-        group by key
-        order by key
+        select kinds.key, kinds.kinds,
+               jsonb_agg(ranked_values.value order by ranked_values.value)
+                 filter (where ranked_values.rank <= ${SUGGESTION_VALUE_LIMIT}) as values
+        from kinds
+        left join ranked_values on ranked_values.key = kinds.key
+        group by kinds.key, kinds.kinds
+        order by kinds.key
         limit ${SUGGESTION_KEY_LIMIT}
       `;
       return rows.map((row) => ({
         key: row.key,
         kinds: row.kinds,
-        values: (row.values ?? []).slice(0, SUGGESTION_VALUE_LIMIT),
+        values: row.values ?? [],
       }));
     }),
   listByStatus: (status, limit, olderThan) =>

@@ -10,13 +10,20 @@ S3-compatible bucket.
 ```sh
 pnpm install
 pnpm build
-KEVA_STATIC_TOKEN=dev-secret pnpm --filter @keva/server dev
+KEVA_RUNTIME_MODE=local-memory KEVA_STATIC_TOKEN=dev-secret pnpm --filter @keva/server dev
 ```
 
-With no database or S3 environment variables, the server uses the development
-in-memory metadata and signed loopback blob adapters. See
-[`apps/server/.env.example`](./apps/server/.env.example) for persistent
-Postgres and S3 configuration.
+`local-memory` opts into the development in-memory metadata and signed loopback
+blob adapters. Use `persistent` only with both `DATABASE_URL` and complete S3
+configuration. See [`apps/server/.env.example`](./apps/server/.env.example).
+
+## Storage lifecycle
+
+Production cleanup runs every five minutes: abandoned pending uploads and
+deleting items are removed, and ready items are reconciled against their staging
+objects. Configure a bucket lifecycle rule to expire the `staging/` prefix only
+after a period longer than the maximum upload and confirmation window; it is a
+defense in depth measure, not the primary cleanup path.
 
 ```ts
 import { KevaClient } from "@keva/sdk";
@@ -33,6 +40,17 @@ const item = await keva.upload(
 ```
 
 The SDK base URL should point at the API prefix (`/api`), not the server root.
+Item responses intentionally exclude tenant IDs and physical storage keys. The
+private `@keva/sdk` is currently `0.0.0` and unpublished, so these internal
+fields were removed immediately rather than carried through a deprecation period.
+
+## Local admin console
+
+The quota console is a local operator tool. Start the Node API with persistent
+database/S3 settings and a short-lived `KEVA_ADMIN_TOKEN`; it binds only to
+loopback. In another terminal run `pnpm --filter @keva/admin dev`, open
+`http://127.0.0.1:5174`, enter the runtime token, and stop both processes when
+finished. Never deploy the admin app or expose the admin API beyond loopback.
 
 ## Database
 

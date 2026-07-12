@@ -1,11 +1,30 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
+import type { KevaItem } from "@keva/schema";
 import { createKevaMcpServer, type McpEngine } from "./index.js";
+
+const item: KevaItem = {
+  id: "00000000-0000-4000-8000-000000000001",
+  tenantId: "tenant-1",
+  name: "a.txt",
+  contentType: "text/plain",
+  declaredSize: 1,
+  size: 1,
+  etag: null,
+  checksum: null,
+  source: "upload",
+  status: "ready",
+  storageKey: "items/a.txt",
+  stagingKey: "staging/a.txt",
+  createdAt: "2030-01-01T00:00:00.000Z",
+  updatedAt: "2030-01-01T00:00:00.000Z",
+  properties: { tag: "x" },
+};
 
 const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   queryItems: async () => ({ items: [] }),
-  getItem: async () => ({ id: "item-1", name: "a.txt" }),
+  getItem: async () => item,
   getContentUrl: async () => ({ url: "https://blob/x", expiresAt: "2030-01-01T00:00:00Z" }),
   getUsage: async () => ({
     itemCount: 0,
@@ -16,7 +35,7 @@ const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   }),
   listPropertyKeys: async () => ({ keys: ["tag"] }),
   listPropertyValues: async () => ({ values: ["x"] }),
-  setProperties: async () => ({ id: "item-1", properties: { tag: "x" } }),
+  setProperties: async () => item,
   deleteItem: async () => {},
   ...overrides,
 });
@@ -74,7 +93,7 @@ describe("createKevaMcpServer tool registration", () => {
   });
 
   it("does not expose a write tool to a read-only principal", async () => {
-    const setProperties = vi.fn(async () => ({ id: "item-1" }));
+    const setProperties = vi.fn(async () => item);
     const { client, close } = await connect(stubEngine({ setProperties }), ["read"]);
     const result = await client.callTool({
       name: "set_properties",
@@ -88,7 +107,7 @@ describe("createKevaMcpServer tool registration", () => {
 
 describe("createKevaMcpServer tool execution", () => {
   it("delegates query_items to the engine and serializes the result", async () => {
-    const queryItems = vi.fn(async () => ({ items: [{ id: "item-1" }], nextCursor: "c1" }));
+    const queryItems = vi.fn(async () => ({ items: [item], nextCursor: "c1" }));
     const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);
 
     const result = await client.callTool({
@@ -103,15 +122,34 @@ describe("createKevaMcpServer tool execution", () => {
       }),
     );
     expect(result.isError).toBeFalsy();
-    expect(JSON.parse(textOf(result as never))).toEqual({
-      items: [{ id: "item-1" }],
+    expect(JSON.parse(textOf(result as never))).toMatchObject({
+      items: [{ id: item.id }],
       nextCursor: "c1",
     });
     await close();
   });
 
+  it("preserves canonical in conditions and ordering", async () => {
+    const queryItems = vi.fn(async () => ({ items: [] }));
+    const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);
+
+    await client.callTool({
+      name: "query_items",
+      arguments: {
+        where: [{ key: "tag", op: "in", value: ["photo", "video"] }],
+        order: "created_at_desc",
+      },
+    });
+
+    expect(queryItems).toHaveBeenCalledWith({
+      where: [{ key: "tag", op: "in", value: ["photo", "video"] }],
+      order: "created_at_desc",
+    });
+    await close();
+  });
+
   it("delegates set_properties with set/unset", async () => {
-    const setProperties = vi.fn(async () => ({ id: "item-1" }));
+    const setProperties = vi.fn(async () => item);
     const { client, close } = await connect(stubEngine({ setProperties }), ["read", "write"]);
 
     await client.callTool({

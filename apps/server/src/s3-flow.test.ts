@@ -5,6 +5,7 @@ import {
   S3BlobStoreLive,
   makeKevaEngine,
   reapPending,
+  sweepStaging,
   sweepDeleting,
 } from "@keva/core";
 import type { Principal } from "@keva/schema";
@@ -29,6 +30,14 @@ const putToPresigned = async (url: string, bytes: Uint8Array, contentType: strin
   });
   if (!res.ok) throw new Error(`presigned PUT failed: ${res.status}`);
 };
+
+const streamOf = (bytes: Uint8Array) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
 
 const getFromPresigned = async (url: string): Promise<Uint8Array> => {
   const res = await fetch(url);
@@ -113,6 +122,30 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe("immutable bytes");
   });
 
+  it("removes an oversized streamed upload before it can be confirmed", async () => {
+    const engine = makeKevaEngine(principal);
+    const initiated = await runtime.runPromise(
+      engine.initiate({
+        name: "bounded.bin",
+        contentType: "application/octet-stream",
+        size: 2,
+        source: "upload",
+        properties: {},
+      }),
+    );
+
+    await expect(
+      runtime.runPromise(
+        engine.upload(
+          initiated.item.id,
+          streamOf(new Uint8Array([1, 2, 3])),
+          "application/octet-stream",
+        ),
+      ),
+    ).rejects.toThrow("Upload size does not match declaration");
+    expect(mock.store.has(initiated.item.stagingKey)).toBe(false);
+  });
+
   it("replaying a staging URL cannot alter a ready item", async () => {
     const original = new TextEncoder().encode("ORIGINAL");
     const tampered = new TextEncoder().encode("TAMPERED!");
@@ -136,6 +169,32 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
 
     const dl = await runtime.runPromise(engine.download(id));
     expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe("ORIGINAL");
+  });
+
+  it("reconciles a ready item's orphaned staging object", async () => {
+    const bytes = new TextEncoder().encode("staging cleanup");
+    const engine = makeKevaEngine(principal);
+    const initiated = await runtime.runPromise(
+      engine.initiate({
+        name: "cleanup.txt",
+        contentType: "text/plain",
+        size: bytes.byteLength,
+        source: "upload",
+        properties: {},
+      }),
+    );
+
+    await putToPresigned(initiated.uploadUrl, bytes, "text/plain");
+    await runtime.runPromise(engine.confirm(initiated.item.id));
+    await putToPresigned(
+      `${mock.endpoint}/${mock.bucket}/${initiated.item.stagingKey}`,
+      bytes,
+      "text/plain",
+    );
+    expect(mock.store.has(initiated.item.stagingKey)).toBe(true);
+
+    expect(await runtime.runPromise(sweepStaging())).toBe(1);
+    expect(mock.store.has(initiated.item.stagingKey)).toBe(false);
   });
 
   it("reaps an abandoned pending upload and sweeps it to completion", async () => {

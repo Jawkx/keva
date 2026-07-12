@@ -12,6 +12,30 @@ export const PROPERTY_LIMITS = {
   totalBytes: 64 * 1024,
 } as const;
 
+export type PropertyLimitFailure =
+  | "invalid-key"
+  | "too-many-keys"
+  | "invalid-value"
+  | "too-many-bytes";
+
+export const formatPropertyLimitFailure = (failure: PropertyLimitFailure): string => {
+  switch (failure) {
+    case "invalid-key":
+      return "Properties contain an invalid or reserved key";
+    case "too-many-keys":
+      return `At most ${PROPERTY_LIMITS.keys} properties are allowed`;
+    case "invalid-value":
+      return "Properties contain an invalid value";
+    case "too-many-bytes":
+      return `Properties exceed the ${PROPERTY_LIMITS.totalBytes / 1024} KB limit`;
+  }
+};
+
+const encodedBytes = (value: unknown): number =>
+  new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
+const stringBytes = (value: string): number => new TextEncoder().encode(value).byteLength;
+
 export const queryKeyPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const RESERVED_PREFIXES = ["system.", "keva."] as const;
 
@@ -20,6 +44,27 @@ export const isReservedKey = (key: string): boolean =>
 
 export const isPropertyKey = (key: string): boolean =>
   queryKeyPattern.test(key) && key.length <= PROPERTY_LIMITS.keyLength && !isReservedKey(key);
+
+const isPropertyValueWithinLimits = (value: PropertyValue): boolean => {
+  if (typeof value === "string") return stringBytes(value) <= PROPERTY_LIMITS.stringBytes;
+  if (!Array.isArray(value)) return true;
+  if (value.length > PROPERTY_LIMITS.arrayItems) return false;
+  return (
+    value.every((entry) => typeof entry === "string") ||
+    value.every((entry) => typeof entry === "number") ||
+    value.every((entry) => typeof entry === "boolean")
+  );
+};
+
+export const validateProperties = (
+  properties: Readonly<Record<string, PropertyValue>>,
+): PropertyLimitFailure | null => {
+  const entries = Object.entries(properties);
+  if (!entries.every(([key]) => isPropertyKey(key))) return "invalid-key";
+  if (entries.length > PROPERTY_LIMITS.keys) return "too-many-keys";
+  if (!entries.every(([, value]) => isPropertyValueWithinLimits(value))) return "invalid-value";
+  return encodedBytes(properties) <= PROPERTY_LIMITS.totalBytes ? null : "too-many-bytes";
+};
 
 export type FieldOwner = "user" | "system";
 export type FieldQueryType = "string" | "number" | "nullable-string" | "timestamp";

@@ -7,15 +7,15 @@ import {
   CreateView,
   DownloadResult,
   InitiateUpload,
-  InitiateUploadResult,
+  OwnerInitiateUploadResult,
   ItemEventsResult,
   KevaError,
-  KevaItem,
+  OwnerItem,
   PropertyKeysResult,
   PropertySummaryResult,
   PropertyValuesResult,
   Query,
-  QueryResult,
+  OwnerQueryResult,
   ShareGrantRecord,
   ShareSelf,
   SharedInitiateUploadResult,
@@ -34,15 +34,17 @@ import {
   type CreateView as CreateViewType,
   type DownloadResult as DownloadResultType,
   type InitiateUpload as InitiateUploadType,
+  type OwnerInitiateUploadResult as InitiateUploadResultType,
   type ItemEvent as ItemEventType,
   type ItemEventsResult as ItemEventsResultType,
   type KevaError as KevaErrorType,
-  type KevaItem as KevaItemType,
+  type OwnerItem as KevaItemType,
   type Query as QueryType,
-  type QueryResult as QueryResultType,
+  type OwnerQueryResult as QueryResultType,
   type ShareGrantRecord as ShareGrantRecordType,
   type ShareSelf as ShareSelfType,
   type SharedItem as SharedItemType,
+  type SharedInitiateUploadResult as SharedInitiateUploadResultType,
   type SharedQueryResult as SharedQueryResultType,
   type UpdateView as UpdateViewType,
   type UsageResult as UsageResultType,
@@ -80,6 +82,25 @@ export const SHARE_TOKEN_PREFIX = "keva_sh_";
 export const isShareToken = (token: string): boolean => token.startsWith(SHARE_TOKEN_PREFIX);
 
 export type UploadBody = BodyInit;
+
+type InitiatedUpload = {
+  readonly uploadUrl: string;
+  readonly expiresAt: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly item: { readonly id: string };
+};
+
+export interface UploadSession<I extends InitiatedUpload = InitiatedUpload> {
+  readonly initiated: I;
+}
+
+export type ItemUploadSession = UploadSession<InitiateUploadResultType>;
+export type ShareUploadSession = UploadSession<SharedInitiateUploadResultType>;
+
+export const isUploadSessionExpired = (session: UploadSession, at = Date.now()): boolean => {
+  const expiresAt = Date.parse(session.initiated.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= at;
+};
 
 export interface KevaClientOptions {
   readonly baseUrl: string;
@@ -175,20 +196,36 @@ export class KevaClient {
 
   async initiate(input: InitiateUploadType) {
     const body = decode(InitiateUpload, input);
-    return this.#request("POST", "/items", InitiateUploadResult, body);
+    return this.#request("POST", "/items", OwnerInitiateUploadResult, body);
   }
 
-  async uploadBody(input: InitiateUploadType, body: UploadBody): Promise<KevaItemType> {
-    const initiated = await this.initiate(input);
-    const response = await this.#fetch(initiated.uploadUrl, {
+  async startUpload(input: InitiateUploadType): Promise<ItemUploadSession> {
+    return { initiated: await this.initiate(input) };
+  }
+
+  async putUpload(session: ItemUploadSession, body: UploadBody): Promise<void> {
+    const response = await this.#fetch(session.initiated.uploadUrl, {
       method: "PUT",
-      headers: initiated.headers,
+      credentials: this.#credentials,
+      headers: {
+        ...session.initiated.headers,
+        ...(this.#token ? { authorization: `Bearer ${this.#token}` } : {}),
+      },
       body,
     });
     if (!response.ok) {
       throw new KevaProtocolError(`Blob upload failed with ${response.status}`);
     }
-    return this.confirm(initiated.item.id);
+  }
+
+  completeUpload(session: ItemUploadSession): Promise<KevaItemType> {
+    return this.confirm(session.initiated.item.id);
+  }
+
+  async uploadBody(input: InitiateUploadType, body: UploadBody): Promise<KevaItemType> {
+    const session = await this.startUpload(input);
+    await this.putUpload(session, body);
+    return this.completeUpload(session);
   }
 
   uploadFile(
@@ -215,11 +252,11 @@ export class KevaClient {
   }
 
   confirm(id: string): Promise<KevaItemType> {
-    return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, KevaItem);
+    return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, OwnerItem);
   }
 
   get(id: string): Promise<KevaItemType> {
-    return this.#request("GET", `/items/${encodeURIComponent(id)}`, KevaItem);
+    return this.#request("GET", `/items/${encodeURIComponent(id)}`, OwnerItem);
   }
 
   getDownloadUrl(id: string): Promise<DownloadResultType> {
@@ -248,7 +285,7 @@ export class KevaClient {
     return this.#request(
       "PATCH",
       `/items/${encodeURIComponent(id)}`,
-      KevaItem,
+      OwnerItem,
       decode(ItemPatch, patch),
     );
   }
@@ -272,7 +309,7 @@ export class KevaClient {
   query(
     query: QueryType = { where: [], limit: 100, order: "created_at_asc" },
   ): Promise<QueryResultType> {
-    return this.#request("POST", "/query", QueryResult, decode(Query, query));
+    return this.#request("POST", "/query", OwnerQueryResult, decode(Query, query));
   }
 
   usage(): Promise<UsageResultType> {
@@ -426,28 +463,46 @@ export class ShareClient {
     return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, SharedItem);
   }
 
-  // Upload into the share. Name/size/type only — the server force-applies the
-  // grant's property stamp and rejects any caller-supplied properties/source.
-  async uploadFile(file: File): Promise<SharedItemType> {
-    const initiated = await this.#request(
-      "POST",
-      "/items",
-      SharedInitiateUploadResult,
-      decode(InitiateUpload, {
-        name: file.name,
-        contentType: file.type || "application/octet-stream",
-        size: file.size,
-      }),
-    );
-    const response = await this.#config.fetch(initiated.uploadUrl, {
+  async startUpload(file: File): Promise<ShareUploadSession> {
+    return {
+      initiated: await this.#request(
+        "POST",
+        "/items",
+        SharedInitiateUploadResult,
+        decode(InitiateUpload, {
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+        }),
+      ),
+    };
+  }
+
+  async putUpload(session: ShareUploadSession, body: UploadBody): Promise<void> {
+    const response = await this.#config.fetch(session.initiated.uploadUrl, {
       method: "PUT",
-      headers: initiated.headers,
-      body: file,
+      credentials: this.#config.credentials,
+      headers: {
+        ...session.initiated.headers,
+        authorization: `Bearer ${this.#config.token}`,
+      },
+      body,
     });
     if (!response.ok) {
       throw new KevaProtocolError(`Blob upload failed with ${response.status}`);
     }
-    return this.confirm(initiated.item.id);
+  }
+
+  completeUpload(session: ShareUploadSession): Promise<SharedItemType> {
+    return this.confirm(session.initiated.item.id);
+  }
+
+  // Upload into the share. Name/size/type only — the server force-applies the
+  // grant's property stamp and rejects any caller-supplied properties/source.
+  async uploadFile(file: File): Promise<SharedItemType> {
+    const session = await this.startUpload(file);
+    await this.putUpload(session, file);
+    return this.completeUpload(session);
   }
 }
 

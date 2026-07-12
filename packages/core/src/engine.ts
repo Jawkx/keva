@@ -1,5 +1,4 @@
 import {
-  PROPERTY_LIMITS,
   Conflict,
   Forbidden,
   NotFound,
@@ -16,10 +15,9 @@ import {
   type PropertyValue,
   type Query,
   type Scope,
-  type ShareGrantContext,
 } from "@keva/schema";
 import { Effect } from "effect";
-import { BlobStore, MetadataStore, type MetadataStoreService } from "./services.js";
+import { BlobStore, MetadataStore } from "./services.js";
 
 const now = (): string => new Date().toISOString();
 
@@ -36,8 +34,7 @@ const readyOrNotFound = (item: KevaItem | null) =>
 // A share principal's grant context, or null for session/token principals. The
 // engine keys share-scoped enforcement off the *presence of the context*, not
 // the `via` discriminant alone.
-const shareOf = (principal: Principal): ShareGrantContext | null =>
-  principal.via === "share" ? (principal.share ?? null) : null;
+const shareOf = (principal: Principal) => (principal.via === "share" ? principal.share : null);
 
 // Mutations and tenant-wide reads a share may never perform, regardless of the
 // scopes it holds. Checked before `requireScope` so the caller gets a
@@ -62,26 +59,21 @@ const shareVisible = (principal: Principal, item: KevaItem): Effect.Effect<KevaI
     : Effect.fail(new NotFound({ message: "Item not found" }));
 };
 
-// Best-effort: an append failure never fails the mutation it describes.
-const recordEvent = (
-  metadata: MetadataStoreService,
+const eventFor = (
   principal: Principal,
   item: KevaItem,
   action: ItemEventAction,
   payload: ItemEventPayload,
-) =>
-  metadata
-    .appendEvent({
-      id: crypto.randomUUID(),
-      tenantId: principal.tenantId,
-      itemId: item.id,
-      itemName: item.name,
-      action,
-      actor: principal.actor ?? null,
-      payload,
-      createdAt: now(),
-    })
-    .pipe(Effect.ignore);
+) => ({
+  id: crypto.randomUUID(),
+  tenantId: principal.tenantId,
+  itemId: item.id,
+  itemName: item.name,
+  action,
+  actor: principal.actor ?? null,
+  payload,
+  createdAt: now(),
+});
 
 const sameValue = (a: PropertyValue | undefined, b: PropertyValue | undefined): boolean =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -98,6 +90,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       const metadata = yield* MetadataStore;
       const blobs = yield* BlobStore;
       const share = shareOf(principal);
+      const limits = share?.limits;
       // `source: "share:{id}"` is the engine's private bookkeeping namespace. A
       // non-share caller setting it could inflate a grant's quota usage and make
       // its own item confirmable/readable through that grant — reject it.
@@ -118,26 +111,10 @@ export const makeKevaEngine = (principal: Principal) => ({
         }
         source = shareSource(share.grantId);
         properties = share.writeStamp ?? {};
-        const limits = share.limits;
-        if (limits) {
-          if (limits.maxItemBytes !== null && input.size > limits.maxItemBytes) {
-            return yield* new QuotaExceeded({
-              message: "Upload exceeds this share's per-file size limit",
-            });
-          }
-          if (limits.maxItems !== null || limits.maxTotalBytes !== null) {
-            const used = yield* metadata.sourceUsage(principal.tenantId, source);
-            if (limits.maxItems !== null && used.count + 1 > limits.maxItems) {
-              return yield* new QuotaExceeded({
-                message: "This share's upload count limit has been reached",
-              });
-            }
-            if (limits.maxTotalBytes !== null && used.bytes + input.size > limits.maxTotalBytes) {
-              return yield* new QuotaExceeded({
-                message: "This share's total upload size limit has been reached",
-              });
-            }
-          }
+        if (limits && limits.maxItemBytes !== null && input.size > limits.maxItemBytes) {
+          return yield* new QuotaExceeded({
+            message: "Upload exceeds this share's per-file size limit",
+          });
         }
       }
       const id = crypto.randomUUID();
@@ -159,7 +136,16 @@ export const makeKevaEngine = (principal: Principal) => ({
         updatedAt: timestamp,
         properties,
       };
-      yield* metadata.insert(item);
+      if (share && limits && (limits.maxItems !== null || limits.maxTotalBytes !== null)) {
+        yield* metadata.reserveShareUpload({
+          grantId: share.grantId,
+          maxItems: limits.maxItems,
+          maxTotalBytes: limits.maxTotalBytes,
+          item,
+        });
+      } else {
+        yield* metadata.insert(item);
+      }
       const upload = yield* blobs.presignUpload(item.stagingKey, input.size, input.contentType);
       return {
         item,
@@ -167,6 +153,27 @@ export const makeKevaEngine = (principal: Principal) => ({
         expiresAt: upload.expiresAt,
         headers: { ...upload.headers },
       };
+    }),
+
+  upload: (id: string, body: ReadableStream<Uint8Array>, contentType: string) =>
+    Effect.gen(function* () {
+      yield* requireScope(principal, "write");
+      const metadata = yield* MetadataStore;
+      const blobs = yield* BlobStore;
+      const item = yield* metadata.get(principal.tenantId, id);
+      if (!item || item.status !== "pending") {
+        return yield* new NotFound({ message: "Item not found" });
+      }
+      const share = shareOf(principal);
+      if (share && item.source !== shareSource(share.grantId)) {
+        return yield* new NotFound({ message: "Item not found" });
+      }
+      if (contentType !== item.contentType) {
+        return yield* new ValidationError({
+          message: "Uploaded content type does not match declaration",
+        });
+      }
+      yield* blobs.put(item.stagingKey, body, contentType, item.declaredSize);
     }),
 
   confirm: (id: string) =>
@@ -197,27 +204,30 @@ export const makeKevaEngine = (principal: Principal) => ({
         });
       }
       yield* blobs.copy(item.stagingKey, item.storageKey);
-      const transitioned = yield* metadata.transition(principal.tenantId, id, ["pending"], {
-        status: "ready",
-        size: head.size,
-        etag: head.etag,
-        contentType: head.contentType ?? item.contentType,
-        updatedAt: now(),
-      });
-      if (!transitioned) {
+      const confirmed = yield* metadata.transitionWithEvent(
+        principal.tenantId,
+        id,
+        ["pending"],
+        {
+          status: "ready",
+          size: head.size,
+          etag: head.etag,
+          contentType: head.contentType ?? item.contentType,
+          updatedAt: now(),
+        },
+        (updated) =>
+          eventFor(principal, updated, "uploaded", {
+            size: updated.size,
+            contentType: updated.contentType,
+            source: updated.source,
+          }),
+      );
+      if (!confirmed) {
         const current = yield* metadata.get(principal.tenantId, id);
         if (current?.status === "ready") return current;
         return yield* new Conflict({ message: "Upload expired while confirming" });
       }
       yield* blobs.delete(item.stagingKey).pipe(Effect.ignore);
-      const confirmed = yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id));
-      // Only the caller that won the transition logs, so idempotent
-      // re-confirms don't duplicate the event.
-      yield* recordEvent(metadata, principal, confirmed, "uploaded", {
-        size: confirmed.size,
-        contentType: confirmed.contentType,
-        source: confirmed.source,
-      });
       return confirmed;
     }),
 
@@ -247,64 +257,46 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* forbidShare(principal, "modify items");
       yield* requireScope(principal, "write");
       const metadata = yield* MetadataStore;
-      const current = yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id));
       const routed = routePatch(patch.set, patch.unset);
       if (!routed.ok) {
         return yield* new ValidationError({
           message: `Cannot patch '${routed.error.key}': ${routed.error.reason}`,
         });
       }
-      const merged = { ...current.properties, ...routed.routed.set };
-      for (const key of routed.routed.unset) delete merged[key];
-      // Re-check the *merged* result against every limit, not just the
-      // incoming `set` (which Effect Schema already validated). Merging an
-      // otherwise-valid patch into existing properties can still push the
-      // item past the per-item key count, per-value size, or total bytes.
-      const encoder = new TextEncoder();
-      const totalBytes = encoder.encode(JSON.stringify(merged)).byteLength;
-      const valueExceedsLimit = (value: unknown): boolean =>
-        (typeof value === "string" &&
-          encoder.encode(value).byteLength > PROPERTY_LIMITS.stringBytes) ||
-        (Array.isArray(value) && value.length > PROPERTY_LIMITS.arrayItems);
-      if (
-        Object.keys(merged).length > PROPERTY_LIMITS.keys ||
-        totalBytes > PROPERTY_LIMITS.totalBytes ||
-        Object.values(merged).some(valueExceedsLimit)
-      ) {
-        return yield* new QuotaExceeded({
-          message: "Property limits exceeded",
-        });
-      }
-      const patched = yield* metadata.patch(principal.tenantId, id, routed.routed, now());
-      if (!patched) return yield* new NotFound({ message: "Item not found" });
-      const { previous, updated } = patched;
-      // Diff the store's transactional before/after — not the earlier `current`
-      // read — so racing patches log accurate diffs and duplicates are no-ops.
-      if (previous.name !== updated.name) {
-        yield* recordEvent(metadata, principal, updated, "renamed", {
-          from: previous.name,
-          to: updated.name,
-        });
-      }
-      const changedSet: Record<string, PropertyValue> = {};
-      const previousValues: Record<string, PropertyValue> = {};
-      for (const [key, value] of Object.entries(updated.properties)) {
-        if (sameValue(previous.properties[key], value)) continue;
-        changedSet[key] = value;
-        if (key in previous.properties) previousValues[key] = previous.properties[key]!;
-      }
-      const removed = Object.keys(previous.properties).filter(
-        (key) => !(key in updated.properties),
+      const patched = yield* metadata.patchWithEvent(
+        principal.tenantId,
+        id,
+        routed.routed,
+        now(),
+        (previous, updated) => {
+          if (previous.name !== updated.name) {
+            return eventFor(principal, updated, "renamed", {
+              from: previous.name,
+              to: updated.name,
+            });
+          }
+          const changedSet: Record<string, PropertyValue> = {};
+          const previousValues: Record<string, PropertyValue> = {};
+          for (const [key, value] of Object.entries(updated.properties)) {
+            if (sameValue(previous.properties[key], value)) continue;
+            changedSet[key] = value;
+            if (key in previous.properties) previousValues[key] = previous.properties[key]!;
+          }
+          const removed = Object.keys(previous.properties).filter(
+            (key) => !(key in updated.properties),
+          );
+          for (const key of removed) previousValues[key] = previous.properties[key]!;
+          return Object.keys(changedSet).length > 0 || removed.length > 0
+            ? eventFor(principal, updated, "properties_changed", {
+                ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
+                ...(Object.keys(previousValues).length > 0 ? { previous: previousValues } : {}),
+                ...(removed.length > 0 ? { unset: removed } : {}),
+              })
+            : null;
+        },
       );
-      for (const key of removed) previousValues[key] = previous.properties[key]!;
-      if (Object.keys(changedSet).length > 0 || removed.length > 0) {
-        yield* recordEvent(metadata, principal, updated, "properties_changed", {
-          ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
-          ...(Object.keys(previousValues).length > 0 ? { previous: previousValues } : {}),
-          ...(removed.length > 0 ? { unset: removed } : {}),
-        });
-      }
-      return updated;
+      if (!patched) return yield* new NotFound({ message: "Item not found" });
+      return patched.updated;
     }),
 
   // Events outlive deletion, so this does not require the item to exist.
@@ -374,13 +366,14 @@ export const makeKevaEngine = (principal: Principal) => ({
       const current = yield* metadata.get(principal.tenantId, id);
       if (!current) return;
       if (current.status !== "deleting") {
-        const claimed = yield* metadata.transition(principal.tenantId, id, ["ready", "pending"], {
-          status: "deleting",
-          updatedAt: now(),
-        });
+        const claimed = yield* metadata.transitionWithEvent(
+          principal.tenantId,
+          id,
+          ["ready", "pending"],
+          { status: "deleting", updatedAt: now() },
+          (updated) => eventFor(principal, updated, "deleted", {}),
+        );
         if (!claimed) return;
-        // Recorded at claim time — sweepDeleting has no principal to attribute.
-        yield* recordEvent(metadata, principal, current, "deleted", {});
       }
       yield* blobs.delete(current.storageKey);
       yield* blobs.delete(current.stagingKey);
@@ -423,6 +416,19 @@ export const sweepDeleting = (options: LifecycleJobOptions = {}) =>
       yield* blobs.delete(item.stagingKey);
       const removed = yield* metadata.remove(item.tenantId, item.id, "deleting");
       if (removed) swept++;
+    }
+    return swept;
+  });
+
+export const sweepStaging = (options: LifecycleJobOptions = {}) =>
+  Effect.gen(function* () {
+    const metadata = yield* MetadataStore;
+    const blobs = yield* BlobStore;
+    const ready = yield* metadata.listByStatus("ready", options.batchSize ?? 100);
+    let swept = 0;
+    for (const item of ready) {
+      yield* blobs.delete(item.stagingKey);
+      swept++;
     }
     return swept;
   });

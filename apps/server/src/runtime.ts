@@ -1,25 +1,28 @@
 import {
   MemoryBlobStoreLive,
   MemoryMetadataStoreLive,
-  PostgresMetadataStoreLive,
+  MetadataStore,
   S3BlobStoreLive,
+  makePostgresMetadataStore,
 } from "@keva/core";
 import { StorageUnavailable } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import {
   ApiTokenStore,
-  PostgresApiTokenStoreLive,
   StaticTokenAuthLive,
   TokenAndStaticAuthFromStoreLive,
+  makePostgresApiTokenStore,
   type ApiTokenStoreService,
   type SessionResolver,
 } from "./auth.js";
 import {
-  PostgresShareGrantStoreLive,
   ShareGrantStore,
+  makePostgresShareGrantStore,
   type ShareGrantStoreService,
 } from "./shares.js";
-import { PostgresViewStoreLive, unavailableViewStore, ViewStore } from "./views.js";
+import { makePostgresViewStore, unavailableViewStore, ViewStore } from "./views.js";
+import type { DatabaseUnit } from "./database.js";
+import type { RuntimeMode } from "./runtime-mode.js";
 
 // Without Postgres there is no token store. `resolve` simply finds no token (so
 // auth falls through to the static token); the mutating ops fail with a typed
@@ -47,9 +50,11 @@ const unavailableShareStore: ShareGrantStoreService = {
   list: sharesNeedDatabase,
   get: sharesNeedDatabase,
   revoke: sharesNeedDatabase,
+  updateView: sharesNeedDatabase,
 };
 
 export interface RuntimeConfig {
+  readonly mode: RuntimeMode;
   readonly staticToken: string;
   readonly tenantId: string;
   readonly baseUrl: string;
@@ -60,7 +65,7 @@ export interface RuntimeConfig {
    * Defaults to `baseUrl`. No effect once S3 is configured.
    */
   readonly loopbackBaseUrl?: string;
-  readonly databaseUrl?: string;
+  readonly database?: DatabaseUnit;
   readonly sessionResolver?: SessionResolver;
   readonly s3?: {
     readonly endpoint: string;
@@ -73,25 +78,33 @@ export interface RuntimeConfig {
 }
 
 export const makeRuntimeLayer = (config: RuntimeConfig) => {
-  const metadata = config.databaseUrl
-    ? PostgresMetadataStoreLive({ url: config.databaseUrl })
+  const persistent = config.mode === "persistent";
+  if (persistent && (!config.database || !config.s3)) {
+    throw new Error("Persistent runtime requires database and S3 configuration");
+  }
+  if (!persistent && (config.database || config.s3)) {
+    throw new Error("Local-memory runtime cannot use database or S3 configuration");
+  }
+
+  const metadata = persistent
+    ? Layer.succeed(MetadataStore, makePostgresMetadataStore(config.database!.sql))
     : MemoryMetadataStoreLive;
-  const blobs = config.s3
-    ? S3BlobStoreLive(config.s3)
+  const blobs = persistent
+    ? S3BlobStoreLive(config.s3!)
     : MemoryBlobStoreLive({
         baseUrl: config.loopbackBaseUrl !== undefined ? config.loopbackBaseUrl : config.baseUrl,
       });
-  const tokens = config.databaseUrl
-    ? PostgresApiTokenStoreLive(config.databaseUrl)
+  const tokens = persistent
+    ? Layer.succeed(ApiTokenStore, makePostgresApiTokenStore(config.database!.sql))
     : Layer.succeed(ApiTokenStore, unavailableTokenStore);
-  const shares = config.databaseUrl
-    ? PostgresShareGrantStoreLive(config.databaseUrl)
+  const shares = persistent
+    ? Layer.succeed(ShareGrantStore, makePostgresShareGrantStore(config.database!.sql))
     : Layer.succeed(ShareGrantStore, unavailableShareStore);
-  const views = config.databaseUrl
-    ? PostgresViewStoreLive(config.databaseUrl)
+  const views = persistent
+    ? Layer.succeed(ViewStore, makePostgresViewStore(config.database!.sql))
     : Layer.succeed(ViewStore, unavailableViewStore);
   const stores = Layer.mergeAll(tokens, shares, views);
-  const authAndStores = config.databaseUrl
+  const authAndStores = persistent
     ? Layer.provideMerge(
         TokenAndStaticAuthFromStoreLive({
           staticToken: config.staticToken,

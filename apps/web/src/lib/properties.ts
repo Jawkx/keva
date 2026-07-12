@@ -1,10 +1,12 @@
-import type { PropertyValue } from "@keva/schema";
-
-export const KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
-export const KEY_MAX = 128;
-export const MAX_KEYS = 256;
-export const MAX_TOTAL_BYTES = 64 * 1024;
-export const MAX_ARRAY_ITEMS = 256;
+import {
+  PROPERTY_LIMITS,
+  PropertyValue as PropertyValueSchema,
+  formatPropertyLimitFailure,
+  isPropertyKey,
+  validateProperties,
+  type PropertyValue,
+} from "@keva/schema";
+import { Schema } from "effect";
 
 export type ScalarType = "string" | "number" | "boolean" | "null";
 export type ValueType = ScalarType | "array";
@@ -17,14 +19,21 @@ export const valueType = (value: PropertyValue): ValueType => {
   return "string";
 };
 
-export const coerceScalar = (type: ScalarType, raw: string): PropertyValue => {
-  if (type === "null") return null;
-  if (type === "boolean") return raw.trim().toLowerCase() === "true";
+export type CoerceScalarResult =
+  | { readonly ok: true; readonly value: PropertyValue }
+  | { readonly ok: false; readonly error: string };
+
+export const coerceScalar = (type: ScalarType, raw: string): CoerceScalarResult => {
+  if (type === "null") return { ok: true, value: null };
+  if (type === "boolean") return { ok: true, value: raw.trim().toLowerCase() === "true" };
   if (type === "number") {
+    if (raw.trim() === "") return { ok: false, error: "Enter a number" };
     const n = Number(raw);
-    return Number.isFinite(n) ? n : 0;
+    return Number.isFinite(n)
+      ? { ok: true, value: n }
+      : { ok: false, error: "Enter a finite number" };
   }
-  return raw;
+  return { ok: true, value: raw };
 };
 
 export const scalarToInput = (value: PropertyValue): string => {
@@ -35,30 +44,10 @@ export const scalarToInput = (value: PropertyValue): string => {
 
 export const validateKey = (key: string): string | null => {
   if (!key) return "Key is required";
-  if (key.length > KEY_MAX) return `Key must be at most ${KEY_MAX} characters`;
-  if (!KEY_PATTERN.test(key)) return "Use letters, digits, . _ - and start with a letter or digit";
-  if (key.startsWith("system.") || key.startsWith("keva."))
-    return "Keys cannot use the system. or keva. namespaces";
+  if (key.length > PROPERTY_LIMITS.keyLength)
+    return `Key must be at most ${PROPERTY_LIMITS.keyLength} characters`;
+  if (!isPropertyKey(key)) return "Use a non-reserved key with letters, digits, . _ -";
   return null;
-};
-
-const encodedBytes = (value: unknown): number =>
-  new TextEncoder().encode(JSON.stringify(value)).byteLength;
-
-const validateValue = (value: unknown): string | null => {
-  if (value === null) return null;
-  if (typeof value === "string" || typeof value === "boolean") return null;
-  if (typeof value === "number") return Number.isFinite(value) ? null : "Numbers must be finite";
-  if (Array.isArray(value)) {
-    if (value.length > MAX_ARRAY_ITEMS) return `Arrays may have at most ${MAX_ARRAY_ITEMS} items`;
-    const itemType = typeof value[0];
-    if (itemType !== "string" && itemType !== "number" && itemType !== "boolean")
-      return "Arrays must contain strings, numbers, or booleans";
-    return value.every((item) => typeof item === itemType)
-      ? null
-      : "Array items must all be the same type";
-  }
-  return "Nested objects are not allowed";
 };
 
 export type ParseResult =
@@ -76,19 +65,17 @@ export const parsePropertiesJson = (text: string): ParseResult => {
     return { ok: false, error: "The top level must be a JSON object" };
 
   const entries = Object.entries(data as Record<string, unknown>);
-  if (entries.length > MAX_KEYS)
-    return { ok: false, error: `At most ${MAX_KEYS} properties are allowed` };
 
   for (const [key, value] of entries) {
     const keyError = validateKey(key);
     if (keyError) return { ok: false, error: `Key “${key}” — ${keyError}` };
-    const valueError = validateValue(value);
-    if (valueError) return { ok: false, error: `“${key}” — ${valueError}` };
+    if (!Schema.is(PropertyValueSchema)(value))
+      return { ok: false, error: `“${key}” has an invalid property value` };
   }
 
   const value = Object.fromEntries(entries) as Record<string, PropertyValue>;
-  if (encodedBytes(value) > MAX_TOTAL_BYTES)
-    return { ok: false, error: "Properties exceed the 64 KB limit" };
+  const failure = validateProperties(value);
+  if (failure) return { ok: false, error: formatPropertyLimitFailure(failure) };
   return { ok: true, value };
 };
 

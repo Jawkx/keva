@@ -1,19 +1,20 @@
 import { BlobStore, DEFAULT_STORAGE_QUOTA_BYTES, makeKevaEngine, MetadataStore } from "@keva/core";
 import {
   ItemPatch,
+  UpdateAdminQuota,
   BatchDelete,
   CreateShareGrant,
   CreateView,
-  isPropertyKey,
   ItemId,
   InitiateUpload,
+  isFutureInstant,
   Internal,
   KevaError,
   MintToken,
   NotFound,
-  propertiesMatchCondition,
   Query,
   toSharedItem,
+  toOwnerItem,
   Unauthorized,
   UpdateView,
   ValidationError,
@@ -80,7 +81,7 @@ const principalEffect = (headers: Headers) =>
 // happens here at the boundary (not in the engine) so internal callers keep the
 // full KevaItem shape and only the wire response is trimmed.
 const redactItem = (principal: Principal, item: KevaItem) =>
-  principal.via === "share" ? toSharedItem(item) : item;
+  principal.via === "share" ? toSharedItem(item) : toOwnerItem(item);
 
 export interface AppServiceOptions {
   readonly layer: Layer.Layer<AppServices>;
@@ -141,6 +142,10 @@ export const createApp = (options: CreateAppOptions): Hono => {
     }
   };
 
+  app.all("/api/auth/organization/*", (context) =>
+    context.json({ _tag: "Forbidden", message: "Organization management is not available" }, 403),
+  );
+
   app.on(["GET", "POST"], "/api/auth/*", (context) =>
     withServices(context, ({ authHandler }) =>
       authHandler ? authHandler(context.req.raw) : context.notFound(),
@@ -152,6 +157,22 @@ export const createApp = (options: CreateAppOptions): Hono => {
   );
 
   app.get("/health", (context) => context.json({ ok: true, service: "keva" }));
+
+  app.get("/ready", (context) =>
+    withServices(context, async ({ runtime }) => {
+      const ready = await runtime.runPromiseExit(
+        Effect.gen(function* () {
+          const metadata = yield* MetadataStore;
+          const blobs = yield* BlobStore;
+          yield* metadata.usage("__keva_readiness__");
+          yield* blobs.head("__keva_readiness__");
+        }),
+      );
+      return Exit.isSuccess(ready)
+        ? context.json({ ok: true, service: "keva" })
+        : context.json({ ok: false, service: "keva" }, 503);
+    }),
+  );
 
   const withAdmin = (
     context: Context,
@@ -174,20 +195,11 @@ export const createApp = (options: CreateAppOptions): Hono => {
 
   app.put("/api/admin/users/:id/quota", async (context) =>
     withAdmin(context, async ({ store }) => {
-      const body = (await context.req.json().catch(() => null)) as {
-        quotaBytes?: unknown;
-        useDefault?: unknown;
-      } | null;
+      const body = await context.req.json().catch(() => null);
+      const decoded = Schema.decodeUnknownEither(UpdateAdminQuota)(body);
+      if (decoded._tag === "Left") return context.json({ message: "Invalid quota update" }, 400);
       const requestedQuota =
-        body?.useDefault === true ? DEFAULT_STORAGE_QUOTA_BYTES : body?.quotaBytes;
-      if (
-        requestedQuota !== null &&
-        (typeof requestedQuota !== "number" ||
-          !Number.isSafeInteger(requestedQuota) ||
-          requestedQuota < -1)
-      ) {
-        return context.json({ message: "quotaBytes must be an integer, null, 0, or -1" }, 400);
-      }
+        "useDefault" in decoded.right ? DEFAULT_STORAGE_QUOTA_BYTES : decoded.right.quotaBytes;
       const quotaBytes =
         requestedQuota === null || requestedQuota === 0 || requestedQuota === -1
           ? null
@@ -258,10 +270,33 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(InitiateUpload, yield* jsonBody(context));
         const result = yield* makeKevaEngine(principal).initiate(body);
-        return { ...result, item: redactItem(principal, result.item) };
+        const uploadUrl = new URL(context.req.url);
+        uploadUrl.pathname = `/api/items/${result.item.id}/upload`;
+        uploadUrl.search = "";
+        return {
+          ...result,
+          item: redactItem(principal, result.item),
+          uploadUrl: uploadUrl.toString(),
+          headers: { "content-type": result.item.contentType },
+        };
       }),
     ),
   );
+
+  app.put("/api/items/:id/upload", (context) => {
+    const body = context.req.raw.body;
+    if (!body) return context.json({ message: "Upload body is required" }, 400);
+    return runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        const contentType = context.req.header("content-type") ?? "";
+        yield* makeKevaEngine(principal).upload(id, body, contentType);
+        return { ok: true };
+      }),
+    );
+  });
 
   app.post("/api/items/:id/confirm", (context) =>
     runRoute(
@@ -376,9 +411,13 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(Query, yield* jsonBody(context));
         const result = yield* makeKevaEngine(principal).query(body);
-        return principal.via === "share"
-          ? { ...result, items: result.items.map(toSharedItem) }
-          : result;
+        return {
+          ...result,
+          items:
+            principal.via === "share"
+              ? result.items.map(toSharedItem)
+              : result.items.map(toOwnerItem),
+        };
       }),
     ),
   );
@@ -434,6 +473,9 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         yield* requireAdminSession(principal);
         const body = yield* decode(MintToken, yield* jsonBody(context));
+        if (body.expiresAt && !isFutureInstant(body.expiresAt)) {
+          return yield* new ValidationError({ message: "Token expiration must be in the future" });
+        }
         const tokens = yield* ApiTokenStore;
         return yield* tokens.mint(principal.tenantId, body);
       }),
@@ -512,8 +554,8 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         yield* requireAdminSession(principal);
         const body = yield* decode(UpdateView, yield* jsonBody(context));
-        const views = yield* ViewStore;
-        const view = yield* views.update(principal.tenantId, context.req.param("id"), body);
+        const shares = yield* ShareGrantStore;
+        const view = yield* shares.updateView(principal.tenantId, context.req.param("id"), body);
         if (!view) return yield* new NotFound({ message: "View not found" });
         return view;
       }),
@@ -534,9 +576,6 @@ export const createApp = (options: CreateAppOptions): Hono => {
     ),
   );
 
-  // Write-soundness invariants that depend on the
-  // view's conditions are enforced here (the CreateShareGrant schema can only
-  // check the writeStamp-presence invariant, since conditions live on the view).
   app.post("/api/shares", async (context) =>
     runRoute(
       context,
@@ -544,23 +583,8 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         yield* requireAdminSession(principal);
         const body = yield* decode(CreateShareGrant, yield* jsonBody(context));
-        const views = yield* ViewStore;
-        const view = yield* views.get(principal.tenantId, body.viewId);
-        if (!view) return yield* new NotFound({ message: "View not found" });
-        if (body.scopes.includes("write")) {
-          if (!view.conditions.every((c) => isPropertyKey(c.key))) {
-            return yield* new ValidationError({
-              message: "Write grants may only condition on plain property keys",
-            });
-          }
-          if (
-            body.writeStamp !== undefined &&
-            !view.conditions.every((c) => propertiesMatchCondition(body.writeStamp!, c))
-          ) {
-            return yield* new ValidationError({
-              message: "writeStamp must satisfy every view condition",
-            });
-          }
+        if (body.expiresAt && !isFutureInstant(body.expiresAt)) {
+          return yield* new ValidationError({ message: "Share expiration must be in the future" });
         }
         const shares = yield* ShareGrantStore;
         return yield* shares.create(principal.tenantId, body);

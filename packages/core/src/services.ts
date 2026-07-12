@@ -32,6 +32,12 @@ export interface BlobStoreService {
     contentType: string,
   ) => Effect.Effect<PresignedRequest, KevaError>;
   readonly presignDownload: (key: string) => Effect.Effect<PresignedRequest, KevaError>;
+  readonly put: (
+    key: string,
+    body: ReadableStream<Uint8Array>,
+    contentType: string,
+    expectedSize: number,
+  ) => Effect.Effect<void, KevaError>;
   readonly head: (key: string) => Effect.Effect<BlobHead | null, KevaError>;
   readonly copy: (sourceKey: string, destinationKey: string) => Effect.Effect<void, KevaError>;
   readonly delete: (key: string) => Effect.Effect<void, KevaError>;
@@ -69,6 +75,9 @@ export interface ItemPatchInput {
 
 export interface MetadataStoreService {
   readonly insert: (item: KevaItem) => Effect.Effect<void, KevaError>;
+  readonly reserveShareUpload: (
+    reservation: ShareUploadReservation,
+  ) => Effect.Effect<void, KevaError>;
   readonly get: (tenantId: string, id: string) => Effect.Effect<KevaItem | null, KevaError>;
   readonly transition: (
     tenantId: string,
@@ -77,6 +86,13 @@ export interface MetadataStoreService {
     patch: ItemTransition,
     olderThan?: string,
   ) => Effect.Effect<boolean, KevaError>;
+  readonly transitionWithEvent: (
+    tenantId: string,
+    id: string,
+    from: ReadonlyArray<ItemStatus>,
+    patch: ItemTransition,
+    event: (item: KevaItem) => ItemEvent,
+  ) => Effect.Effect<KevaItem | null, KevaError>;
   // `previous` is the row read inside the update's critical section, so
   // callers can diff before/after accurately even when patches race.
   readonly patch: (
@@ -84,6 +100,13 @@ export interface MetadataStoreService {
     id: string,
     patch: ItemPatchInput,
     updatedAt: string,
+  ) => Effect.Effect<ItemPatchResult | null, KevaError>;
+  readonly patchWithEvent: (
+    tenantId: string,
+    id: string,
+    patch: ItemPatchInput,
+    updatedAt: string,
+    event: (previous: KevaItem, updated: KevaItem) => ItemEvent | null,
   ) => Effect.Effect<ItemPatchResult | null, KevaError>;
   readonly remove: (
     tenantId: string,
@@ -125,6 +148,13 @@ export interface MetadataStoreService {
     itemId: string,
     options: ListEventsOptions,
   ) => Effect.Effect<ItemEventsResult, KevaError>;
+}
+
+export interface ShareUploadReservation {
+  readonly grantId: string;
+  readonly maxItems: number | null;
+  readonly maxTotalBytes: number | null;
+  readonly item: KevaItem;
 }
 
 export interface ListEventsOptions {

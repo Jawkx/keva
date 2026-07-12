@@ -1,9 +1,13 @@
 import {
   Conflict,
+  ValidationError,
+  decodeCursor,
+  encodeCursor,
   FIELD_BY_KEY,
   Internal,
   QuotaExceeded,
   itemMatchesCondition,
+  validateProperties,
   type ItemEvent,
   type PropertyKind,
   type PropertyScalar,
@@ -16,6 +20,7 @@ import {
   BlobStore,
   type BlobStoreService,
   MetadataStore,
+  type ShareUploadReservation,
   type MetadataStoreService,
   DEFAULT_STORAGE_QUOTA_BYTES,
   SUGGESTION_KEY_LIMIT,
@@ -37,22 +42,6 @@ const matchesSearch = (item: KevaItem, search: string | undefined): boolean => {
   const term = search?.trim().toLowerCase();
   if (!term) return true;
   return item.name.toLowerCase().includes(term) || item.contentType.toLowerCase().includes(term);
-};
-
-const encodeCursor = (item: KevaItem): string => btoa(JSON.stringify([item.createdAt, item.id]));
-
-const decodeCursor = (cursor: string): readonly [string, string] | null => {
-  try {
-    const value = JSON.parse(atob(cursor)) as unknown;
-    return Array.isArray(value) &&
-      value.length === 2 &&
-      typeof value[0] === "string" &&
-      typeof value[1] === "string"
-      ? [value[0], value[1]]
-      : null;
-  } catch {
-    return null;
-  }
 };
 
 const compareCreated =
@@ -81,26 +70,58 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
   const events: ItemEvent[] = [];
   const usageByTenant = new Map<string, { usedBytes: number; quotaBytes: number | null }>();
   const mapKey = (tenantId: string, id: string) => `${tenantId}\0${id}`;
+  const shareUsage = (reservation: ShareUploadReservation) => {
+    const source = `share:${reservation.grantId}`;
+    let count = 0;
+    let bytes = 0;
+    for (const item of items.values()) {
+      if (
+        item.tenantId === reservation.item.tenantId &&
+        item.source === source &&
+        (item.status === "pending" || item.status === "ready")
+      ) {
+        count++;
+        bytes += item.size ?? item.declaredSize;
+      }
+    }
+    return { source, count, bytes };
+  };
+  const insert = (item: KevaItem) =>
+    Effect.gen(function* () {
+      const key = mapKey(item.tenantId, item.id);
+      if (items.has(key)) {
+        return yield* new Internal({ message: "Metadata write failed" });
+      }
+      const usage = usageByTenant.get(item.tenantId) ?? {
+        usedBytes: 0,
+        quotaBytes: DEFAULT_STORAGE_QUOTA_BYTES,
+      };
+      if (usage.quotaBytes !== null && usage.usedBytes + item.declaredSize > usage.quotaBytes) {
+        return yield* new QuotaExceeded({ message: "Storage limit reached" });
+      }
+      usageByTenant.set(item.tenantId, {
+        ...usage,
+        usedBytes: usage.usedBytes + item.declaredSize,
+      });
+      items.set(key, cloneItem(item));
+    });
 
   return {
-    insert: (item) =>
+    insert,
+    reserveShareUpload: (reservation) =>
       Effect.gen(function* () {
-        const key = mapKey(item.tenantId, item.id);
-        if (items.has(key)) {
+        const { source, count, bytes } = shareUsage(reservation);
+        if (reservation.item.source !== source) {
           return yield* new Internal({ message: "Metadata write failed" });
         }
-        const usage = usageByTenant.get(item.tenantId) ?? {
-          usedBytes: 0,
-          quotaBytes: DEFAULT_STORAGE_QUOTA_BYTES,
-        };
-        if (usage.quotaBytes !== null && usage.usedBytes + item.declaredSize > usage.quotaBytes) {
-          return yield* new QuotaExceeded({ message: "Storage limit reached" });
+        if (
+          (reservation.maxItems !== null && count + 1 > reservation.maxItems) ||
+          (reservation.maxTotalBytes !== null &&
+            bytes + reservation.item.declaredSize > reservation.maxTotalBytes)
+        ) {
+          return yield* new QuotaExceeded({ message: "Share storage limit reached" });
         }
-        usageByTenant.set(item.tenantId, {
-          ...usage,
-          usedBytes: usage.usedBytes + item.declaredSize,
-        });
-        items.set(key, cloneItem(item));
+        yield* insert(reservation.item);
       }),
     get: (tenantId, id) =>
       Effect.sync(() => {
@@ -120,13 +141,26 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         items.set(key, cloneItem({ ...item, ...patch }));
         return true;
       }),
-    patch: (tenantId, id, patch, updatedAt) =>
+    transitionWithEvent: (tenantId, id, from, patch, event) =>
       Effect.sync(() => {
+        const key = mapKey(tenantId, id);
+        const item = items.get(key);
+        if (!item || !from.includes(item.status)) return null;
+        const updated = cloneItem({ ...item, ...patch });
+        items.set(key, updated);
+        events.push(structuredClone(event(updated)));
+        return cloneItem(updated);
+      }),
+    patch: (tenantId, id, patch, updatedAt) =>
+      Effect.gen(function* () {
         const key = mapKey(tenantId, id);
         const item = items.get(key);
         if (!item || item.status !== "ready") return null;
         const properties = { ...item.properties, ...patch.set };
         for (const unset of patch.unset) delete properties[unset];
+        if (validateProperties(properties) !== null) {
+          return yield* new QuotaExceeded({ message: "Property limits exceeded" });
+        }
         const updated: KevaItem = { ...item, properties, updatedAt };
         // Map each routed field key to its in-memory accessor. Cast is needed
         // because the registry types `itemField` as the full key union.
@@ -138,6 +172,28 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         }
         items.set(key, cloneItem(updated));
         return { previous: cloneItem(item), updated: cloneItem(updated) };
+      }),
+    patchWithEvent: (tenantId, id, patch, updatedAt, event) =>
+      Effect.gen(function* () {
+        const key = mapKey(tenantId, id);
+        const item = items.get(key);
+        if (!item || item.status !== "ready") return null;
+        const properties = { ...item.properties, ...patch.set };
+        for (const unset of patch.unset) delete properties[unset];
+        if (validateProperties(properties) !== null) {
+          return yield* new QuotaExceeded({ message: "Property limits exceeded" });
+        }
+        const updated: KevaItem = { ...item, properties, updatedAt };
+        for (const [fieldKey, value] of Object.entries(patch.fields)) {
+          const field = FIELD_BY_KEY.get(fieldKey);
+          if (field) (updated as Record<string, unknown>)[field.itemField] = value;
+        }
+        const previous = cloneItem(item);
+        const result = { previous, updated: cloneItem(updated) };
+        items.set(key, cloneItem(updated));
+        const nextEvent = event(result.previous, result.updated);
+        if (nextEvent) events.push(structuredClone(nextEvent));
+        return result;
       }),
     remove: (tenantId, id, expectedStatus) =>
       Effect.sync(() => {
@@ -155,24 +211,36 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         return true;
       }),
     query: (tenantId, query) =>
-      Effect.sync(() => {
-        const order = query.order ?? "created_at_asc";
-        const cursor = query.cursor ? decodeCursor(query.cursor) : null;
-        let rows = [...items.values()]
-          .filter((item) => item.tenantId === tenantId && item.status === "ready")
-          .filter((item) => matchesSearch(item, query.search))
-          .filter((item) => query.where.every((condition) => itemMatchesCondition(item, condition)))
-          .sort(compareCreated(order));
-        if (cursor) {
-          rows = rows.filter((item) => isAfterCursor(order, item, cursor));
-        }
-        const page = rows.slice(0, query.limit + 1);
-        const hasMore = page.length > query.limit;
-        const result = page.slice(0, query.limit).map(cloneItem);
-        return {
-          items: result,
-          ...(hasMore && result.at(-1) ? { nextCursor: encodeCursor(result.at(-1)!) } : {}),
-        };
+      Effect.try({
+        try: () => {
+          const order = query.order ?? "created_at_asc";
+          const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
+          if (query.cursor && !cursor)
+            throw new ValidationError({ message: "Invalid query cursor" });
+          let rows = [...items.values()]
+            .filter((item) => item.tenantId === tenantId && item.status === "ready")
+            .filter((item) => matchesSearch(item, query.search))
+            .filter((item) =>
+              query.where.every((condition) => itemMatchesCondition(item, condition)),
+            )
+            .sort(compareCreated(order));
+          if (cursor) {
+            rows = rows.filter((item) => isAfterCursor(order, item, cursor));
+          }
+          const page = rows.slice(0, query.limit + 1);
+          const hasMore = page.length > query.limit;
+          const result = page.slice(0, query.limit).map(cloneItem);
+          return {
+            items: result,
+            ...(hasMore && result.at(-1)
+              ? { nextCursor: encodeCursor([result.at(-1)!.createdAt, result.at(-1)!.id]) }
+              : {}),
+          };
+        },
+        catch: (error) =>
+          error instanceof ValidationError
+            ? error
+            : new Internal({ message: "Metadata query failed" }),
       }),
     usage: (tenantId) =>
       Effect.sync(() => {
@@ -294,25 +362,33 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         events.push(structuredClone(event));
       }),
     listEvents: (tenantId, itemId, options) =>
-      Effect.sync(() => {
-        const cursor = options.cursor ? decodeCursor(options.cursor) : null;
-        let rows = events
-          .filter((event) => event.tenantId === tenantId && event.itemId === itemId)
-          .sort(compareEventsDesc);
-        if (cursor) {
-          rows = rows.filter(
-            (event) =>
-              event.createdAt < cursor[0] ||
-              (event.createdAt === cursor[0] && event.id < cursor[1]),
-          );
-        }
-        const page = rows.slice(0, options.limit + 1);
-        const hasMore = page.length > options.limit;
-        const result = page.slice(0, options.limit).map((event) => structuredClone(event));
-        return {
-          events: result,
-          ...(hasMore && result.at(-1) ? { nextCursor: encodeEventCursor(result.at(-1)!) } : {}),
-        };
+      Effect.try({
+        try: () => {
+          const cursor = options.cursor ? decodeCursor(options.cursor) : undefined;
+          if (options.cursor && !cursor)
+            throw new ValidationError({ message: "Invalid query cursor" });
+          let rows = events
+            .filter((event) => event.tenantId === tenantId && event.itemId === itemId)
+            .sort(compareEventsDesc);
+          if (cursor) {
+            rows = rows.filter(
+              (event) =>
+                event.createdAt < cursor[0] ||
+                (event.createdAt === cursor[0] && event.id < cursor[1]),
+            );
+          }
+          const page = rows.slice(0, options.limit + 1);
+          const hasMore = page.length > options.limit;
+          const result = page.slice(0, options.limit).map((event) => structuredClone(event));
+          return {
+            events: result,
+            ...(hasMore && result.at(-1) ? { nextCursor: encodeEventCursor(result.at(-1)!) } : {}),
+          };
+        },
+        catch: (error) =>
+          error instanceof ValidationError
+            ? error
+            : new Internal({ message: "Metadata query failed" }),
       }),
   };
 };
@@ -377,6 +453,30 @@ export const makeMemoryBlobStore = (options: MemoryBlobStoreOptions = {}): BlobS
     presignUpload: (key, size, contentType) =>
       presign(key, "PUT", options.uploadTtlSeconds ?? 900, size, contentType),
     presignDownload: (key) => presign(key, "GET", options.downloadTtlSeconds ?? 300),
+    put: (key, body, contentType, expectedSize) =>
+      Effect.tryPromise({
+        try: async () => {
+          const reader = body.getReader();
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          while (true) {
+            const next = await reader.read();
+            if (next.done) break;
+            size += next.value.byteLength;
+            if (size > expectedSize) throw new Error("Upload exceeds declared size");
+            chunks.push(next.value);
+          }
+          if (size !== expectedSize) throw new Error("Upload size does not match declaration");
+          const bytes = new Uint8Array(size);
+          let offset = 0;
+          for (const chunk of chunks) {
+            bytes.set(chunk, offset);
+            offset += chunk.byteLength;
+          }
+          blobs.set(key, { bytes, contentType, etag: await hashBytes(bytes) });
+        },
+        catch: () => new ValidationError({ message: "Upload size does not match declaration" }),
+      }),
     head: (key) =>
       Effect.sync(() => {
         const blob = blobs.get(key);

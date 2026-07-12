@@ -11,15 +11,27 @@ import {
   Properties,
   propertiesMatchCondition,
   Query,
+  toOwnerItem,
   toSharedItem,
   UpdateView,
   UsageResult,
+  validateProperties,
 } from "./index.js";
 
 describe("schema", () => {
   it("rejects mixed arrays and reserved keys", () => {
     expect(() => Schema.decodeUnknownSync(Properties)({ tags: ["a", 1] })).toThrow();
     expect(() => Schema.decodeUnknownSync(Properties)({ "system.owner": "me" })).toThrow();
+  });
+
+  it("reports complete-property limit failures without decoder errors", () => {
+    expect(validateProperties({ "system.owner": "me" })).toBe("invalid-key");
+    expect(
+      validateProperties(
+        Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`key-${index}`, index])),
+      ),
+    ).toBe("too-many-keys");
+    expect(validateProperties({ note: "x".repeat(8 * 1024 + 1) })).toBe("invalid-value");
   });
 
   it("applies query defaults and rejects invalid operator values", () => {
@@ -231,7 +243,7 @@ describe("CreateView / UpdateView", () => {
 });
 
 describe("share principal + redaction", () => {
-  it("decodes a principal with and without a share context", () => {
+  it("requires share context only for share principals", () => {
     expect(
       Schema.decodeUnknownSync(Principal)({ tenantId: "t", scopes: ["read"], via: "session" }).via,
     ).toBe("session");
@@ -246,16 +258,25 @@ describe("share principal + redaction", () => {
         limits: { maxItemBytes: null, maxTotalBytes: 1000, maxItems: null },
       },
     });
-    expect(shared.share?.grantId).toBe("g1");
+    expect(shared.via).toBe("share");
+    if (shared.via === "share") expect(shared.share.grantId).toBe("g1");
+    expect(() =>
+      Schema.decodeUnknownSync(Principal)({ tenantId: "t", scopes: ["read"], via: "share" }),
+    ).toThrow();
   });
 
-  it("strips exactly the three tenant-internal fields", () => {
+  it("strips exactly the three tenant-internal fields from public item DTOs", () => {
     const item = sampleItem();
     const shared = toSharedItem(item);
+    const owner = toOwnerItem(item);
     expect(shared).not.toHaveProperty("tenantId");
     expect(shared).not.toHaveProperty("storageKey");
     expect(shared).not.toHaveProperty("stagingKey");
+    expect(owner).not.toHaveProperty("tenantId");
+    expect(owner).not.toHaveProperty("storageKey");
+    expect(owner).not.toHaveProperty("stagingKey");
     expect(shared.id).toBe(item.id);
+    expect(owner).toEqual(shared);
     expect(shared.properties).toEqual(item.properties);
     expect(Object.keys(shared).length).toBe(Object.keys(item).length - 3);
   });

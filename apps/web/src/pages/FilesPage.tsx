@@ -28,7 +28,6 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
-import type { KevaItem } from "@keva/sdk";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
 import { FilterBar, FilterMenuButton } from "../components/FilterBar";
@@ -37,22 +36,12 @@ import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/v
 import { useAppHeaderSlot } from "../lib/app-header-slot";
 import { errorMessage } from "../lib/errors";
 import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
-import {
-  buildFilterWhere,
-  createFilterDraft,
-  decodeFilterParam,
-  draftFromConditions,
-  encodeFilterParam,
-} from "../lib/item-filters";
-import {
-  itemsQueryKey,
-  prependItemToPages,
-  removeItemsFromPages,
-  type ItemsCache,
-} from "../lib/items-cache";
+import { decodeFilterParam, draftFromConditions } from "../lib/item-filters";
+import { removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { sharesQueryKey } from "../lib/shares";
-import { usageQueryKey } from "../lib/use-usage";
+import { useFileFilters } from "../lib/use-file-filters";
+import { type UploadQueueRow, useUploadQueue } from "../lib/use-upload-queue";
 import {
   createView,
   deleteView,
@@ -62,7 +51,6 @@ import {
   viewsQueryKey,
 } from "../lib/views";
 import { useMediaQuery } from "../lib/useMediaQuery";
-import { useMountEffect } from "../lib/useMountEffect";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -119,8 +107,9 @@ import { cn } from "@/lib/utils";
 declare module "@tanstack/react-table" {
   interface TableMeta<TData extends RowData> {
     selectMode: boolean;
-    onRetryUpload: (id: string, file: File) => void;
+    onRetryUpload: (row: FileRow) => void;
     onFilterByProperty: (key: string, value: PropertyValue) => void;
+    onOpenItem: (itemId: string) => void;
   }
 }
 
@@ -156,31 +145,7 @@ const uploadStampFrom = (where: readonly QueryCondition[]): Record<string, Prope
   return stamp;
 };
 
-type FileRow = KevaItem & {
-  upload?: { status: "uploading" | "error"; file: File; error?: string };
-};
-
-const optimisticRow = (id: string, file: File): FileRow => {
-  const now = new Date().toISOString();
-  return {
-    id,
-    tenantId: "",
-    name: file.name,
-    contentType: file.type || "application/octet-stream",
-    declaredSize: file.size,
-    size: file.size,
-    etag: null,
-    checksum: null,
-    source: "upload",
-    status: "pending",
-    storageKey: "pending",
-    stagingKey: "pending",
-    createdAt: now,
-    updatedAt: now,
-    properties: {},
-    upload: { status: "uploading", file },
-  };
-};
+type FileRow = UploadQueueRow;
 
 const columnHelper = createColumnHelper<FileRow>();
 
@@ -219,7 +184,7 @@ const columns = [
             type="button"
             aria-label={`Upload failed: ${upload.error ?? "unknown error"}. Click to retry`}
             title={`${upload.error ?? "Upload failed"} — click to retry`}
-            onClick={() => table.options.meta?.onRetryUpload(row.original.id, upload.file)}
+            onClick={() => table.options.meta?.onRetryUpload(row.original)}
             className="flex size-5 items-center justify-center rounded text-destructive hover:bg-destructive/10"
           >
             <HugeiconsIcon icon={Alert02Icon} className="size-4" />
@@ -243,7 +208,18 @@ const columns = [
   }),
   columnHelper.accessor("name", {
     header: "Name",
-    cell: (ctx) => <span className="block truncate font-medium">{ctx.getValue()}</span>,
+    cell: ({ getValue, row, table }) => (
+      <button
+        type="button"
+        className="block max-w-full truncate text-left font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={(event) => {
+          event.stopPropagation();
+          table.options.meta?.onOpenItem(row.original.id);
+        }}
+      >
+        {getValue()}
+      </button>
+    ),
   }),
   columnHelper.accessor((o) => o.size ?? 0, {
     id: "size",
@@ -296,35 +272,66 @@ const columns = [
 ];
 
 export function FilesPage() {
+  const { viewId } = useParams<{ viewId: string }>();
+  const [searchParams] = useSearchParams();
+  const initialWhere = viewId ? [] : decodeFilterParam(searchParams.get("filter"));
+  const routeKey = viewId ? `view:${viewId}` : `root:${searchParams.get("filter") ?? ""}`;
+  return <FilesPageSession key={routeKey} viewId={viewId} initialWhere={initialWhere} />;
+}
+
+function FilesPageSession({
+  viewId,
+  initialWhere,
+}: {
+  readonly viewId?: string | undefined;
+  readonly initialWhere: readonly QueryCondition[];
+}) {
+  const viewQuery = useQuery({
+    queryKey: viewId ? viewQueryKey(viewId) : ["views", "none"],
+    queryFn: () => getView(viewId!),
+    enabled: Boolean(viewId),
+  });
+
+  if (viewId && viewQuery.isPending) {
+    return <div className="flex min-h-0 flex-1" aria-busy="true" />;
+  }
+
+  return (
+    <FilesPageContent
+      initialWhere={viewQuery.data?.conditions ?? initialWhere}
+      view={viewQuery.data}
+    />
+  );
+}
+
+function FilesPageContent({
+  initialWhere,
+  view,
+}: {
+  readonly initialWhere: readonly QueryCondition[];
+  readonly view: Awaited<ReturnType<typeof getView>> | undefined;
+}) {
   const navigate = useNavigate();
   const { id: selectedId, viewId } = useParams<{ id: string; viewId: string }>();
   const queryClient = useQueryClient();
   const isWide = useMediaQuery("(min-width: 1024px)");
   const headerSlot = useAppHeaderSlot();
 
-  const viewQuery = useQuery({
-    queryKey: viewId ? viewQueryKey(viewId) : ["views", "none"],
-    queryFn: () => getView(viewId!),
-    enabled: Boolean(viewId),
-  });
-  const view = viewQuery.data;
-
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialWhere = viewId ? [] : decodeFilterParam(searchParams.get("filter"));
-
-  const [search, setSearch] = useState("");
-  const [activeSearch, setActiveSearch] = useState("");
-  const [activeWhere, setActiveWhere] = useState<QueryCondition[]>(initialWhere);
-  const [filterDraft, setFilterDraft] = useState(() => draftFromConditions(initialWhere));
-  const searchTimer = useRef<number | undefined>(undefined);
-  useMountEffect(() => () => window.clearTimeout(searchTimer.current));
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const clearSelection = useCallback(() => setRowSelection({}), []);
+  const {
+    search,
+    activeSearch,
+    activeWhere,
+    setActiveWhere,
+    filterDraft,
+    setFilterDraft,
+    applyWhere,
+    filterByProperty,
+    onSearchChange,
+    clearFilters,
+  } = useFileFilters({ viewId, initialWhere, onQueryChange: clearSelection });
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-
-  // Optimistic upload rows (uploading / failed-with-retry). Kept separate from
-  // the React Query list cache: failed uploads must persist with a retry
-  // affordance rather than roll back, and survive list refetches.
-  const [uploads, setUploads] = useState<FileRow[]>([]);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -343,48 +350,6 @@ export function FilesPage() {
   const [deleteViewOpen, setDeleteViewOpen] = useState(false);
   const [nameEditing, setNameEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-
-  // Two independent seeds, adjusted during render rather than via an effect
-  // (repo rule: no direct useEffect):
-  //  • navKey changes on route change (root ↔ view, view → view): reset the
-  //    selection and the ephemeral free-text search.
-  //  • filterKey changes when the applied filter's source changes — the view's
-  //    saved conditions, or the root URL `filter` param — and reseeds the
-  //    working filter without disturbing the search box.
-  const navKey = viewId ?? "root";
-  const [seededNav, setSeededNav] = useState(navKey);
-  if (navKey !== seededNav) {
-    setSeededNav(navKey);
-    setRowSelection({});
-    setSearch("");
-    setActiveSearch("");
-    setNameEditing(false);
-  }
-
-  const filterKey = viewId
-    ? `v:${view?.updatedAt ?? "loading"}`
-    : `u:${searchParams.get("filter") ?? ""}`;
-  const [seededFilter, setSeededFilter] = useState(filterKey);
-  if (filterKey !== seededFilter) {
-    setSeededFilter(filterKey);
-    // Reseed the draft only when the applied conditions actually diverge from
-    // it — self-initiated FilterBar commits round-trip through here and must
-    // keep their row ids (an open chip popover is keyed on them).
-    if (viewId) {
-      if (view) {
-        setActiveWhere([...view.conditions]);
-        if (!sameConditions(buildFilterWhere(filterDraft), view.conditions)) {
-          setFilterDraft(draftFromConditions(view.conditions));
-        }
-      }
-    } else {
-      const where = decodeFilterParam(searchParams.get("filter"));
-      setActiveWhere(where);
-      if (!sameConditions(buildFilterWhere(filterDraft), where)) {
-        setFilterDraft(draftFromConditions(where));
-      }
-    }
-  }
 
   const viewEdited = Boolean(viewId && view && !sameConditions(activeWhere, view.conditions));
 
@@ -446,7 +411,6 @@ export function FilesPage() {
     () => itemsQuery.data?.pages.flatMap((p) => p.items) ?? [],
     [itemsQuery.data],
   );
-  const tableData = useMemo<FileRow[]>(() => [...uploads, ...serverItems], [uploads, serverItems]);
 
   const splitOpen = Boolean(selectedId) && isWide;
   const columnVisibility: VisibilityState = {
@@ -462,92 +426,13 @@ export function FilesPage() {
 
   const uploadStamp = useMemo(() => uploadStampFrom(activeWhere), [activeWhere]);
   const uploadStampEntries = Object.entries(uploadStamp);
-
-  const uploadOne = useCallback(
-    async (id: string, file: File) => {
-      try {
-        const item = await keva.uploadFile(file, {
-          properties: uploadStamp,
-          source: "upload",
-        });
-        // Prepend into the (unfiltered) list and drop the optimistic row in the
-        // same tick so the row swaps in place — no refetch, no flicker. With a
-        // search active we can't know if the item matches, so refetch instead.
-        if (activeSearch.trim() || activeWhere.length > 0) {
-          void queryClient.invalidateQueries({ queryKey: ["items"] });
-        } else {
-          queryClient.setQueryData<ItemsCache>(
-            itemsQueryKey(activeSearch, activeWhere, DEFAULT_ORDER),
-            (old) => (old ? prependItemToPages(old, item) : old),
-          );
-        }
-        void queryClient.invalidateQueries({ queryKey: usageQueryKey });
-        setUploads((prev) => prev.filter((r) => r.id !== id));
-      } catch (err) {
-        const error = errorMessage(err);
-        setUploads((prev) =>
-          prev.map((r) => (r.id === id ? { ...r, upload: { status: "error", file, error } } : r)),
-        );
-      }
-    },
-    [activeSearch, activeWhere, uploadStamp, queryClient],
-  );
-
-  const startUploads = useCallback(
-    (files: File[]) => {
-      const entries = files.map((file) => ({
-        id: `upload:${crypto.randomUUID()}`,
-        file,
-      }));
-      setUploads((prev) => [...entries.map((e) => optimisticRow(e.id, e.file)), ...prev]);
-      for (const { id, file } of entries) void uploadOne(id, file);
-    },
-    [uploadOne],
-  );
-
-  const retryUpload = useCallback(
-    (id: string, file: File) => {
-      setUploads((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, upload: { status: "uploading", file } } : r)),
-      );
-      void uploadOne(id, file);
-    },
-    [uploadOne],
-  );
-
-  const applyWhere = useCallback(
-    (where: QueryCondition[]) => {
-      setRowSelection({});
-      if (viewId) {
-        setActiveWhere(where);
-      } else {
-        setSearchParams(
-          (prev) => {
-            const sp = new URLSearchParams(prev);
-            if (where.length > 0) sp.set("filter", encodeFilterParam(where));
-            else sp.delete("filter");
-            return sp;
-          },
-          { replace: true },
-        );
-      }
-    },
-    [viewId, setSearchParams],
-  );
-
-  const filterByProperty = useCallback(
-    (key: string, value: PropertyValue) => {
-      const condition: QueryCondition =
-        value === null || Array.isArray(value) ? { key, op: "exists" } : { key, op: "eq", value };
-      const kept = activeWhere.filter(
-        (c) => !(c.key === key && (c.op === "eq" || c.op === "exists")),
-      );
-      const next = [...kept, condition];
-      setFilterDraft(draftFromConditions(next));
-      applyWhere(next);
-    },
-    [activeWhere, applyWhere],
-  );
+  const { uploads, startUploads, retryUpload } = useUploadQueue({
+    queryClient,
+    activeSearch,
+    activeWhere,
+    uploadStamp,
+  });
+  const tableData = useMemo<FileRow[]>(() => [...uploads, ...serverItems], [uploads, serverItems]);
 
   const table = useReactTable({
     data: tableData,
@@ -557,7 +442,12 @@ export function FilesPage() {
     enableRowSelection: (row) => !row.original.upload,
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
-    meta: { selectMode, onRetryUpload: retryUpload, onFilterByProperty: filterByProperty },
+    meta: {
+      selectMode,
+      onRetryUpload: retryUpload,
+      onFilterByProperty: filterByProperty,
+      onOpenItem: (itemId) => navigate(itemId === selectedId ? listPath : itemPath(itemId)),
+    },
   });
 
   const rows = table.getRowModel().rows;
@@ -584,12 +474,7 @@ export function FilesPage() {
       if (result.failed.length > 0) {
         toast.error(`Failed to delete ${result.failed.length} ${plural(result.failed.length)}`);
       }
-      queryClient.setQueriesData<ItemsCache>({ queryKey: ["items"] }, (old) =>
-        old ? removeItemsFromPages(old, result.deleted) : old,
-      );
-      if (result.deleted.length > 0) {
-        void queryClient.invalidateQueries({ queryKey: usageQueryKey });
-      }
+      removeDeletedItemsFromCache(queryClient, result.deleted);
       setRowSelection({});
       if (selectedId && ids.includes(selectedId)) navigate(listPath);
     },
@@ -599,24 +484,6 @@ export function FilesPage() {
   const onBulkDelete = () => {
     const ids = table.getSelectedRowModel().rows.map((r) => r.original.id);
     if (ids.length > 0) bulkDeleteMutation.mutate(ids);
-  };
-
-  const onSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const value = event.target.value;
-    setSearch(value);
-    window.clearTimeout(searchTimer.current);
-    searchTimer.current = window.setTimeout(() => {
-      setActiveSearch(value.trim());
-      setRowSelection({});
-    }, 300);
-  };
-
-  const clearFilters = () => {
-    window.clearTimeout(searchTimer.current);
-    setSearch("");
-    setActiveSearch("");
-    setFilterDraft(createFilterDraft());
-    applyWhere([]);
   };
 
   const saveViewEdits = () => {

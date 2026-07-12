@@ -174,10 +174,10 @@ describe("server token subsystem", () => {
       }),
     });
     expect(initiated.status).toBe(200);
-    const initiatedBody = (await initiated.json()) as {
-      item: { tenantId: string };
-    };
-    expect(initiatedBody.item.tenantId).toBe(TENANT);
+    const initiatedBody = (await initiated.json()) as { item: Record<string, unknown> };
+    expect(initiatedBody.item).not.toHaveProperty("tenantId");
+    expect(initiatedBody.item).not.toHaveProperty("storageKey");
+    expect(initiatedBody.item).not.toHaveProperty("stagingKey");
   });
 
   it("enforces the minted token's scopes (read-only cannot write)", async () => {

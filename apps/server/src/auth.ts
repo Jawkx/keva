@@ -9,7 +9,7 @@ import {
   type TokenRecord,
 } from "@keva/schema";
 import { Context, Effect, Layer } from "effect";
-import postgres, { type Sql } from "postgres";
+import { type Sql } from "postgres";
 import { ShareGrantStore, shareStrategy } from "./shares.js";
 
 export interface AuthRequest {
@@ -252,15 +252,6 @@ export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
       catch: storageError,
     }),
 });
-
-export const PostgresApiTokenStoreLive = (url: string): Layer.Layer<ApiTokenStore> =>
-  Layer.scoped(
-    ApiTokenStore,
-    Effect.acquireRelease(
-      Effect.sync(() => postgres(url)),
-      (sql) => Effect.promise(() => sql.end({ timeout: 5 })),
-    ).pipe(Effect.map(makePostgresApiTokenStore)),
-  );
 
 export const tokenStrategy =
   (store: ApiTokenStoreService): AuthStrategy =>
