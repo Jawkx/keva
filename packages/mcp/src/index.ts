@@ -20,7 +20,10 @@ const queryArgs = z.object({
       }),
     )
     .optional()
-    .describe("Property conditions, ANDed together."),
+    .describe(
+      "Property conditions, ANDed together. A property with a null value is a bare tag; " +
+        "match tagged items with op 'exists' on the tag's key.",
+    ),
   search: z.string().max(256).optional().describe("Free-text match over item names."),
   limit: z
     .number()
@@ -47,8 +50,16 @@ const setPropertiesArgs = z.object({
   set: z
     .record(z.string(), propertyValue)
     .optional()
-    .describe("Properties to set or overwrite. May include the writable 'name' field."),
-  unset: z.array(z.string()).optional().describe("Property keys to remove."),
+    .describe(
+      "Properties to set or overwrite. May include the writable 'name' field. " +
+        "IMPORTANT: a null value does NOT delete the key — it sets a bare tag " +
+        "(pure membership marker, e.g. {\"urgent\": null} tags the item 'urgent'). " +
+        "To remove a property, list its key in 'unset' instead.",
+    ),
+  unset: z
+    .array(z.string())
+    .optional()
+    .describe("Property keys to remove. This is the only way to delete a property."),
 });
 
 export type QueryToolInput = z.infer<typeof queryArgs>;
@@ -187,7 +198,8 @@ export const createKevaMcpServer = (
       {
         title: "Set properties",
         description:
-          "Set or unset an item's user properties (and the writable 'name' field). Other properties are left unchanged.",
+          "Set or unset an item's user properties (and the writable 'name' field). Other properties are left unchanged. " +
+          "Note keva's null semantics: setting a key to null creates a bare TAG (membership marker), it does not clear the key — deletion is only via 'unset'.",
         inputSchema: setPropertiesArgs.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
