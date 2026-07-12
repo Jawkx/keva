@@ -1,5 +1,5 @@
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Cancel01Icon, FilterIcon, Tick02Icon } from "@hugeicons/core-free-icons";
+import { useMemo, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
+import { Add01Icon, Cancel01Icon, FilterIcon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Operator, PropertySummary, QueryCondition } from "@keva/schema";
 import {
@@ -501,27 +501,27 @@ function AdvancedConditionDialog({
   );
 }
 
-export interface FilterBarProps {
+export interface FilterMenuProps {
   draft: FilterDraft;
   onDraftChange: (draft: FilterDraft) => void;
   onApply: (where: QueryCondition[]) => void;
-  onClear: () => void;
 }
 
-export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarProps) {
+function FilterMenu({
+  draft,
+  onDraftChange,
+  onApply,
+  trigger,
+  triggerContent,
+}: FilterMenuProps & { trigger: ReactElement; triggerContent: ReactNode }) {
   const summary = usePropertySummary();
   const keySet = useMemo(() => new Set(summary.map((entry) => entry.key)), [summary]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [valueMenuFor, setValueMenuFor] = useState<string | null>(null);
 
   const commit = (next: FilterDraft) => {
     onDraftChange(next);
     onApply(buildFilterWhere(next));
   };
-
-  const where = useMemo(() => buildFilterWhere(draft), [draft]);
-  const showKindChip = draft.kinds.length > 0;
-  const showSizeChip = draft.size !== "any";
 
   const toggleKind = (id: KindId) =>
     commit({
@@ -566,39 +566,10 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
     );
   };
 
-  const dropIfEmpty = (rowId: string) => {
-    const row = draft.rows.find((r) => r.id === rowId);
-    if (row && row.op !== "exists" && row.values.length === 0) {
-      onDraftChange(removeConditionDraft(draft, rowId));
-    }
-  };
-
-  const closeValueMenu = (id: string) => {
-    setValueMenuFor((current) => (current === id ? null : current));
-    if (id !== "kind" && id !== "size") dropIfEmpty(id);
-  };
-
-  const valueMenuChange = (id: string) => (open: boolean) => {
-    if (open) setValueMenuFor(id);
-    else closeValueMenu(id);
-  };
-
-  const changeRowOp = (row: ConditionDraft, op: Operator) => {
-    if (op === row.op) return;
-    let values = row.values;
-    if (!opNeedsValue(op)) values = [];
-    else if (!opAllowsMultiple(op) && values.length > 1) values = values.slice(0, 1);
-    commit(updateConditionDraft(draft, row.id, { op, values }));
-    if (opNeedsValue(op) && values.length === 0) setValueMenuFor(row.id);
-  };
-
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-          <HugeiconsIcon icon={FilterIcon} data-icon="inline-start" />
-          Filter
-        </DropdownMenuTrigger>
+        <DropdownMenuTrigger render={trigger}>{triggerContent}</DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>Kind</DropdownMenuSubTrigger>
@@ -683,7 +654,74 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
         keyOptions={[...keySet]}
         onAdd={(row) => commit({ ...draft, rows: [...draft.rows, row] })}
       />
+    </>
+  );
+}
 
+export function FilterMenuButton(props: FilterMenuProps) {
+  return (
+    <FilterMenu
+      {...props}
+      trigger={<Button variant="outline" />}
+      triggerContent={
+        <>
+          <HugeiconsIcon icon={FilterIcon} data-icon="inline-start" />
+          Filter
+        </>
+      }
+    />
+  );
+}
+
+export interface FilterBarProps {
+  draft: FilterDraft;
+  onDraftChange: (draft: FilterDraft) => void;
+  onApply: (where: QueryCondition[]) => void;
+  onClear: () => void;
+}
+
+export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarProps) {
+  const summary = usePropertySummary();
+  const keySet = useMemo(() => new Set(summary.map((entry) => entry.key)), [summary]);
+  const [valueMenuFor, setValueMenuFor] = useState<string | null>(null);
+
+  const commit = (next: FilterDraft) => {
+    onDraftChange(next);
+    onApply(buildFilterWhere(next));
+  };
+
+  const where = useMemo(() => buildFilterWhere(draft), [draft]);
+  const showKindChip = draft.kinds.length > 0;
+  const showSizeChip = draft.size !== "any";
+
+  const dropIfEmpty = (rowId: string) => {
+    const row = draft.rows.find((r) => r.id === rowId);
+    if (row && row.op !== "exists" && row.values.length === 0) {
+      onDraftChange(removeConditionDraft(draft, rowId));
+    }
+  };
+
+  const closeValueMenu = (id: string) => {
+    setValueMenuFor((current) => (current === id ? null : current));
+    if (id !== "kind" && id !== "size") dropIfEmpty(id);
+  };
+
+  const valueMenuChange = (id: string) => (open: boolean) => {
+    if (open) setValueMenuFor(id);
+    else closeValueMenu(id);
+  };
+
+  const changeRowOp = (row: ConditionDraft, op: Operator) => {
+    if (op === row.op) return;
+    let values = row.values;
+    if (!opNeedsValue(op)) values = [];
+    else if (!opAllowsMultiple(op) && values.length > 1) values = values.slice(0, 1);
+    commit(updateConditionDraft(draft, row.id, { op, values }));
+    if (opNeedsValue(op) && values.length === 0) setValueMenuFor(row.id);
+  };
+
+  return (
+    <>
       {showKindChip && (
         <Chip>
           <span className={cn(SEGMENT, "text-muted-foreground")}>Kind</span>
@@ -762,6 +800,13 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
         ) : null,
       )}
 
+      <FilterMenu
+        draft={draft}
+        onDraftChange={onDraftChange}
+        onApply={onApply}
+        trigger={<Button variant="ghost" size="icon-sm" aria-label="Add filter" />}
+        triggerContent={<HugeiconsIcon icon={Add01Icon} className="size-3.5" />}
+      />
       {where.length > 0 && (
         <Button variant="ghost" size="sm" onClick={onClear}>
           Clear

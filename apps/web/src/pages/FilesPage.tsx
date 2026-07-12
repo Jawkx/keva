@@ -31,7 +31,7 @@ import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
-import { FilterBar } from "../components/FilterBar";
+import { FilterBar, FilterMenuButton } from "../components/FilterBar";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
 import { useAppHeaderSlot } from "../lib/app-header-slot";
@@ -456,6 +456,9 @@ export function FilesPage() {
 
   const selectMode = Object.values(rowSelection).some(Boolean);
   const filtered = activeSearch.trim().length > 0 || activeWhere.length > 0;
+  const draftActive =
+    filterDraft.kinds.length > 0 || filterDraft.size !== "any" || filterDraft.rows.length > 0;
+  const showFilterRow = Boolean(viewId) || filtered || draftActive;
 
   const uploadStamp = useMemo(() => uploadStampFrom(activeWhere), [activeWhere]);
   const uploadStampEntries = Object.entries(uploadStamp);
@@ -779,43 +782,12 @@ export function FilesPage() {
                 onChange={onSearchChange}
               />
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <FilterBar
+            <div className="flex items-center gap-3 sm:ml-auto">
+              <FilterMenuButton
                 draft={filterDraft}
                 onDraftChange={setFilterDraft}
                 onApply={applyWhere}
-                onClear={clearFilters}
               />
-              {filtered && <ApiSnippetsPopover search={activeSearch} where={activeWhere} />}
-            </div>
-            <div className="flex items-center gap-3 sm:ml-auto">
-              {viewId ? (
-                <>
-                  {viewEdited && (
-                    <>
-                      <Badge variant="secondary">Edited</Badge>
-                      <Button variant="ghost" onClick={discardViewEdits}>
-                        Discard
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={saveViewEdits}
-                        disabled={updateViewMutation.isPending}
-                      >
-                        <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
-                        Save
-                      </Button>
-                    </>
-                  )}
-                </>
-              ) : (
-                filtered && (
-                  <Button variant="outline" onClick={() => setSaveViewOpen(true)}>
-                    <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
-                    Save as view
-                  </Button>
-                )
-              )}
               <Button onClick={() => uploadInputRef.current?.click()}>
                 <HugeiconsIcon icon={Upload01Icon} data-icon="inline-start" />
                 Upload
@@ -824,6 +796,47 @@ export function FilesPage() {
           </>
         )}
       </div>
+      {!selectMode && showFilterRow && (
+        <div className="mx-3 mb-2 flex shrink-0 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5">
+          <FilterBar
+            draft={filterDraft}
+            onDraftChange={setFilterDraft}
+            onApply={applyWhere}
+            onClear={clearFilters}
+          />
+          <div className="ml-auto flex items-center gap-1.5">
+            {filtered && <ApiSnippetsPopover search={activeSearch} where={activeWhere} />}
+            {viewId ? (
+              viewEdited && (
+                <>
+                  <Badge variant="secondary">Edited</Badge>
+                  <Button variant="ghost" size="sm" onClick={discardViewEdits}>
+                    Discard
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={saveViewEdits}
+                    disabled={updateViewMutation.isPending}
+                  >
+                    <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+                    Save
+                  </Button>
+                </>
+              )
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => setSaveViewOpen(true)}>
+                <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+                Save as view
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={openShare}>
+              <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
+              Share
+            </Button>
+          </div>
+        </div>
+      )}
       {!selectMode && uploadStampEntries.length > 0 && (
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
           <span className="text-xs text-muted-foreground">
@@ -928,14 +941,6 @@ export function FilesPage() {
           <HugeiconsIcon icon={Files01Icon} className="size-6 shrink-0" />
           All
         </span>
-      )}
-      {!selectMode && (viewId || filtered) && (
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" onClick={openShare}>
-            <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
-            Share
-          </Button>
-        </div>
       )}
     </>
   );
