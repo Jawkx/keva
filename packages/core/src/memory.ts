@@ -69,6 +69,7 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
   const items = new Map<string, KevaItem>();
   const events: ItemEvent[] = [];
   const usageByTenant = new Map<string, { usedBytes: number; quotaBytes: number | null }>();
+  const stagingCleaned = new Set<string>();
   const mapKey = (tenantId: string, id: string) => `${tenantId}\0${id}`;
   const shareUsage = (reservation: ShareUploadReservation) => {
     const source = `share:${reservation.grantId}`;
@@ -201,6 +202,7 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
         const item = items.get(key);
         if (!item || item.status !== expectedStatus) return false;
         items.delete(key);
+        stagingCleaned.delete(key);
         const usage = usageByTenant.get(tenantId);
         if (usage) {
           usageByTenant.set(tenantId, {
@@ -357,6 +359,21 @@ export const makeMemoryMetadataStore = (): MetadataStoreService => {
           .slice(0, limit)
           .map(cloneItem),
       ),
+    listStagingUncleaned: (limit) =>
+      Effect.sync(() =>
+        [...items.values()]
+          .filter(
+            (item) =>
+              item.status === "ready" && !stagingCleaned.has(mapKey(item.tenantId, item.id)),
+          )
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          .slice(0, limit)
+          .map(cloneItem),
+      ),
+    markStagingCleaned: (tenantId, id) =>
+      Effect.sync(() => {
+        stagingCleaned.add(mapKey(tenantId, id));
+      }),
     appendEvent: (event) =>
       Effect.sync(() => {
         events.push(structuredClone(event));

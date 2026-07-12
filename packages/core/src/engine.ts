@@ -227,7 +227,13 @@ export const makeKevaEngine = (principal: Principal) => ({
         if (current?.status === "ready") return current;
         return yield* new Conflict({ message: "Upload expired while confirming" });
       }
-      yield* blobs.delete(item.stagingKey).pipe(Effect.ignore);
+      // Purge staging now; record the cleanup durably so the backstop sweep can
+      // tell this obligation is discharged. If either step fails the item stays
+      // marked uncleaned and `sweepStaging` retries it.
+      yield* blobs.delete(item.stagingKey).pipe(
+        Effect.flatMap(() => metadata.markStagingCleaned(principal.tenantId, id)),
+        Effect.ignore,
+      );
       return confirmed;
     }),
 
@@ -424,10 +430,18 @@ export const sweepStaging = (options: LifecycleJobOptions = {}) =>
   Effect.gen(function* () {
     const metadata = yield* MetadataStore;
     const blobs = yield* BlobStore;
-    const ready = yield* metadata.listByStatus("ready", options.batchSize ?? 100);
+    // Only ready items with an outstanding staging obligation. Marking each
+    // cleaned drops it from the next scan, so the job makes progress instead of
+    // re-deleting the same oldest rows forever.
+    const uncleaned = yield* metadata.listStagingUncleaned(options.batchSize ?? 100);
     let swept = 0;
-    for (const item of ready) {
-      yield* blobs.delete(item.stagingKey);
+    for (const item of uncleaned) {
+      const deleted = yield* blobs.delete(item.stagingKey).pipe(
+        Effect.as(true),
+        Effect.catchAll(() => Effect.succeed(false)),
+      );
+      if (!deleted) continue;
+      yield* metadata.markStagingCleaned(item.tenantId, item.id);
       swept++;
     }
     return swept;

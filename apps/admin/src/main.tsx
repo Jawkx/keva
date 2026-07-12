@@ -21,6 +21,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
+  const mutation = useRef<AbortController | null>(null);
 
   const load = async (nextSearch = search) => {
     request.current?.abort();
@@ -44,9 +45,24 @@ function App() {
   const replaceUser = (user: AdminUserUsage) =>
     setUsers((current) => current.map((entry) => (entry.id === user.id ? user : entry)));
 
+  // Quota mutations share one controller so signing out cancels any in-flight
+  // save; a superseded/aborted save resolves to null and updates nothing.
+  const saveQuota = async (
+    userId: string,
+    input: Parameters<typeof updateQuota>[2],
+  ): Promise<AdminUserUsage | null> => {
+    mutation.current?.abort();
+    const controller = new AbortController();
+    mutation.current = controller;
+    const result = await updateQuota(token, userId, input, controller.signal);
+    return mutation.current === controller ? result.user : null;
+  };
+
   const signOut = () => {
     request.current?.abort();
     request.current = null;
+    mutation.current?.abort();
+    mutation.current = null;
     setToken("");
     setUsers([]);
     setAuthenticated(false);
@@ -160,7 +176,7 @@ function App() {
               {users.map((user) => (
                 <UserRow
                   key={`${user.id}-${user.quotaBytes}-${user.quotaSource}`}
-                  token={token}
+                  saveQuota={saveQuota}
                   user={user}
                   onChange={replaceUser}
                   onError={setError}
@@ -177,12 +193,15 @@ function App() {
 }
 
 function UserRow({
-  token,
+  saveQuota,
   user,
   onChange,
   onError,
 }: {
-  readonly token: string;
+  readonly saveQuota: (
+    userId: string,
+    input: { quotaBytes: number | null } | { useDefault: true },
+  ) => Promise<AdminUserUsage | null>;
   readonly user: AdminUserUsage;
   readonly onChange: (user: AdminUserUsage) => void;
   readonly onError: (message: string) => void;
@@ -200,11 +219,17 @@ function UserRow({
     setSaving(true);
     onError("");
     try {
-      const result = await updateQuota(token, user.id, input);
-      onChange(result.user);
-      setEditing(false);
+      const updated = await saveQuota(user.id, input);
+      // null means the save was superseded or cancelled (e.g. sign-out); leave
+      // the screen alone rather than surfacing a stale result.
+      if (updated) {
+        onChange(updated);
+        setEditing(false);
+      }
     } catch (cause) {
-      onError(cause instanceof Error ? cause.message : "Could not update quota");
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+        onError(cause instanceof Error ? cause.message : "Could not update quota");
+      }
     }
     setSaving(false);
   };

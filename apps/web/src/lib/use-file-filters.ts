@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { PropertyValue, QueryCondition } from "@keva/schema";
 import {
   createFilterDraft,
+  decodeFilterParam,
   draftFromConditions,
   encodeFilterParam,
   type FilterDraft,
@@ -18,10 +19,18 @@ export function useFileFilters({
   readonly initialWhere: readonly QueryCondition[];
   readonly onQueryChange: () => void;
 }) {
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
-  const [activeWhere, setActiveWhere] = useState<QueryCondition[]>(() => [...initialWhere]);
+  // View mode holds the applied filter in local state; root mode derives it
+  // straight from the URL so applying a filter never has to remount the page to
+  // propagate (which would wipe the draft, selection, and in-flight uploads).
+  const [viewWhere, setViewWhere] = useState<QueryCondition[]>(() => [...initialWhere]);
+  const filterParam = searchParams.get("filter");
+  const activeWhere = useMemo<QueryCondition[]>(
+    () => (viewId ? viewWhere : decodeFilterParam(filterParam)),
+    [viewId, viewWhere, filterParam],
+  );
   const [filterDraft, setFilterDraft] = useState<FilterDraft>(() =>
     draftFromConditions(initialWhere),
   );
@@ -32,7 +41,7 @@ export function useFileFilters({
     (where: QueryCondition[]) => {
       onQueryChange();
       if (viewId) {
-        setActiveWhere(where);
+        setViewWhere(where);
         return;
       }
       setSearchParams(
@@ -89,7 +98,7 @@ export function useFileFilters({
     search,
     activeSearch,
     activeWhere,
-    setActiveWhere,
+    setActiveWhere: setViewWhere,
     filterDraft,
     setFilterDraft,
     applyWhere,

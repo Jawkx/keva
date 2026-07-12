@@ -23,55 +23,73 @@ export type KevaAuth = ReturnType<typeof betterAuth>;
 
 export const personalOrganizationSlug = (userId: string): string => `keva-${userId}`;
 
+// A deterministic id so a self-healing owner-membership insert dedupes on the
+// primary key (the member table has no unique (org, user) constraint).
+const ownerMembershipId = (organizationId: string, userId: string): string =>
+  `owner:${organizationId}:${userId}`;
+
 export const resolvePersonalOrganization = async (
   db: PostgresJsDatabase<typeof authSchema>,
   userId: string,
   label: string,
 ): Promise<string | null> => {
   const slug = personalOrganizationSlug(userId);
+  const ownerId = async (organizationId: string): Promise<string | null> => {
+    const owner = await db
+      .select({ organizationId: authSchema.member.organizationId })
+      .from(authSchema.member)
+      .where(
+        and(
+          eq(authSchema.member.organizationId, organizationId),
+          eq(authSchema.member.userId, userId),
+          eq(authSchema.member.role, "owner"),
+        ),
+      )
+      .limit(1);
+    return owner[0]?.organizationId ?? null;
+  };
+
   const existing = await db
     .select({ id: authSchema.organization.id })
     .from(authSchema.organization)
     .where(eq(authSchema.organization.slug, slug))
     .limit(1);
-  let organizationId = existing[0]?.id;
-  if (!existing[0]) {
-    await db
+
+  // Steady state: the org and its owner membership already exist. Stay
+  // read-only so an authenticated request performs no writes.
+  if (existing[0]) {
+    const resolved = await ownerId(existing[0].id);
+    if (resolved) return resolved;
+  }
+
+  // Create and/or heal in one transaction. Both inserts are idempotent (org by
+  // unique slug, member by deterministic id), so a crash that leaves the org
+  // without its owner membership is repaired on the next login instead of
+  // locking the user out.
+  return db.transaction(async (tx) => {
+    await tx
       .insert(authSchema.organization)
       .values({ id: crypto.randomUUID(), name: `${label}'s space`, slug, createdAt: new Date() })
       .onConflictDoNothing();
-    const created = await db
+    const organization = await tx
       .select({ id: authSchema.organization.id })
       .from(authSchema.organization)
       .where(eq(authSchema.organization.slug, slug))
       .limit(1);
-    organizationId = created[0]?.id;
+    const organizationId = organization[0]?.id;
     if (!organizationId) return null;
-    await db
+    await tx
       .insert(authSchema.member)
       .values({
-        id: crypto.randomUUID(),
+        id: ownerMembershipId(organizationId, userId),
         organizationId,
         userId,
         role: "owner",
         createdAt: new Date(),
       })
       .onConflictDoNothing();
-  }
-  const resolvedOrganizationId = organizationId;
-  if (!resolvedOrganizationId) return null;
-  const owner = await db
-    .select({ organizationId: authSchema.member.organizationId })
-    .from(authSchema.member)
-    .where(
-      and(
-        eq(authSchema.member.organizationId, resolvedOrganizationId),
-        eq(authSchema.member.userId, userId),
-        eq(authSchema.member.role, "owner"),
-      ),
-    )
-    .limit(1);
-  return owner[0]?.organizationId ?? null;
+    return organizationId;
+  });
 };
 
 export const KEVA_MCP_SCOPES = ["keva:read", "keva:write", "keva:delete"] as const;
@@ -182,10 +200,16 @@ export const betterAuthSessionResolver =
       result.user.name?.trim() || result.user.email,
     );
     if (!tenantId) return null;
-    await organizationApi(auth).setActiveOrganization({
-      headers,
-      body: { organizationId: tenantId },
-    });
+    // Only write the session when the active organization actually changes, so
+    // a steady-state authenticated request performs no session write.
+    const activeOrganizationId = (result as { session?: { activeOrganizationId?: string | null } })
+      .session?.activeOrganizationId;
+    if (activeOrganizationId !== tenantId) {
+      await organizationApi(auth).setActiveOrganization({
+        headers,
+        body: { organizationId: tenantId },
+      });
+    }
 
     // A signed-in user currently controls their personal tenant fully.
     return {

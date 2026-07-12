@@ -200,10 +200,9 @@ export const createApp = (options: CreateAppOptions): Hono => {
       if (decoded._tag === "Left") return context.json({ message: "Invalid quota update" }, 400);
       const requestedQuota =
         "useDefault" in decoded.right ? DEFAULT_STORAGE_QUOTA_BYTES : decoded.right.quotaBytes;
-      const quotaBytes =
-        requestedQuota === null || requestedQuota === 0 || requestedQuota === -1
-          ? null
-          : requestedQuota;
+      // null and -1 are the unlimited sentinels; a non-negative value is a real
+      // byte cap (0 blocks all uploads). Do not fold 0 into unlimited.
+      const quotaBytes = requestedQuota === null || requestedQuota === -1 ? null : requestedQuota;
       const user = await store.setQuota(context.req.param("id"), quotaBytes);
       return user
         ? context.json({ user })

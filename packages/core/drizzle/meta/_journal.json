@@ -22,6 +22,13 @@
       "when": 1783873440000,
       "tag": "0002_admin_quota_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783879005370,
+      "tag": "0003_serious_spectrum",
+      "breakpoints": true
     }
   ]
 }

@@ -105,13 +105,23 @@ describe("server API", () => {
     expect(listed.status).toBe(200);
     expect(await listed.json()).toEqual({ users: [adminUser] });
 
-    const updated = await app.request("/api/admin/users/user-1/quota", {
+    // 0 is a real cap (blocks all uploads), not an unlimited sentinel.
+    const blocked = await app.request("/api/admin/users/user-1/quota", {
       method: "PUT",
       headers: { authorization: "Bearer admin-secret", "content-type": "application/json" },
       body: JSON.stringify({ quotaBytes: 0 }),
     });
-    expect(updated.status).toBe(200);
-    expect(updates).toEqual([null]);
+    expect(blocked.status).toBe(200);
+    // -1 and null are the unlimited sentinels.
+    for (const sentinel of [-1, null]) {
+      const unlimited = await app.request("/api/admin/users/user-1/quota", {
+        method: "PUT",
+        headers: { authorization: "Bearer admin-secret", "content-type": "application/json" },
+        body: JSON.stringify({ quotaBytes: sentinel }),
+      });
+      expect(unlimited.status).toBe(200);
+    }
+    expect(updates).toEqual([0, null, null]);
   });
 
   it("requires authentication and completes the local upload flow", async () => {

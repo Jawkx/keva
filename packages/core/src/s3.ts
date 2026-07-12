@@ -98,7 +98,7 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
           try {
             const request = new Request(objectUrl(config, key), {
               method: "PUT",
-              headers: { "content-type": contentType },
+              headers: { "content-type": contentType, "content-length": String(expectedSize) },
               body: bounded,
               duplex: "half",
             } as RequestInit & { duplex: "half" });

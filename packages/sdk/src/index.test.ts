@@ -96,7 +96,10 @@ describe("KevaClient", () => {
       ),
     ).resolves.toMatchObject({ id: item.id });
     expect(uploadBodies).toEqual([body]);
-    expect(uploadHeaders).toEqual([{ "content-type": "text/plain", authorization: "Bearer test" }]);
+    // The presigned upload carries only the initiate-provided headers. The Keva
+    // bearer token must never be attached — that URL points at the storage
+    // origin, and its own auth travels in the query string.
+    expect(uploadHeaders).toEqual([{ "content-type": "text/plain" }]);
   });
 
   it("resumes confirmation with the original upload session", async () => {

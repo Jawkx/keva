@@ -141,6 +141,13 @@ export interface MetadataStoreService {
     limit: number,
     olderThan?: string,
   ) => Effect.Effect<ReadonlyArray<KevaItem>, KevaError>;
+  // Ready items whose staging blob has not yet been recorded as purged. Drives
+  // the durable staging-cleanup backstop; each swept item is then marked with
+  // `markStagingCleaned` so the job makes progress instead of re-scanning.
+  readonly listStagingUncleaned: (
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<KevaItem>, KevaError>;
+  readonly markStagingCleaned: (tenantId: string, id: string) => Effect.Effect<void, KevaError>;
   readonly appendEvent: (event: ItemEvent) => Effect.Effect<void, KevaError>;
   // Newest-first keyset pagination, same cursor format as `query`.
   readonly listEvents: (

@@ -80,7 +80,7 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
     if (contentQuery.data.kind === "blob") {
       return {
         kind: isImage(item) ? "image" : "pdf",
-        url: objectUrlFor(itemId, contentQuery.data.blob),
+        url: objectUrlFor("share", itemId, contentQuery.data.blob),
       };
     }
     if (isCsv(item)) return { kind: "csv", text: contentQuery.data.text };

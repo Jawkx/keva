@@ -10,7 +10,7 @@ import {
 import { isShareToken, ShareClient } from "@keva/sdk";
 import { isShareGone } from "../../lib/errors";
 import { shareSelfQueryKey } from "../../lib/items-cache";
-import { revokeAllObjectUrls } from "../../lib/object-url-cache";
+import { revokeScopeObjectUrls } from "../../lib/object-url-cache";
 import { useMountEffect } from "../../lib/useMountEffect";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { ShareContextProvider } from "./share-context";
@@ -147,7 +147,7 @@ function ShareSession({ token }: { token: string }) {
   });
   useMountEffect(() => () => {
     queryClient.clear();
-    revokeAllObjectUrls();
+    revokeScopeObjectUrls("share");
   });
 
   if (linkDead) return <ShareUnavailable />;

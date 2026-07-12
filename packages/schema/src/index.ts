@@ -55,10 +55,14 @@ export type ItemStatus = typeof ItemStatus.Type;
 export const ItemId = Schema.String.pipe(Schema.pattern(ITEM_ID_PATTERN));
 export type ItemId = typeof ItemId.Type;
 
-export const isIsoInstant = (value: string): boolean => {
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
-};
+// Accepts any RFC-3339 / ISO-8601 instant: date + time + zone, with optional
+// fractional seconds and a numeric offset or `Z`. Rejects loose inputs like
+// "2026" or "Jan 1 2020" that `Date.parse` would otherwise coerce.
+const ISO_INSTANT_PATTERN =
+  /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
+
+export const isIsoInstant = (value: string): boolean =>
+  ISO_INSTANT_PATTERN.test(value) && Number.isFinite(Date.parse(value));
 
 export const isFutureInstant = (value: string, now = Date.now()): boolean =>
   isIsoInstant(value) && Date.parse(value) > now;

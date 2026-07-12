@@ -37,6 +37,10 @@ export const items = pgTable(
     status: text("status").$type<ItemStatus>().notNull(),
     storageKey: text("storage_key").notNull(),
     stagingKey: text("staging_key").notNull(),
+    // Set once an item's staging blob has been purged. Drives the durable
+    // staging-cleanup backstop: a null value on a ready item is an outstanding
+    // cleanup obligation.
+    stagingCleanedAt: timestamp("staging_cleaned_at", { withTimezone: true, mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
     properties: jsonb("properties").$type<Properties>().notNull().default({}),
@@ -50,6 +54,9 @@ export const items = pgTable(
     index("items_tenant_created_id_idx").on(table.tenantId, table.createdAt, table.id),
     index("items_properties_gin_idx").using("gin", table.properties),
     index("items_tenant_source_idx").on(table.tenantId, table.source),
+    index("items_staging_uncleaned_idx")
+      .on(table.createdAt)
+      .where(sql`${table.status} = 'ready' and ${table.stagingCleanedAt} is null`),
     check("items_status_check", sql`${table.status} in ('pending', 'ready', 'deleting')`),
   ],
 );

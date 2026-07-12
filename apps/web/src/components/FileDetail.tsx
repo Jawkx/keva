@@ -118,7 +118,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     if (contentQuery.data.kind === "blob") {
       return {
         kind: isImage(item) ? "image" : "pdf",
-        url: objectUrlFor(itemId, contentQuery.data.blob),
+        url: objectUrlFor("owner", itemId, contentQuery.data.blob),
       };
     }
     if (isCsv(item)) return { kind: "csv", text: contentQuery.data.text };

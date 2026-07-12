@@ -212,7 +212,9 @@ const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
     return sql`properties ? ${key} and not (properties @> ${sql.json({ [key]: value })})`;
   }
   const containsMember = (member: string | number | boolean): Fragment => {
-    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${JSON.stringify([member])}::jsonb)`;
+    // Encode the membership probe with sql.json: a hand-built `$n::jsonb` text
+    // cast is mis-typed by postgres.js and silently matches nothing.
+    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${sql.json([member])})`;
     return typeof member === "string"
       ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${member} in properties ->> ${key}) > 0))`
       : arrayMatch;
@@ -249,43 +251,56 @@ const queryOrder = (
           sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
       };
 
+// Reserve tenant storage inside an open transaction: locks the tenant_usage
+// row, checks the quota, and adds the declared size. Returns false (leaving the
+// transaction to roll back) when the quota would be exceeded.
+const reserveTenantQuota = async (
+  transaction: Sql,
+  tenantId: string,
+  declaredSize: number,
+): Promise<boolean> => {
+  await transaction`
+    insert into tenant_usage (tenant_id, used_bytes, quota_bytes)
+    values (${tenantId}, 0, ${DEFAULT_STORAGE_QUOTA_BYTES})
+    on conflict (tenant_id) do nothing
+  `;
+  const usage = await transaction<{ used_bytes: string; quota_bytes: string | null }[]>`
+    select used_bytes, quota_bytes from tenant_usage where tenant_id = ${tenantId} for update
+  `;
+  const current = usage[0]!;
+  const usedBytes = Number(current.used_bytes);
+  const quotaBytes = current.quota_bytes === null ? null : Number(current.quota_bytes);
+  if (quotaBytes !== null && usedBytes + declaredSize > quotaBytes) return false;
+  await transaction`
+    update tenant_usage set used_bytes = used_bytes + ${declaredSize} where tenant_id = ${tenantId}
+  `;
+  return true;
+};
+
+const insertItemRow = async (transaction: Sql, item: KevaItem): Promise<void> => {
+  await transaction`
+    insert into items (
+      id, tenant_id, name, content_type, declared_size, size, etag,
+      checksum, source, status, storage_key, staging_key, created_at,
+      updated_at, properties
+    ) values (
+      ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
+      ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
+      ${item.source}, ${item.status}, ${item.storageKey},
+      ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
+      ${transaction.json(item.properties)}
+    )
+  `;
+};
+
 export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   insert: (item) =>
     Effect.gen(function* () {
       const reserved = yield* attempt(() =>
         sql.begin(async (transaction) => {
-          await transaction`
-            insert into tenant_usage (tenant_id, used_bytes, quota_bytes)
-            values (${item.tenantId}, 0, ${DEFAULT_STORAGE_QUOTA_BYTES})
-            on conflict (tenant_id) do nothing
-          `;
-          const usage = await transaction<{ used_bytes: string; quota_bytes: string | null }[]>`
-            select used_bytes, quota_bytes from tenant_usage
-            where tenant_id = ${item.tenantId}
-            for update
-          `;
-          const current = usage[0]!;
-          const usedBytes = Number(current.used_bytes);
-          const quotaBytes = current.quota_bytes === null ? null : Number(current.quota_bytes);
-          if (quotaBytes !== null && usedBytes + item.declaredSize > quotaBytes) return false;
-          await transaction`
-            update tenant_usage
-            set used_bytes = used_bytes + ${item.declaredSize}
-            where tenant_id = ${item.tenantId}
-          `;
-          await transaction`
-            insert into items (
-              id, tenant_id, name, content_type, declared_size, size, etag,
-              checksum, source, status, storage_key, staging_key, created_at,
-              updated_at, properties
-            ) values (
-              ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
-              ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
-              ${item.source}, ${item.status}, ${item.storageKey},
-              ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
-              ${transaction.json(item.properties)}
-            )
-          `;
+          const tx = transaction as unknown as Sql;
+          if (!(await reserveTenantQuota(tx, item.tenantId, item.declaredSize))) return false;
+          await insertItemRow(tx, item);
           return true;
         }),
       );
@@ -293,12 +308,13 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   reserveShareUpload: (reservation) =>
     Effect.gen(function* () {
-      const reserved = yield* attempt(() =>
+      const source = `share:${reservation.grantId}`;
+      const outcome = yield* attempt(() =>
         sql.begin(async (transaction) => {
-          const source = `share:${reservation.grantId}`;
+          const tx = transaction as unknown as Sql;
           if (reservation.item.source !== source) throw new Error("share source mismatch");
-          await transaction`select pg_advisory_xact_lock(hashtextextended(${`${reservation.item.tenantId}:${reservation.grantId}`}, 0))`;
-          const usage = await transaction<{ count: string; bytes: string }[]>`
+          await tx`select pg_advisory_xact_lock(hashtextextended(${`${reservation.item.tenantId}:${reservation.grantId}`}, 0))`;
+          const usage = await tx<{ count: string; bytes: string }[]>`
             select count(*)::bigint as count,
                    coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
             from items
@@ -312,15 +328,27 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             (reservation.maxTotalBytes !== null &&
               Number(current.bytes) + reservation.item.declaredSize > reservation.maxTotalBytes)
           ) {
-            return false;
+            return "share" as const;
           }
-          await Effect.runPromise(
-            makePostgresMetadataStore(transaction as unknown as Sql).insert(reservation.item),
-          );
-          return true;
+          if (
+            !(await reserveTenantQuota(
+              tx,
+              reservation.item.tenantId,
+              reservation.item.declaredSize,
+            ))
+          ) {
+            return "tenant" as const;
+          }
+          await insertItemRow(tx, reservation.item);
+          return "ok" as const;
         }),
       );
-      if (!reserved) return yield* new QuotaExceeded({ message: "Share storage limit reached" });
+      if (outcome === "share") {
+        return yield* new QuotaExceeded({ message: "Share storage limit reached" });
+      }
+      if (outcome === "tenant") {
+        return yield* new QuotaExceeded({ message: "Storage limit reached" });
+      }
     }),
   get: (tenantId, id) =>
     attempt(async () => {
@@ -657,6 +685,22 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             order by created_at asc limit ${limit}
           `;
       return rows.map(mapRow);
+    }),
+  listStagingUncleaned: (limit) =>
+    attempt(async () => {
+      const rows = await sql<ItemRow[]>`
+        select * from items
+        where status = 'ready' and staging_cleaned_at is null
+        order by created_at asc limit ${limit}
+      `;
+      return rows.map(mapRow);
+    }),
+  markStagingCleaned: (tenantId, id) =>
+    attempt(async () => {
+      await sql`
+        update items set staging_cleaned_at = now()
+        where tenant_id = ${tenantId} and id = ${id}
+      `;
     }),
   appendEvent: (event) =>
     attempt(async () => {

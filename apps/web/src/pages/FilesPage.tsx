@@ -275,7 +275,10 @@ export function FilesPage() {
   const { viewId } = useParams<{ viewId: string }>();
   const [searchParams] = useSearchParams();
   const initialWhere = viewId ? [] : decodeFilterParam(searchParams.get("filter"));
-  const routeKey = viewId ? `view:${viewId}` : `root:${searchParams.get("filter") ?? ""}`;
+  // Keyed by view identity only. A root-mode filter change updates the URL in
+  // place; the session must not remount (that would discard the filter draft,
+  // selection, and in-flight uploads).
+  const routeKey = viewId ? `view:${viewId}` : "root";
   return <FilesPageSession key={routeKey} viewId={viewId} initialWhere={initialWhere} />;
 }
 

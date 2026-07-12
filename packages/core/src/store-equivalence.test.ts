@@ -146,25 +146,13 @@ const collectPaginatedOrder = async (
   order: QueryOrder,
 ): Promise<{ names: string[]; pageCursors: boolean[] }> => {
   const tenant = crypto.randomUUID();
+  // Fresh ids per invocation: item.id is a global primary key in Postgres, so
+  // reusing fixed ids across tenants would collide. Ordering is by createdAt
+  // (all distinct here), so the id values do not affect the expected result.
   const rows = [
-    orderedItem(
-      tenant,
-      "00000000-0000-4000-8000-000000000001",
-      "alpha",
-      "2026-01-01T00:00:00.000Z",
-    ),
-    orderedItem(
-      tenant,
-      "00000000-0000-4000-8000-000000000002",
-      "bravo",
-      "2026-01-01T00:02:00.000Z",
-    ),
-    orderedItem(
-      tenant,
-      "00000000-0000-4000-8000-000000000003",
-      "carol",
-      "2026-01-01T00:01:00.000Z",
-    ),
+    orderedItem(tenant, crypto.randomUUID(), "alpha", "2026-01-01T00:00:00.000Z"),
+    orderedItem(tenant, crypto.randomUUID(), "bravo", "2026-01-01T00:02:00.000Z"),
+    orderedItem(tenant, crypto.randomUUID(), "carol", "2026-01-01T00:01:00.000Z"),
   ];
 
   for (const row of rows) {

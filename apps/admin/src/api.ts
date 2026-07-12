@@ -39,8 +39,14 @@ export const listUsers = (token: string, search = "", signal?: AbortSignal) =>
     signal ? { signal } : undefined,
   );
 
-export const updateQuota = (token: string, userId: string, input: UpdateAdminQuota) =>
+export const updateQuota = (
+  token: string,
+  userId: string,
+  input: UpdateAdminQuota,
+  signal?: AbortSignal,
+) =>
   request(token, `/api/admin/users/${encodeURIComponent(userId)}/quota`, UpdateAdminQuotaResult, {
     method: "PUT",
     body: JSON.stringify(input),
+    ...(signal ? { signal } : {}),
   });

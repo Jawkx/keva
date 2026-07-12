@@ -204,13 +204,12 @@ export class KevaClient {
   }
 
   async putUpload(session: ItemUploadSession, body: UploadBody): Promise<void> {
+    // The upload URL is presigned; its authorization travels in the query
+    // string. Do not attach the Keva bearer token or credentials — that would
+    // leak the token to the storage origin and break real S3/R2 uploads.
     const response = await this.#fetch(session.initiated.uploadUrl, {
       method: "PUT",
-      credentials: this.#credentials,
-      headers: {
-        ...session.initiated.headers,
-        ...(this.#token ? { authorization: `Bearer ${this.#token}` } : {}),
-      },
+      headers: session.initiated.headers,
       body,
     });
     if (!response.ok) {
@@ -479,13 +478,11 @@ export class ShareClient {
   }
 
   async putUpload(session: ShareUploadSession, body: UploadBody): Promise<void> {
+    // Presigned URL — auth is in the query string. Never attach the share
+    // secret here; it would leak the secret to the storage origin.
     const response = await this.#config.fetch(session.initiated.uploadUrl, {
       method: "PUT",
-      credentials: this.#config.credentials,
-      headers: {
-        ...session.initiated.headers,
-        authorization: `Bearer ${this.#config.token}`,
-      },
+      headers: session.initiated.headers,
       body,
     });
     if (!response.ok) {

@@ -171,30 +171,40 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe("ORIGINAL");
   });
 
-  it("reconciles a ready item's orphaned staging object", async () => {
+  it("sweeps an uncleaned ready item's staging object, then makes progress", async () => {
     const bytes = new TextEncoder().encode("staging cleanup");
-    const engine = makeKevaEngine(principal);
-    const initiated = await runtime.runPromise(
-      engine.initiate({
-        name: "cleanup.txt",
-        contentType: "text/plain",
-        size: bytes.byteLength,
-        source: "upload",
-        properties: {},
-      }),
+    const id = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    // A ready item whose confirm-time staging purge never completed: the staging
+    // blob is still present and it carries no cleanup marker.
+    await runtime.runPromise(
+      Effect.flatMap(MetadataStore, (metadata) =>
+        metadata.insert({
+          id,
+          tenantId: "t1",
+          name: "cleanup.txt",
+          contentType: "text/plain",
+          declaredSize: bytes.byteLength,
+          size: bytes.byteLength,
+          etag: null,
+          checksum: null,
+          source: "upload",
+          status: "ready",
+          storageKey: `items/t1/${id}`,
+          stagingKey: `staging/t1/${id}`,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          properties: {},
+        }),
+      ),
     );
-
-    await putToPresigned(initiated.uploadUrl, bytes, "text/plain");
-    await runtime.runPromise(engine.confirm(initiated.item.id));
-    await putToPresigned(
-      `${mock.endpoint}/${mock.bucket}/${initiated.item.stagingKey}`,
-      bytes,
-      "text/plain",
-    );
-    expect(mock.store.has(initiated.item.stagingKey)).toBe(true);
+    await putToPresigned(`${mock.endpoint}/${mock.bucket}/staging/t1/${id}`, bytes, "text/plain");
+    expect(mock.store.has(`staging/t1/${id}`)).toBe(true);
 
     expect(await runtime.runPromise(sweepStaging())).toBe(1);
-    expect(mock.store.has(initiated.item.stagingKey)).toBe(false);
+    expect(mock.store.has(`staging/t1/${id}`)).toBe(false);
+    // The obligation is now recorded as discharged, so a repeat run does no work.
+    expect(await runtime.runPromise(sweepStaging())).toBe(0);
   });
 
   it("reaps an abandoned pending upload and sweeps it to completion", async () => {

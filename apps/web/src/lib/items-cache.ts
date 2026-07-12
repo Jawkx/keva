@@ -84,11 +84,19 @@ export function cacheConfirmedItemUpload(
   },
 ) {
   if (!options.refetchLists && options.listQueryKey) {
+    const activeKey = JSON.stringify(options.listQueryKey);
     queryClient.setQueryData<ItemsCache>(options.listQueryKey, (old) =>
       old ? prependItemToPages(old, item) : old,
     );
+    // The active list was updated optimistically; invalidate only the other
+    // lists so it does not refetch and flicker the just-added row.
+    void queryClient.invalidateQueries({
+      queryKey: itemListsQueryKey,
+      predicate: (query) => JSON.stringify(query.queryKey) !== activeKey,
+    });
+  } else {
+    void queryClient.invalidateQueries({ queryKey: itemListsQueryKey });
   }
-  void queryClient.invalidateQueries({ queryKey: itemListsQueryKey });
   void queryClient.invalidateQueries({ queryKey: usageQueryKey });
   invalidatePropertyDiscovery(queryClient);
 }
@@ -114,7 +122,7 @@ export function removeDeletedItemsFromCache(queryClient: QueryClient, ids: Itera
     queryClient.removeQueries({ queryKey: itemQueryKey(itemId), exact: true });
     queryClient.removeQueries({ queryKey: itemContentQueryKey(itemId), exact: true });
     queryClient.removeQueries({ queryKey: itemEventsQueryKey(itemId), exact: true });
-    revokeObjectUrl(itemId);
+    revokeObjectUrl("owner", itemId);
   }
   void queryClient.invalidateQueries({ queryKey: usageQueryKey });
   invalidatePropertyDiscovery(queryClient);
