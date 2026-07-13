@@ -99,12 +99,15 @@ const mapEventRow = (row: ItemEventRow): ItemEvent => ({
   createdAt: asIso(row.created_at),
 });
 
+const jsonbParam = (value: unknown): string | null =>
+  value === undefined || value === null ? null : JSON.stringify(value);
+
 const insertEvent = async (sql: Sql, event: ItemEvent): Promise<void> => {
   await sql`
     insert into item_events (id, tenant_id, item_id, item_name, action, actor, payload, created_at)
     values (
       ${event.id}, ${event.tenantId}, ${event.itemId}, ${event.itemName}, ${event.action},
-      ${event.actor ? sql.json(event.actor) : null}, ${sql.json(event.payload)}, ${event.createdAt}
+      ${jsonbParam(event.actor)}::jsonb, ${jsonbParam(event.payload)}::jsonb, ${event.createdAt}
     )
   `;
 };
@@ -206,15 +209,13 @@ const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
   const key = condition.key;
   if (condition.op === "exists") return sql`properties ? ${key}`;
   if (condition.op === "eq") {
-    return sql`properties @> ${sql.json({ [key]: value })}`;
+    return sql`properties @> ${jsonbParam({ [key]: value })}::jsonb`;
   }
   if (condition.op === "neq") {
-    return sql`properties ? ${key} and not (properties @> ${sql.json({ [key]: value })})`;
+    return sql`properties ? ${key} and not (properties @> ${jsonbParam({ [key]: value })}::jsonb)`;
   }
   const containsMember = (member: string | number | boolean): Fragment => {
-    // Encode the membership probe with sql.json: a hand-built `$n::jsonb` text
-    // cast is mis-typed by postgres.js and silently matches nothing.
-    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${sql.json([member])})`;
+    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${jsonbParam([member])}::jsonb)`;
     return typeof member === "string"
       ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${member} in properties ->> ${key}) > 0))`
       : arrayMatch;
@@ -288,7 +289,7 @@ const insertItemRow = async (transaction: Sql, item: KevaItem): Promise<void> =>
       ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
       ${item.source}, ${item.status}, ${item.storageKey},
       ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
-      ${transaction.json(item.properties)}
+      ${jsonbParam(item.properties)}::jsonb
     )
   `;
 };
@@ -427,7 +428,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           }
           const updated = await transaction<ItemRow[]>`
           update items
-          set ${transaction(values)}, properties = ${transaction.json(properties)}
+          set ${transaction(values)}, properties = ${jsonbParam(properties)}::jsonb
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           returning *
         `;
@@ -461,7 +462,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             if (field) values[field.column] = value;
           }
           const updated = await transaction<ItemRow[]>`
-            update items set ${transaction(values)}, properties = ${transaction.json(properties)}
+            update items set ${transaction(values)}, properties = ${jsonbParam(properties)}::jsonb
             where tenant_id = ${tenantId} and id = ${id} and status = 'ready' returning *
           `;
           if (!updated[0]) return { status: "missing" };
@@ -709,8 +710,8 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           id, tenant_id, item_id, item_name, action, actor, payload, created_at
         ) values (
           ${event.id}, ${event.tenantId}, ${event.itemId}, ${event.itemName},
-          ${event.action}, ${event.actor ? sql.json(event.actor) : null},
-          ${sql.json(event.payload)}, ${event.createdAt}
+          ${event.action}, ${jsonbParam(event.actor)}::jsonb,
+          ${jsonbParam(event.payload)}::jsonb, ${event.createdAt}
         )
       `;
     }),

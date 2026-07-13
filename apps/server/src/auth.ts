@@ -10,6 +10,7 @@ import {
 } from "@keva/schema";
 import { Context, Effect, Layer } from "effect";
 import { type Sql } from "postgres";
+import { jsonbParam } from "./postgres-json.js";
 import { ShareGrantStore, shareStrategy } from "./shares.js";
 
 export interface AuthRequest {
@@ -219,7 +220,7 @@ export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
             id, tenant_id, name, secret_hash, scopes, created_at, expires_at
           ) values (
             ${id}, ${tenantId}, ${input.name}, ${secretHash},
-            ${sql.json(input.scopes)}, now(), ${input.expiresAt ?? null}
+            ${jsonbParam(input.scopes)}::jsonb, now(), ${input.expiresAt ?? null}
           )
           returning *
         `;

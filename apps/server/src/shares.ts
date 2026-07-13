@@ -17,6 +17,7 @@ import {
 } from "@keva/schema";
 import { Context, Effect } from "effect";
 import { type Sql } from "postgres";
+import { jsonbParam } from "./postgres-json.js";
 import { type AuthStrategy, hashSecret, randomTokenPart, secureEqual } from "./auth.js";
 
 // Share tokens mirror API tokens (`keva_sk_…`): a public id and a secret,
@@ -152,9 +153,6 @@ const storageError = (): StorageUnavailable =>
 // unknown, postgres.js then infers a Postgres array from the JS value, and a
 // top-level array (scopes, conditions) throws at Bind. Pre-stringify and cast so
 // the wire value is always text -> jsonb.
-const jsonbParam = (value: unknown): string | null =>
-  value === undefined || value === null ? null : JSON.stringify(value);
-
 const writeGrantValidation = (
   input: CreateShareGrant,
   conditions: readonly QueryCondition[],

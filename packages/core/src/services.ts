@@ -32,12 +32,6 @@ export interface BlobStoreService {
     contentType: string,
   ) => Effect.Effect<PresignedRequest, KevaError>;
   readonly presignDownload: (key: string) => Effect.Effect<PresignedRequest, KevaError>;
-  readonly put: (
-    key: string,
-    body: ReadableStream<Uint8Array>,
-    contentType: string,
-    expectedSize: number,
-  ) => Effect.Effect<void, KevaError>;
   readonly head: (key: string) => Effect.Effect<BlobHead | null, KevaError>;
   readonly copy: (sourceKey: string, destinationKey: string) => Effect.Effect<void, KevaError>;
   readonly delete: (key: string) => Effect.Effect<void, KevaError>;

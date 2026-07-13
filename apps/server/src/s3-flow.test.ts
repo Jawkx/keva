@@ -35,14 +35,6 @@ const putToPresigned = async (url: string, bytes: Uint8Array, contentType: strin
   if (!res.ok) throw new Error(`presigned PUT failed: ${res.status}`);
 };
 
-const streamOf = (bytes: Uint8Array) =>
-  new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-
 const getFromPresigned = async (url: string): Promise<Uint8Array> => {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`presigned GET failed: ${res.status}`);
@@ -124,30 +116,6 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     const dl = await runtime.runPromise(engine.download(id));
     expect(dl.url).toContain(`items/t1/${id}`);
     expect(new TextDecoder().decode(await getFromPresigned(dl.url))).toBe("immutable bytes");
-  });
-
-  it("removes an oversized streamed upload before it can be confirmed", async () => {
-    const engine = makeKevaEngine(principal);
-    const initiated = await runtime.runPromise(
-      engine.initiate({
-        name: "bounded.bin",
-        contentType: "application/octet-stream",
-        size: 2,
-        source: "upload",
-        properties: {},
-      }),
-    );
-
-    await expect(
-      runtime.runPromise(
-        engine.upload(
-          initiated.item.id,
-          streamOf(new Uint8Array([1, 2, 3])),
-          "application/octet-stream",
-        ),
-      ),
-    ).rejects.toThrow("Upload size does not match declaration");
-    expect(mock.store.has(initiated.item.stagingKey)).toBe(false);
   });
 
   it("replaying a staging URL cannot alter a ready item", async () => {

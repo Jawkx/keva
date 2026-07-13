@@ -38,20 +38,15 @@ afterAll(async () => {
 
 const auth = { authorization: "Bearer test-secret" };
 
-// The server proxies uploads through its own /api/items/:id/upload route
-// (streaming to the blob store), so PUT the bytes to the app, not to storage.
 const putToStorage = (
-  app: ReturnType<typeof createApp>,
   initiated: { uploadUrl: string; headers: Record<string, string> },
   body: string,
-) => {
-  const url = new URL(initiated.uploadUrl);
-  return app.request(`${url.pathname}${url.search}`, {
+) =>
+  fetch(initiated.uploadUrl, {
     method: "PUT",
-    headers: { ...auth, ...initiated.headers },
+    headers: initiated.headers,
     body,
   });
-};
 
 const seedItem = async (
   app: ReturnType<typeof createApp>,
@@ -68,7 +63,7 @@ const seedItem = async (
     uploadUrl: string;
     headers: Record<string, string>;
   };
-  await putToStorage(app, initiated, "x");
+  await putToStorage(initiated, "x");
   await app.request(`/api/items/${initiated.item.id}/confirm`, { method: "POST", headers: auth });
   await app.request(`/api/items/${initiated.item.id}`, {
     method: "PATCH",
@@ -174,7 +169,7 @@ describe("server API", () => {
       headers: Record<string, string>;
     };
 
-    const uploaded = await putToStorage(app, initiated, "hello");
+    const uploaded = await putToStorage(initiated, "hello");
     expect(uploaded.status).toBe(200);
 
     const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {
@@ -197,28 +192,6 @@ describe("server API", () => {
     });
     expect(queried.status).toBe(200);
     expect(((await queried.json()) as { items: unknown[] }).items).toHaveLength(1);
-  });
-
-  it("rejects oversized proxy uploads before staging them", async () => {
-    const app = createApp({ layer });
-    const initiated = (await (
-      await app.request("/api/items", {
-        method: "POST",
-        headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({ name: "small.txt", contentType: "text/plain", size: 1 }),
-      })
-    ).json()) as { item: { id: string }; uploadUrl: string; headers: Record<string, string> };
-
-    // The proxy upload streams to storage with a size bound, so an oversize body
-    // is rejected before it is staged; confirm then finds nothing.
-    const uploaded = await putToStorage(app, initiated, "too large");
-    expect(uploaded.status).toBe(400);
-
-    const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {
-      method: "POST",
-      headers: auth,
-    });
-    expect(confirmed.status).toBe(409);
   });
 
   it("serves distinct property key and value suggestions", async () => {

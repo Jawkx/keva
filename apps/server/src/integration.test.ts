@@ -41,12 +41,7 @@ const makeApp = () =>
 
 const auth = { authorization: `Bearer ${TOKEN}` };
 
-// The server proxies uploads through its own /api/items/:id/upload route, so
-// PUT the bytes back to the app rather than to storage.
-const loopback = (app: ReturnType<typeof makeApp>, absoluteUrl: string, init?: RequestInit) => {
-  const url = new URL(absoluteUrl);
-  return app.request(`${url.pathname}${url.search}`, init);
-};
+const putToStorage = (uploadUrl: string, init?: RequestInit) => fetch(uploadUrl, init);
 
 describe("server integration — HTTP roundtrip", () => {
   it("create → upload → confirm → query → download → delete", async () => {
@@ -69,9 +64,9 @@ describe("server integration — HTTP roundtrip", () => {
       headers: Record<string, string>;
     };
 
-    const uploaded = await loopback(app, initiated.uploadUrl, {
+    const uploaded = await putToStorage(initiated.uploadUrl, {
       method: "PUT",
-      headers: { ...auth, ...initiated.headers },
+      headers: initiated.headers,
       body: bytes,
     });
     expect(uploaded.status).toBe(200);
@@ -149,9 +144,9 @@ describe("server integration — HTTP roundtrip", () => {
       uploadUrl: string;
       headers: Record<string, string>;
     };
-    await loopback(app, initiated.uploadUrl, {
+    await putToStorage(initiated.uploadUrl, {
       method: "PUT",
-      headers: { ...auth, ...initiated.headers },
+      headers: initiated.headers,
       body: bytes,
     });
     await app.request(`/api/items/${initiated.item.id}/confirm`, {

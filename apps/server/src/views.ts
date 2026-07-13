@@ -8,6 +8,7 @@ import {
 import { Context, Effect } from "effect";
 import { type Sql } from "postgres";
 import { randomTokenPart } from "./auth.js";
+import { jsonbParam } from "./postgres-json.js";
 
 export interface ViewStoreService {
   readonly create: (
@@ -65,7 +66,7 @@ export const makePostgresViewStore = (sql: Sql): ViewStoreService => ({
         const id = randomTokenPart(12);
         const rows = await sql<ViewRow[]>`
           insert into views (id, tenant_id, name, icon, conditions, created_at, updated_at)
-          values (${id}, ${tenantId}, ${input.name}, ${input.icon ?? null}, ${sql.json(input.conditions)}, now(), now())
+          values (${id}, ${tenantId}, ${input.name}, ${input.icon ?? null}, ${jsonbParam(input.conditions)}::jsonb, now(), now())
           returning *
         `;
         return viewRecord(rows[0]!);
@@ -105,7 +106,7 @@ export const makePostgresViewStore = (sql: Sql): ViewStoreService => ({
           update views set
             name = coalesce(${input.name ?? null}::text, name),
             icon = coalesce(${input.icon ?? null}::text, icon),
-            conditions = coalesce(${input.conditions ? JSON.stringify(input.conditions) : null}::jsonb, conditions),
+            conditions = coalesce(${jsonbParam(input.conditions)}::jsonb, conditions),
             updated_at = now()
           where tenant_id = ${tenantId} and id = ${id}
           returning *

@@ -155,27 +155,6 @@ export const makeKevaEngine = (principal: Principal) => ({
       };
     }),
 
-  upload: (id: string, body: ReadableStream<Uint8Array>, contentType: string) =>
-    Effect.gen(function* () {
-      yield* requireScope(principal, "write");
-      const metadata = yield* MetadataStore;
-      const blobs = yield* BlobStore;
-      const item = yield* metadata.get(principal.tenantId, id);
-      if (!item || item.status !== "pending") {
-        return yield* new NotFound({ message: "Item not found" });
-      }
-      const share = shareOf(principal);
-      if (share && item.source !== shareSource(share.grantId)) {
-        return yield* new NotFound({ message: "Item not found" });
-      }
-      if (contentType !== item.contentType) {
-        return yield* new ValidationError({
-          message: "Uploaded content type does not match declaration",
-        });
-      }
-      yield* blobs.put(item.stagingKey, body, contentType, item.declaredSize);
-    }),
-
   confirm: (id: string) =>
     Effect.gen(function* () {
       yield* requireScope(principal, "write");

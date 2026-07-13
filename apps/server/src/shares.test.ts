@@ -67,12 +67,7 @@ const admin = { cookie: ADMIN_COOKIE, "content-type": "application/json" };
 const staticAuth = { authorization: `Bearer ${STATIC}`, "content-type": "application/json" };
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
-// The server proxies uploads through its own /api/items/:id/upload route, so
-// PUT the bytes back to the app rather than to storage.
-const loopback = (app: ReturnType<typeof makeApp>, absoluteUrl: string, init?: RequestInit) => {
-  const url = new URL(absoluteUrl);
-  return app.request(`${url.pathname}${url.search}`, init);
-};
+const putToStorage = (uploadUrl: string, init?: RequestInit) => fetch(uploadUrl, init);
 
 const seedItem = async (app: ReturnType<typeof makeApp>, name: string, properties: object) => {
   const bytes = new TextEncoder().encode(name);
@@ -83,9 +78,9 @@ const seedItem = async (app: ReturnType<typeof makeApp>, name: string, propertie
       body: JSON.stringify({ name, contentType: "text/plain", size: bytes.byteLength }),
     })
   ).json()) as { item: { id: string }; uploadUrl: string; headers: Record<string, string> };
-  await loopback(app, initiated.uploadUrl, {
+  await putToStorage(initiated.uploadUrl, {
     method: "PUT",
-    headers: { ...bearer(STATIC), ...initiated.headers },
+    headers: initiated.headers,
     body: bytes,
   });
   await app.request(`/api/items/${initiated.item.id}/confirm`, {
@@ -307,9 +302,9 @@ describe("server share subsystem", () => {
     };
     expect(initiated.item.tenantId).toBeUndefined();
 
-    await loopback(app, initiated.uploadUrl, {
+    await putToStorage(initiated.uploadUrl, {
       method: "PUT",
-      headers: { ...bearer(token), ...initiated.headers },
+      headers: initiated.headers,
       body: bytes,
     });
     const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {

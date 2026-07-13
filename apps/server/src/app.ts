@@ -223,33 +223,13 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(InitiateUpload, yield* jsonBody(context));
         const result = yield* makeKevaEngine(principal).initiate(body);
-        const uploadUrl = new URL(context.req.url);
-        uploadUrl.pathname = `/api/items/${result.item.id}/upload`;
-        uploadUrl.search = "";
         return {
           ...result,
           item: redactItem(principal, result.item),
-          uploadUrl: uploadUrl.toString(),
-          headers: { "content-type": result.item.contentType },
         };
       }),
     ),
   );
-
-  app.put("/api/items/:id/upload", (context) => {
-    const body = context.req.raw.body;
-    if (!body) return context.json({ message: "Upload body is required" }, 400);
-    return runRoute(
-      context,
-      Effect.gen(function* () {
-        const principal = yield* principalEffect(context.req.raw.headers);
-        const id = yield* itemIdParam(context);
-        const contentType = context.req.header("content-type") ?? "";
-        yield* makeKevaEngine(principal).upload(id, body, contentType);
-        return { ok: true };
-      }),
-    );
-  });
 
   app.post("/api/items/:id/confirm", (context) =>
     runRoute(
