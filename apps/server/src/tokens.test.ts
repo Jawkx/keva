@@ -1,7 +1,7 @@
-import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
+import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import type { MintTokenResult, Principal, TokenRecord } from "@keva/schema";
 import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import {
   ApiTokenStore,
@@ -11,6 +11,8 @@ import {
   type SessionResolver,
 } from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
+import { testSql } from "./test/db.js";
+import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
@@ -18,6 +20,16 @@ import { ViewStore } from "./views.js";
 const STATIC = "static-token";
 const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
+
+const sql = testSql();
+let mock: S3Mock;
+beforeAll(async () => {
+  mock = await startS3Mock();
+});
+afterAll(async () => {
+  await sql.end({ timeout: 5 });
+  await mock.close();
+});
 
 const makeInMemoryTokenStore = (): ApiTokenStoreService => {
   const records = new Map<string, { record: TokenRecord; secret: string }>();
@@ -83,8 +95,8 @@ const makeApp = (resolver: SessionResolver = sessionResolver) => {
   }).pipe(Layer.provide(Layer.merge(tokens, shares)));
   return createApp({
     layer: Layer.mergeAll(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
+      Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+      S3BlobStoreLive(s3MockConfig(mock)),
       tokens,
       shares,
       views,

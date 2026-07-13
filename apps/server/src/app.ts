@@ -15,7 +15,6 @@ import {
   Query,
   toSharedItem,
   toOwnerItem,
-  Unauthorized,
   UpdateView,
   ValidationError,
   statusFor,
@@ -209,51 +208,6 @@ export const createApp = (options: CreateAppOptions): Hono => {
         : context.json({ message: "User has no storage account" }, 404);
     }),
   );
-
-  app.put("/__dev/blobs/*", async (context) => {
-    const key = decodeURIComponent(context.req.path.slice("/__dev/blobs/".length));
-    const token = context.req.query("token") ?? "";
-    const bytes = new Uint8Array(await context.req.arrayBuffer());
-    const contentType = context.req.header("content-type") ?? "application/octet-stream";
-    return withServices(context, ({ runtime }) =>
-      execute(
-        context,
-        Effect.gen(function* () {
-          const blobs = yield* BlobStore;
-          if (!blobs.devPut) {
-            return yield* new Unauthorized({ message: "Dev blob route disabled" });
-          }
-          yield* blobs.devPut(key, bytes, contentType, token);
-          return { ok: true };
-        }),
-        runtime,
-      ),
-    );
-  });
-
-  app.get("/__dev/blobs/*", async (context) => {
-    const key = decodeURIComponent(context.req.path.slice("/__dev/blobs/".length));
-    const token = context.req.query("token") ?? "";
-    return withServices(context, async ({ runtime }) => {
-      const exit = await runtime.runPromiseExit(
-        Effect.gen(function* () {
-          const blobs = yield* BlobStore;
-          if (!blobs.devGet) {
-            return yield* new Unauthorized({ message: "Dev blob route disabled" });
-          }
-          return yield* blobs.devGet(key, token);
-        }),
-      );
-      if (Exit.isFailure(exit)) {
-        const error = failureFrom(exit.cause);
-        return context.json(error, statusFor(error) as never);
-      }
-      if (!exit.value) return context.notFound();
-      return new Response(exit.value.bytes.slice().buffer as ArrayBuffer, {
-        headers: { "content-type": exit.value.contentType },
-      });
-    });
-  });
 
   const runRoute = (context: Context, effect: Effect.Effect<unknown, KevaError, AppServices>) =>
     withServices(context, ({ runtime }) => execute(context, effect, runtime));

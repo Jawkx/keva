@@ -1,20 +1,32 @@
-import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
+import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
+import { testSql } from "./test/db.js";
+import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
 
 const TOKEN = "secret-token";
 
+const sql = testSql();
+let mock: S3Mock;
+beforeAll(async () => {
+  mock = await startS3Mock();
+});
+afterAll(async () => {
+  await sql.end({ timeout: 5 });
+  await mock.close();
+});
+
 const makeApp = () =>
   createApp({
     layer: Layer.mergeAll(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
+      Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+      S3BlobStoreLive(s3MockConfig(mock)),
       StaticTokenAuthLive({ token: TOKEN, tenantId: "root" }),
       Layer.succeed(ApiTokenStore, {
         resolve: () => Effect.succeed(null),
@@ -29,6 +41,8 @@ const makeApp = () =>
 
 const auth = { authorization: `Bearer ${TOKEN}` };
 
+// The server proxies uploads through its own /api/items/:id/upload route, so
+// PUT the bytes back to the app rather than to storage.
 const loopback = (app: ReturnType<typeof makeApp>, absoluteUrl: string, init?: RequestInit) => {
   const url = new URL(absoluteUrl);
   return app.request(`${url.pathname}${url.search}`, init);
@@ -100,7 +114,8 @@ describe("server integration — HTTP roundtrip", () => {
     });
     expect(contentResponse.status).toBe(200);
     const { url } = (await contentResponse.json()) as { url: string };
-    const downloaded = await loopback(app, url);
+    // Downloads are presigned GETs served directly by storage (the mock).
+    const downloaded = await fetch(url);
     expect(downloaded.status).toBe(200);
     expect(new TextDecoder().decode(await downloaded.arrayBuffer())).toBe("the quick brown fox");
 

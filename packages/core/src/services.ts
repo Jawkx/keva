@@ -41,16 +41,6 @@ export interface BlobStoreService {
   readonly head: (key: string) => Effect.Effect<BlobHead | null, KevaError>;
   readonly copy: (sourceKey: string, destinationKey: string) => Effect.Effect<void, KevaError>;
   readonly delete: (key: string) => Effect.Effect<void, KevaError>;
-  readonly devPut?: (
-    key: string,
-    bytes: Uint8Array,
-    contentType: string,
-    token: string,
-  ) => Effect.Effect<void, KevaError>;
-  readonly devGet?: (
-    key: string,
-    token: string,
-  ) => Effect.Effect<{ bytes: Uint8Array; contentType: string } | null, KevaError>;
 }
 
 export class BlobStore extends Context.Tag("@keva/core/BlobStore")<BlobStore, BlobStoreService>() {}

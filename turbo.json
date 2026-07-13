@@ -15,7 +15,13 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "passThroughEnv": ["KEVA_TEST_DATABASE_URL"]
+    },
+    "@keva/server#test": {
+      "dependsOn": ["^build", "@keva/core#test"],
+      "outputs": ["coverage/**"],
+      "passThroughEnv": ["KEVA_TEST_DATABASE_URL"]
     },
     "lint": {
       "dependsOn": ["^build"],

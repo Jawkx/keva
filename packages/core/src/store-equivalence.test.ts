@@ -1,23 +1,16 @@
-import type { ItemEvent, KevaItem, Principal, Query, QueryOrder } from "@keva/schema";
-import { Effect, Layer } from "effect";
-import { readFile, readdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import postgres, { type Sql } from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeKevaEngine } from "./engine.js";
-import { makeMemoryMetadataStore, MemoryBlobStoreLive } from "./memory.js";
+import type { ItemEvent, KevaItem, Query, QueryOrder } from "@keva/schema";
+import { Effect } from "effect";
+import { afterAll, describe, expect, it } from "vitest";
 import { makePostgresMetadataStore } from "./postgres/store.js";
-import { BlobStore, MetadataStore, type MetadataStoreService } from "./services.js";
+import { testSql } from "./test/db.js";
 
-const DATABASE_URL = (globalThis as { process?: { env?: Record<string, string | undefined> } })
-  .process?.env?.KEVA_TEST_DATABASE_URL;
+// Validates the Postgres metadata store against the canonical query/usage/event
+// semantics. Postgres is the only backend, so these run unconditionally against
+// KEVA_TEST_DATABASE_URL.
 
-const principal = (tenantId: string): Principal => ({
-  tenantId,
-  scopes: ["read", "write", "delete", "admin"],
-  via: "token",
-});
+const sql = testSql();
+const store = makePostgresMetadataStore(sql);
+afterAll(() => sql.end({ timeout: 5 }));
 
 const SEED: ReadonlyArray<[string, string, Record<string, unknown>]> = [
   ["alpha", "text/plain", { kind: "doc", rating: 5, tags: ["x", "y"], note: "hello world" }],
@@ -107,29 +100,19 @@ const EXPECTED: Record<string, string[]> = {
   inArrayProp: ["bravo"],
 };
 
-const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");
-
-const applyMigrations = async (sql: Sql): Promise<void> => {
-  const files = (await readdir(migrationDir)).filter((file) => /^\d{4}_.+\.sql$/.test(file)).sort();
-
-  for (const file of files) {
-    const migration = await readFile(resolve(migrationDir, file), "utf8");
-    for (const statement of migration
-      .split("--> statement-breakpoint")
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await sql.unsafe(statement);
-    }
-  }
-};
-
-const orderedItem = (tenantId: string, id: string, name: string, createdAt: string): KevaItem => ({
+const readyItem = (
+  tenantId: string,
+  id: string,
+  name: string,
+  createdAt: string,
+  overrides: Partial<KevaItem> = {},
+): KevaItem => ({
   id,
   tenantId,
   name,
   contentType: "text/plain",
-  declaredSize: 1,
-  size: 1,
+  declaredSize: name.length,
+  size: name.length,
   etag: null,
   checksum: null,
   source: "upload",
@@ -139,88 +122,33 @@ const orderedItem = (tenantId: string, id: string, name: string, createdAt: stri
   createdAt,
   updatedAt: createdAt,
   properties: {},
+  ...overrides,
 });
 
-const collectPaginatedOrder = async (
-  store: MetadataStoreService,
-  order: QueryOrder,
-): Promise<{ names: string[]; pageCursors: boolean[] }> => {
+const seed = async (): Promise<string> => {
   const tenant = crypto.randomUUID();
-  // Fresh ids per invocation: item.id is a global primary key in Postgres, so
-  // reusing fixed ids across tenants would collide. Ordering is by createdAt
-  // (all distinct here), so the id values do not affect the expected result.
-  const rows = [
-    orderedItem(tenant, crypto.randomUUID(), "alpha", "2026-01-01T00:00:00.000Z"),
-    orderedItem(tenant, crypto.randomUUID(), "bravo", "2026-01-01T00:02:00.000Z"),
-    orderedItem(tenant, crypto.randomUUID(), "carol", "2026-01-01T00:01:00.000Z"),
-  ];
-
-  for (const row of rows) {
-    await Effect.runPromise(store.insert(row));
-  }
-
-  const names: string[] = [];
-  const pageCursors: boolean[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await Effect.runPromise(
-      store.query(tenant, { where: [], limit: 1, order, cursor }),
-    );
-    names.push(...page.items.map((item) => item.name));
-    pageCursors.push(Boolean(page.nextCursor));
-    cursor = page.nextCursor;
-  } while (cursor);
-
-  return { names, pageCursors };
-};
-
-const seedStore = async (store: MetadataStoreService) => {
-  const tenant = crypto.randomUUID();
-  const p = principal(tenant);
-  const layer = Layer.merge(Layer.succeed(MetadataStore, store), MemoryBlobStoreLive());
-  const run = <A, E>(effect: Effect.Effect<A, E, BlobStore | MetadataStore>) =>
-    Effect.runPromise(effect.pipe(Effect.provide(layer)));
-
+  const timestamp = "2026-01-01T00:00:00.000Z";
   for (const [name, contentType, properties] of SEED) {
-    await run(
-      Effect.gen(function* () {
-        const engine = makeKevaEngine(p);
-        const bytes = new TextEncoder().encode(name);
-        const initiated = yield* engine.initiate({
-          name,
+    await Effect.runPromise(
+      store.insert(
+        readyItem(tenant, crypto.randomUUID(), name, timestamp, {
           contentType,
-          size: bytes.byteLength,
-          source: "upload",
-          properties: {},
-        });
-        const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
-        const blobs = yield* BlobStore;
-        yield* blobs.devPut!(initiated.item.stagingKey, bytes, contentType, token);
-        yield* engine.confirm(initiated.item.id);
-        yield* engine.patch(initiated.item.id, {
-          set: properties as Record<string, never>,
-          unset: [],
-        });
-      }),
+          properties: properties as KevaItem["properties"],
+        }),
+      ),
     );
   }
-
-  return { p, run };
+  return tenant;
 };
 
-const seedAndRun = async (store: MetadataStoreService): Promise<Record<string, string[]>> => {
-  const { p, run } = await seedStore(store);
+const seedAndRun = async (): Promise<Record<string, string[]>> => {
+  const tenant = await seed();
   const results: Record<string, string[]> = {};
   for (const [label, query] of Object.entries(QUERIES)) {
-    const res = await run(makeKevaEngine(p).query(query));
+    const res = await Effect.runPromise(store.query(tenant, query));
     results[label] = res.items.map((item) => item.name).sort();
   }
   return results;
-};
-
-const seedAndUsage = async (store: MetadataStoreService) => {
-  const { p, run } = await seedStore(store);
-  return run(makeKevaEngine(p).usage());
 };
 
 const EXPECTED_USAGE = {
@@ -235,34 +163,28 @@ const EXPECTED_USAGE = {
   ],
 };
 
-const seedAndSourceUsage = async (store: MetadataStoreService) => {
+const seedAndSourceUsage = async () => {
   const tenant = crypto.randomUUID();
   const other = crypto.randomUUID();
   const row = (
-    idSuffix: string,
     tenantId: string,
     source: string,
     status: KevaItem["status"],
     declaredSize: number,
     size: number | null,
-  ): KevaItem => ({
-    ...orderedItem(
-      tenantId,
-      `00000000-0000-4000-8000-0000000000${idSuffix}`,
-      idSuffix,
-      "2026-01-01T00:00:00.000Z",
-    ),
-    source,
-    status,
-    declaredSize,
-    size,
-  });
+  ): KevaItem =>
+    readyItem(tenantId, crypto.randomUUID(), "x", "2026-01-01T00:00:00.000Z", {
+      source,
+      status,
+      declaredSize,
+      size,
+    });
   const rows: KevaItem[] = [
-    row("11", tenant, "share:g1", "ready", 100, 100),
-    row("12", tenant, "share:g1", "pending", 200, null),
-    row("13", tenant, "share:g1", "deleting", 400, 400),
-    row("14", tenant, "share:g2", "ready", 800, 800),
-    row("15", other, "share:g1", "ready", 1600, 1600),
+    row(tenant, "share:g1", "ready", 100, 100),
+    row(tenant, "share:g1", "pending", 200, null),
+    row(tenant, "share:g1", "deleting", 400, 400),
+    row(tenant, "share:g2", "ready", 800, 800),
+    row(other, "share:g1", "ready", 1600, 1600),
   ];
   for (const item of rows) await Effect.runPromise(store.insert(item));
   return Effect.runPromise(store.sourceUsage(tenant, "share:g1"));
@@ -270,11 +192,11 @@ const seedAndSourceUsage = async (store: MetadataStoreService) => {
 
 const EXPECTED_SOURCE_USAGE = { count: 2, bytes: 300 };
 
-const patchAtPropertyLimit = async (store: MetadataStoreService) => {
+const patchAtPropertyLimit = async () => {
   const tenant = crypto.randomUUID();
   const id = crypto.randomUUID();
   const timestamp = "2026-01-01T00:00:00.000Z";
-  await Effect.runPromise(store.insert(orderedItem(tenant, id, "limit.txt", timestamp)));
+  await Effect.runPromise(store.insert(readyItem(tenant, id, "limit.txt", timestamp)));
   const properties = Object.fromEntries(
     Array.from({ length: 256 }, (_, index) => [`key-${index}`, index]),
   );
@@ -293,7 +215,7 @@ const patchAtPropertyLimit = async (store: MetadataStoreService) => {
   };
 };
 
-const seedAndListEvents = async (store: MetadataStoreService) => {
+const seedAndListEvents = async () => {
   const tenant = crypto.randomUUID();
   const other = crypto.randomUUID();
   const itemId = "00000000-0000-4000-8000-000000000021";
@@ -355,24 +277,45 @@ const seedAndListEvents = async (store: MetadataStoreService) => {
   return { events: pages.flat(), pageCursors };
 };
 
-describe("store query equivalence", () => {
-  it("the in-memory store matches the specified semantics", async () => {
-    const got = await seedAndRun(makeMemoryMetadataStore());
-    expect(got).toEqual(EXPECTED);
+const collectPaginatedOrder = async (order: QueryOrder) => {
+  const tenant = crypto.randomUUID();
+  const rows = [
+    readyItem(tenant, crypto.randomUUID(), "alpha", "2026-01-01T00:00:00.000Z"),
+    readyItem(tenant, crypto.randomUUID(), "bravo", "2026-01-01T00:02:00.000Z"),
+    readyItem(tenant, crypto.randomUUID(), "carol", "2026-01-01T00:01:00.000Z"),
+  ];
+  for (const row of rows) await Effect.runPromise(store.insert(row));
+
+  const names: string[] = [];
+  const pageCursors: boolean[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await Effect.runPromise(
+      store.query(tenant, { where: [], limit: 1, order, cursor }),
+    );
+    names.push(...page.items.map((item) => item.name));
+    pageCursors.push(Boolean(page.nextCursor));
+    cursor = page.nextCursor;
+  } while (cursor);
+  return { names, pageCursors };
+};
+
+describe("postgres store semantics", () => {
+  it("serves the specified query operator matrix", async () => {
+    expect(await seedAndRun()).toEqual(EXPECTED);
   });
 
-  it("the in-memory store reports usage totals and a per-type breakdown", async () => {
-    const usage = await seedAndUsage(makeMemoryMetadataStore());
-    expect(usage).toEqual(EXPECTED_USAGE);
+  it("reports usage totals and a per-type breakdown", async () => {
+    const tenant = await seed();
+    expect(await Effect.runPromise(store.usage(tenant))).toEqual(EXPECTED_USAGE);
   });
 
-  it("the in-memory store sums source usage over pending+ready of one tenant/source", async () => {
-    const usage = await seedAndSourceUsage(makeMemoryMetadataStore());
-    expect(usage).toEqual(EXPECTED_SOURCE_USAGE);
+  it("sums source usage over pending+ready of one tenant/source", async () => {
+    expect(await seedAndSourceUsage()).toEqual(EXPECTED_SOURCE_USAGE);
   });
 
-  it("the in-memory store rejects a committed patch over the canonical property limit", async () => {
-    await expect(patchAtPropertyLimit(makeMemoryMetadataStore())).resolves.toMatchObject({
+  it("rejects a committed patch over the canonical property limit", async () => {
+    await expect(patchAtPropertyLimit()).resolves.toMatchObject({
       rejected: "QuotaExceeded",
       properties: Object.fromEntries(
         Array.from({ length: 256 }, (_, index) => [`key-${index}`, index]),
@@ -380,86 +323,22 @@ describe("store query equivalence", () => {
     });
   });
 
-  it("the in-memory store lists item events newest-first with keyset pagination", async () => {
-    const { events, pageCursors } = await seedAndListEvents(makeMemoryMetadataStore());
+  it("lists item events newest-first with keyset pagination", async () => {
+    const { events, pageCursors } = await seedAndListEvents();
     expect(events.map((event) => event.id.slice(-2))).toEqual(["34", "33", "32", "31"]);
     expect(pageCursors).toEqual([true, false]);
     expect(events[1]!.payload).toEqual({ set: { rating: 5 }, previous: { rating: 1 } });
     expect(events[3]!.actor).toEqual({ token: { id: "tok-1", name: "CI token" } });
   });
 
-  it("the in-memory store paginates explicit created-time orders", async () => {
-    await expect(
-      collectPaginatedOrder(makeMemoryMetadataStore(), "created_at_asc"),
-    ).resolves.toEqual({
+  it("paginates explicit created-time orders", async () => {
+    await expect(collectPaginatedOrder("created_at_asc")).resolves.toEqual({
       names: ["alpha", "carol", "bravo"],
       pageCursors: [true, true, false],
     });
-    await expect(
-      collectPaginatedOrder(makeMemoryMetadataStore(), "created_at_desc"),
-    ).resolves.toEqual({
+    await expect(collectPaginatedOrder("created_at_desc")).resolves.toEqual({
       names: ["bravo", "carol", "alpha"],
       pageCursors: [true, true, false],
-    });
-  });
-
-  describe.skipIf(!DATABASE_URL)("postgres equals memory", () => {
-    let sql: Sql;
-
-    beforeAll(async () => {
-      sql = postgres(DATABASE_URL!, { max: 4 });
-      await applyMigrations(sql);
-    });
-
-    afterAll(async () => {
-      await sql.end({ timeout: 5 });
-    });
-
-    it("returns identical results for every query in the battery", async () => {
-      const memory = await seedAndRun(makeMemoryMetadataStore());
-      const pg = await seedAndRun(makePostgresMetadataStore(sql));
-      expect(pg).toEqual(memory);
-      expect(pg).toEqual(EXPECTED);
-    });
-
-    it("returns identical usage totals and breakdown to memory", async () => {
-      const memory = await seedAndUsage(makeMemoryMetadataStore());
-      const pg = await seedAndUsage(makePostgresMetadataStore(sql));
-      expect(pg).toEqual(memory);
-      expect(pg).toEqual(EXPECTED_USAGE);
-    });
-
-    it("returns identical source usage to memory", async () => {
-      const memory = await seedAndSourceUsage(makeMemoryMetadataStore());
-      const pg = await seedAndSourceUsage(makePostgresMetadataStore(sql));
-      expect(pg).toEqual(memory);
-      expect(pg).toEqual(EXPECTED_SOURCE_USAGE);
-    });
-
-    it("matches memory when a patch exceeds the canonical property limit", async () => {
-      const memory = await patchAtPropertyLimit(makeMemoryMetadataStore());
-      const pg = await patchAtPropertyLimit(makePostgresMetadataStore(sql));
-      expect(pg).toEqual(memory);
-      expect(pg.rejected).toBe("QuotaExceeded");
-      expect(Object.keys(pg.properties ?? {})).toHaveLength(256);
-    });
-
-    it("matches memory pagination for explicit created-time orders", async () => {
-      for (const order of ["created_at_asc", "created_at_desc"] as const) {
-        const memory = await collectPaginatedOrder(makeMemoryMetadataStore(), order);
-        const pg = await collectPaginatedOrder(makePostgresMetadataStore(sql), order);
-        expect(pg).toEqual(memory);
-      }
-    });
-
-    it("matches memory for item event listing and pagination", async () => {
-      const memory = await seedAndListEvents(makeMemoryMetadataStore());
-      const pg = await seedAndListEvents(makePostgresMetadataStore(sql));
-      const normalize = (result: typeof memory) => ({
-        pageCursors: result.pageCursors,
-        events: result.events.map(({ tenantId: _tenantId, ...event }) => event),
-      });
-      expect(normalize(pg)).toEqual(normalize(memory));
     });
   });
 });

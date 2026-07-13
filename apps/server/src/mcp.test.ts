@@ -1,19 +1,31 @@
-import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
+import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ApiTokenStore, mcpScopesToKevaScopes, StaticTokenAuthLive } from "./auth.js";
 import { createApp } from "./app.js";
 import type { McpAuthorizationServer } from "./better-auth.js";
 import { type McpDeps, principalFromMcpToken } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
+import { testSql } from "./test/db.js";
+import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
 
+const sql = testSql();
+let mock: S3Mock;
+beforeAll(async () => {
+  mock = await startS3Mock();
+});
+afterAll(async () => {
+  await sql.end({ timeout: 5 });
+  await mock.close();
+});
+
 const baseLayer = () =>
   Layer.mergeAll(
-    MemoryMetadataStoreLive,
-    MemoryBlobStoreLive(),
+    Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+    S3BlobStoreLive(s3MockConfig(mock)),
     StaticTokenAuthLive({ token: "test-secret", tenantId: "test-tenant" }),
     Layer.succeed(ApiTokenStore, {
       resolve: () => Effect.succeed(null),

@@ -4,7 +4,6 @@ import { createServerOptions } from "./server-options.js";
 
 const persistentOptions = () =>
   createServerOptions({
-    mode: "persistent",
     staticToken: "test-token",
     tenantId: "test",
     baseUrl: "http://keva.test",

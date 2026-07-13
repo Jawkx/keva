@@ -6,7 +6,6 @@ describe("worker entry", () => {
     KEVA_STATIC_TOKEN: "static-token",
     KEVA_BASE_URL: "http://worker.test",
     KEVA_TENANT_ID: "tenant",
-    KEVA_RUNTIME_MODE: "persistent",
     HYPERDRIVE: { connectionString: "postgres://worker.test/keva" },
     S3_ENDPOINT: "https://storage.worker.test",
     S3_ACCESS_KEY_ID: "access-key",
@@ -26,22 +25,11 @@ describe("worker entry", () => {
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
   });
 
-  it("rejects Worker local-memory mode", async () => {
-    await expect(
-      worker.fetch(new Request("http://worker.test/health"), {
-        KEVA_STATIC_TOKEN: "static-token",
-        KEVA_BASE_URL: "http://worker.test",
-        KEVA_RUNTIME_MODE: "local-memory",
-      }),
-    ).rejects.toThrow('KEVA_RUNTIME_MODE must be "persistent" for Worker deployments');
-  });
-
   it("fails closed when a persistent Worker binding is missing", async () => {
     await expect(
       worker.fetch(new Request("http://worker.test/health"), {
         KEVA_STATIC_TOKEN: "static-token",
         KEVA_BASE_URL: "http://worker.test",
-        KEVA_RUNTIME_MODE: "persistent",
         HYPERDRIVE: { connectionString: "postgres://worker.test/keva" },
         S3_ENDPOINT: "https://storage.worker.test",
         S3_ACCESS_KEY_ID: "access-key",

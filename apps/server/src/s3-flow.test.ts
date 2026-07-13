@@ -1,17 +1,21 @@
 import {
   BlobStore,
   MetadataStore,
-  MemoryMetadataStoreLive,
   S3BlobStoreLive,
   makeKevaEngine,
+  makePostgresMetadataStore,
   reapPending,
   sweepStaging,
   sweepDeleting,
 } from "@keva/core";
 import type { Principal } from "@keva/schema";
 import { Effect, Layer, ManagedRuntime } from "effect";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { testSql } from "./test/db.js";
 import { type S3Mock, startS3Mock } from "./test/s3-mock.js";
+
+const sql = testSql();
+afterAll(() => sql.end({ timeout: 5 }));
 
 const principal: Principal = {
   tenantId: "t1",
@@ -70,7 +74,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
   const makeRuntime = (m: S3Mock) =>
     ManagedRuntime.make(
       Layer.merge(
-        MemoryMetadataStoreLive,
+        Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
         S3BlobStoreLive({
           endpoint: m.endpoint,
           region: "auto",
@@ -286,7 +290,10 @@ describe.skipIf(!realS3Config)("S3 blob store against a real S3-compatible provi
 
   beforeEach(() => {
     runtime = ManagedRuntime.make(
-      Layer.merge(MemoryMetadataStoreLive, S3BlobStoreLive(realS3Config!)),
+      Layer.merge(
+        Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+        S3BlobStoreLive(realS3Config!),
+      ),
     );
   });
 

@@ -99,3 +99,13 @@ export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 };
+
+// Config for S3BlobStoreLive pointed at a running mock.
+export const s3MockConfig = (mock: S3Mock) => ({
+  endpoint: mock.endpoint,
+  region: "auto",
+  accessKeyId: "test",
+  secretAccessKey: "test",
+  bucket: mock.bucket,
+  forcePathStyle: true,
+});

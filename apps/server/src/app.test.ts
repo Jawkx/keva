@@ -1,28 +1,57 @@
-import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
+import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
-import { createApp } from "./app.js";
+import { createApp, type AppServices } from "./app.js";
 import { ShareGrantStore } from "./shares.js";
+import { testSql } from "./test/db.js";
+import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
 
-const layer = Layer.mergeAll(
-  MemoryMetadataStoreLive,
-  MemoryBlobStoreLive(),
-  StaticTokenAuthLive({ token: "test-secret", tenantId: "test-tenant" }),
-  Layer.succeed(ApiTokenStore, {
-    resolve: () => Effect.succeed(null),
-    mint: () => Effect.die("not used"),
-    list: () => Effect.succeed([]),
-    revoke: () => Effect.succeed(false),
-  }),
-  Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
-  Layer.succeed(ViewStore, makeInMemoryViewStore()),
-);
+const sql = testSql();
+let mock: S3Mock;
+let layer: Layer.Layer<AppServices>;
+
+beforeAll(async () => {
+  mock = await startS3Mock();
+  layer = Layer.mergeAll(
+    Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+    S3BlobStoreLive(s3MockConfig(mock)),
+    StaticTokenAuthLive({ token: "test-secret", tenantId: "test-tenant" }),
+    Layer.succeed(ApiTokenStore, {
+      resolve: () => Effect.succeed(null),
+      mint: () => Effect.die("not used"),
+      list: () => Effect.succeed([]),
+      revoke: () => Effect.succeed(false),
+    }),
+    Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
+    Layer.succeed(ViewStore, makeInMemoryViewStore()),
+  );
+});
+
+afterAll(async () => {
+  await sql.end({ timeout: 5 });
+  await mock.close();
+});
 
 const auth = { authorization: "Bearer test-secret" };
+
+// The server proxies uploads through its own /api/items/:id/upload route
+// (streaming to the blob store), so PUT the bytes to the app, not to storage.
+const putToStorage = (
+  app: ReturnType<typeof createApp>,
+  initiated: { uploadUrl: string; headers: Record<string, string> },
+  body: string,
+) => {
+  const url = new URL(initiated.uploadUrl);
+  return app.request(`${url.pathname}${url.search}`, {
+    method: "PUT",
+    headers: { ...auth, ...initiated.headers },
+    body,
+  });
+};
 
 const seedItem = async (
   app: ReturnType<typeof createApp>,
@@ -39,12 +68,7 @@ const seedItem = async (
     uploadUrl: string;
     headers: Record<string, string>;
   };
-  const uploadUrl = new URL(initiated.uploadUrl);
-  await app.request(`${uploadUrl.pathname}${uploadUrl.search}`, {
-    method: "PUT",
-    headers: { ...auth, ...initiated.headers },
-    body: "x",
-  });
+  await putToStorage(app, initiated, "x");
   await app.request(`/api/items/${initiated.item.id}/confirm`, { method: "POST", headers: auth });
   await app.request(`/api/items/${initiated.item.id}`, {
     method: "PATCH",
@@ -150,12 +174,7 @@ describe("server API", () => {
       headers: Record<string, string>;
     };
 
-    const uploadUrl = new URL(initiated.uploadUrl);
-    const uploaded = await app.request(`${uploadUrl.pathname}${uploadUrl.search}`, {
-      method: "PUT",
-      headers: { ...auth, ...initiated.headers },
-      body: "hello",
-    });
+    const uploaded = await putToStorage(app, initiated, "hello");
     expect(uploaded.status).toBe(200);
 
     const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {
@@ -189,13 +208,10 @@ describe("server API", () => {
         body: JSON.stringify({ name: "small.txt", contentType: "text/plain", size: 1 }),
       })
     ).json()) as { item: { id: string }; uploadUrl: string; headers: Record<string, string> };
-    const uploadUrl = new URL(initiated.uploadUrl);
 
-    const uploaded = await app.request(`${uploadUrl.pathname}${uploadUrl.search}`, {
-      method: "PUT",
-      headers: { ...auth, ...initiated.headers },
-      body: "too large",
-    });
+    // The proxy upload streams to storage with a size bound, so an oversize body
+    // is rejected before it is staged; confirm then finds nothing.
+    const uploaded = await putToStorage(app, initiated, "too large");
     expect(uploaded.status).toBe(400);
 
     const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {

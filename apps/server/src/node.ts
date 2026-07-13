@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { trustedOriginsFor } from "./origins.js";
-import { runtimeModeFor, s3For } from "./runtime-mode.js";
+import { s3ConfigFor } from "./s3-config.js";
 import { createServerOptions } from "./server-options.js";
 
 const required = (name: string): string => {
@@ -23,13 +23,7 @@ const trustedOrigins = trustedOriginsFor(baseUrl, process.env.KEVA_TRUSTED_ORIGI
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ]);
-const mode = runtimeModeFor(process.env.KEVA_RUNTIME_MODE);
-const databaseUrl = process.env.DATABASE_URL;
-if (mode === "persistent" && !databaseUrl) throw new Error("DATABASE_URL is required");
-if (mode === "local-memory" && databaseUrl) {
-  throw new Error("DATABASE_URL is not allowed when KEVA_RUNTIME_MODE is local-memory");
-}
-const s3 = s3For(mode, {
+const s3 = s3ConfigFor({
   S3_ENDPOINT: process.env.S3_ENDPOINT,
   S3_REGION: process.env.S3_REGION,
   S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
@@ -38,19 +32,15 @@ const s3 = s3For(mode, {
   S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE,
 });
 const appOptions = createServerOptions({
-  mode,
   staticToken: required("KEVA_STATIC_TOKEN"),
   tenantId: process.env.KEVA_TENANT_ID ?? "local",
   baseUrl,
-  ...(process.env.KEVA_LOOPBACK_BASE_URL !== undefined
-    ? { loopbackBaseUrl: process.env.KEVA_LOOPBACK_BASE_URL }
-    : {}),
-  ...(databaseUrl ? { databaseUrl } : {}),
+  databaseUrl: required("DATABASE_URL"),
   ...(process.env.BETTER_AUTH_SECRET ? { betterAuthSecret: process.env.BETTER_AUTH_SECRET } : {}),
   ...(process.env.BETTER_AUTH_URL ? { betterAuthUrl: process.env.BETTER_AUTH_URL } : {}),
   ...(process.env.KEVA_ADMIN_TOKEN ? { adminToken: process.env.KEVA_ADMIN_TOKEN } : {}),
   trustedOrigins,
-  ...(s3 ? { s3 } : {}),
+  s3,
 });
 
 serve(

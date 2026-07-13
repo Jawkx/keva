@@ -1,7 +1,7 @@
 import { createApp } from "./app.js";
 import { runLifecycle } from "./lifecycle.js";
 import { trustedOriginsFor } from "./origins.js";
-import { runtimeModeFor, s3For } from "./runtime-mode.js";
+import { s3ConfigFor } from "./s3-config.js";
 import { createServerOptions } from "./server-options.js";
 import type { AppServiceOptions } from "./app.js";
 
@@ -12,7 +12,6 @@ interface AssetsBinding {
 interface Env {
   readonly ASSETS?: AssetsBinding;
   readonly KEVA_STATIC_TOKEN?: string;
-  readonly KEVA_RUNTIME_MODE?: string;
   readonly KEVA_TENANT_ID?: string;
   readonly KEVA_BASE_URL?: string;
   readonly BETTER_AUTH_SECRET?: string;
@@ -43,24 +42,17 @@ const required = (value: string | undefined, name: string): string => {
   return value;
 };
 
-const persistentConfigFor = (env: Env) => {
-  const mode = runtimeModeFor(env.KEVA_RUNTIME_MODE);
-  if (mode !== "persistent") {
-    throw new Error('KEVA_RUNTIME_MODE must be "persistent" for Worker deployments');
-  }
-  const databaseUrl = required(env.HYPERDRIVE?.connectionString, "HYPERDRIVE");
-  const s3 = s3For(mode, env);
-  if (!s3) throw new Error("S3 configuration is required");
-  return { mode, databaseUrl, s3 };
-};
+const persistentConfigFor = (env: Env) => ({
+  databaseUrl: required(env.HYPERDRIVE?.connectionString, "HYPERDRIVE"),
+  s3: s3ConfigFor(env),
+});
 
 const makeServerOptions = (env: Env): AppServiceOptions => {
   const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
-  const { mode, databaseUrl, s3 } = persistentConfigFor(env);
+  const { databaseUrl, s3 } = persistentConfigFor(env);
 
   return createServerOptions({
-    mode,
     staticToken,
     tenantId: env.KEVA_TENANT_ID ?? "local",
     baseUrl,

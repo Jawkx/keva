@@ -1,7 +1,7 @@
-import { MemoryBlobStoreLive, MemoryMetadataStoreLive } from "@keva/core";
+import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import type { CreateShareGrantResult, QueryCondition, ViewRecord } from "@keva/schema";
 import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import {
   ApiTokenStore,
@@ -9,6 +9,8 @@ import {
   TokenAndStaticAuthFromStoreLive,
 } from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
+import { testSql } from "./test/db.js";
+import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
@@ -16,6 +18,16 @@ import { ViewStore } from "./views.js";
 const STATIC = "static-token";
 const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
+
+const sql = testSql();
+let mock: S3Mock;
+beforeAll(async () => {
+  mock = await startS3Mock();
+});
+afterAll(async () => {
+  await sql.end({ timeout: 5 });
+  await mock.close();
+});
 
 const emptyTokenStore: ApiTokenStoreService = {
   resolve: () => Effect.succeed(null),
@@ -41,8 +53,8 @@ const makeApp = () => {
   }).pipe(Layer.provide(Layer.merge(tokens, shares)));
   return createApp({
     layer: Layer.mergeAll(
-      MemoryMetadataStoreLive,
-      MemoryBlobStoreLive(),
+      Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+      S3BlobStoreLive(s3MockConfig(mock)),
       tokens,
       shares,
       viewsLayer,
@@ -55,6 +67,8 @@ const admin = { cookie: ADMIN_COOKIE, "content-type": "application/json" };
 const staticAuth = { authorization: `Bearer ${STATIC}`, "content-type": "application/json" };
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
+// The server proxies uploads through its own /api/items/:id/upload route, so
+// PUT the bytes back to the app rather than to storage.
 const loopback = (app: ReturnType<typeof makeApp>, absoluteUrl: string, init?: RequestInit) => {
   const url = new URL(absoluteUrl);
   return app.request(`${url.pathname}${url.search}`, init);

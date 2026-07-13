@@ -1,19 +1,12 @@
 import type { Principal } from "@keva/schema";
 import { Effect, Layer } from "effect";
-import { readFile, readdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeKevaEngine, reapPending } from "./engine.js";
-import { MemoryBlobStoreLive } from "./memory.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
+import { S3BlobStoreLive } from "./s3.js";
 import { BlobStore, MetadataStore } from "./services.js";
-
-// Read the env without depending on @types/node (core has no node types):
-// vitest still injects `process` at runtime.
-const DATABASE_URL = (globalThis as { process?: { env?: Record<string, string | undefined> } })
-  .process?.env?.KEVA_TEST_DATABASE_URL;
+import { testSql } from "./test/db.js";
+import { putObject, s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
 
 const principal = (tenantId: string): Principal => ({
   tenantId,
@@ -21,43 +14,29 @@ const principal = (tenantId: string): Principal => ({
   via: "token",
 });
 
-const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");
-
-const applyMigrations = async (sql: Sql): Promise<void> => {
-  const files = (await readdir(migrationDir)).filter((file) => /^\d{4}_.+\.sql$/.test(file)).sort();
-
-  for (const file of files) {
-    const migration = await readFile(resolve(migrationDir, file), "utf8");
-    for (const statement of migration
-      .split("--> statement-breakpoint")
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await sql.unsafe(statement);
-    }
-  }
-};
-
-describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
-  let sql: Sql;
-  const blobLayer = MemoryBlobStoreLive();
-
-  const provide = (store: ReturnType<typeof makePostgresMetadataStore>) =>
-    Layer.merge(Layer.succeed(MetadataStore, store), blobLayer);
-
+describe("Postgres metadata store", () => {
+  const sql = testSql(4);
+  let mock: S3Mock;
   let layer: Layer.Layer<BlobStore | MetadataStore>;
 
   beforeAll(async () => {
-    sql = postgres(DATABASE_URL!, { max: 4 });
-    await applyMigrations(sql);
-    layer = provide(makePostgresMetadataStore(sql));
+    mock = await startS3Mock();
+    layer = Layer.merge(
+      Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+      S3BlobStoreLive(s3MockConfig(mock)),
+    );
   });
 
   afterAll(async () => {
     await sql.end({ timeout: 5 });
+    await mock.close();
   });
 
   const run = <A, E>(effect: Effect.Effect<A, E, BlobStore | MetadataStore>) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)));
+
+  const stage = (key: string, bytes: Uint8Array, contentType: string) =>
+    Effect.promise(() => putObject(mock, key, bytes, contentType));
 
   const createReady = (p: Principal, name: string, body: string) =>
     Effect.gen(function* () {
@@ -70,9 +49,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         source: "upload",
         properties: {},
       });
-      const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
-      const blobs = yield* BlobStore;
-      yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
+      yield* stage(initiated.item.stagingKey, bytes, "text/plain");
       yield* engine.confirm(initiated.item.id);
       return initiated.item.id;
     });
@@ -88,20 +65,13 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
         source: "upload",
         properties: {},
       });
-      const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
-      const blobs = yield* BlobStore;
-      yield* blobs.devPut!(initiated.item.stagingKey, bytes, contentType, token);
+      yield* stage(initiated.item.stagingKey, bytes, contentType);
       yield* engine.confirm(initiated.item.id);
       return initiated.item.id;
     });
 
   it("applies the checked-in migration indexes", async () => {
-    const indexes = await sql<
-      {
-        indexname: string;
-        indexdef: string;
-      }[]
-    >`
+    const indexes = await sql<{ indexname: string; indexdef: string }[]>`
       select indexname, indexdef
       from pg_indexes
       where schemaname = current_schema()
@@ -127,10 +97,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(p);
         const created = yield* createReady(p, "persist.txt", "durable bytes");
-        yield* engine.patch(created, {
-          set: { project: "keva", rating: 9 },
-          unset: [],
-        });
+        yield* engine.patch(created, { set: { project: "keva", rating: 9 }, unset: [] });
         return created;
       }),
     );
@@ -139,7 +106,11 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
     const fetched = await Effect.runPromise(
       makeKevaEngine(p)
         .get(id)
-        .pipe(Effect.provide(Layer.merge(Layer.succeed(MetadataStore, fresh), blobLayer))),
+        .pipe(
+          Effect.provide(
+            Layer.merge(Layer.succeed(MetadataStore, fresh), S3BlobStoreLive(s3MockConfig(mock))),
+          ),
+        ),
     );
     expect(fetched.status).toBe("ready");
     expect(fetched.properties).toEqual({ project: "keva", rating: 9 });
@@ -153,10 +124,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(principal(tenantA));
         const a = yield* createReady(principal(tenantA), "a.txt", "a");
-        yield* engine.patch(a, {
-          set: { kind: "doc", tags: ["x", "y"], rating: 5 },
-          unset: [],
-        });
+        yield* engine.patch(a, { set: { kind: "doc", tags: ["x", "y"], rating: 5 }, unset: [] });
         yield* createReady(principal(tenantB), "b.txt", "b");
 
         const eqHit = yield* engine.query({
@@ -308,9 +276,7 @@ describe.skipIf(!DATABASE_URL)("Postgres metadata store", () => {
           sql`update items set created_at = now() - interval '1 hour'
               where id = ${initiated.item.id}`.then(() => undefined),
         );
-        const token = new URL(initiated.uploadUrl).searchParams.get("token")!;
-        const blobs = yield* BlobStore;
-        yield* blobs.devPut!(initiated.item.stagingKey, bytes, "text/plain", token);
+        yield* stage(initiated.item.stagingKey, bytes, "text/plain");
 
         const [confirmExit, reaped] = yield* Effect.all(
           [Effect.either(engine.confirm(initiated.item.id)), reapPending({ pendingTtlMs: 1 })],
