@@ -1,0 +1,1 @@
+ALTER TABLE "share_grants" ADD COLUMN "token" text;

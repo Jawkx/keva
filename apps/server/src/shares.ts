@@ -64,6 +64,7 @@ interface ShareRow {
   readonly view_id: string;
   readonly name: string;
   readonly secret_hash: string;
+  readonly token: string | null;
   readonly scopes: ReadonlyArray<ShareScope>;
   readonly view_conditions: ReadonlyArray<QueryCondition>;
   readonly write_stamp: Properties | null;
@@ -101,6 +102,7 @@ const shareRecord = (row: ShareRow): ShareGrantRecord => ({
   tenantId: row.tenant_id,
   viewId: row.view_id,
   name: row.name,
+  token: row.token ?? null,
   scopes: [...row.scopes],
   conditions: [...row.view_conditions],
   writeStamp: row.write_stamp ?? null,
@@ -237,10 +239,10 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
             const rows = await transaction<ShareRow[]>`
           with g as (
             insert into share_grants (
-              id, tenant_id, view_id, name, secret_hash, scopes, write_stamp,
+              id, tenant_id, view_id, name, secret_hash, token, scopes, write_stamp,
               max_item_bytes, max_total_bytes, max_items, created_at, expires_at
             ) values (
-              ${id}, ${tenantId}, ${view.id}, ${input.name}, ${secretHash},
+              ${id}, ${tenantId}, ${view.id}, ${input.name}, ${secretHash}, ${plaintext},
               ${jsonbParam(input.scopes)}::jsonb,
               ${jsonbParam(input.writeStamp)}::jsonb,
               ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},

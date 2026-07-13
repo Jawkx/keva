@@ -133,8 +133,9 @@ export const views = pgTable(
 // force-applies `write_stamp` as the properties of every uploaded item and
 // enforces the nullable quota columns (null = unlimited). Deleting a view
 // cascades to its grants (revokes the links); a manual revoke is a row delete.
-// Orphaned `source = "share:{id}"` on items is harmless. Secrets are stored only
-// as `secret_hash`.
+// Orphaned `source = "share:{id}"` on items is harmless. `secret_hash` verifies
+// incoming tokens; `token` holds the plaintext link so it stays viewable after
+// creation (null for grants minted before persistent links existed).
 export const shareGrants = pgTable(
   "share_grants",
   {
@@ -145,6 +146,7 @@ export const shareGrants = pgTable(
       .references(() => views.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     secretHash: text("secret_hash").notNull(),
+    token: text("token"),
     scopes: jsonb("scopes").$type<ReadonlyArray<ShareScope>>().notNull(),
     writeStamp: jsonb("write_stamp").$type<Properties>(),
     maxItemBytes: bigint("max_item_bytes", { mode: "number" }),

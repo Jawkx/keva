@@ -16,6 +16,7 @@ interface StoredGrant {
   tenantId: string;
   viewId: string;
   name: string;
+  token: string;
   scopes: ShareGrantRecord["scopes"];
   writeStamp: ShareGrantRecord["writeStamp"];
   maxItemBytes: number | null;
@@ -37,6 +38,7 @@ export const makeInMemoryShareGrantStore = (
     tenantId: grant.tenantId,
     viewId: grant.viewId,
     name: grant.name,
+    token: grant.token,
     scopes: [...grant.scopes],
     conditions: conditionsFor(grant.viewId),
     writeStamp: grant.writeStamp,
@@ -117,6 +119,7 @@ export const makeInMemoryShareGrantStore = (
             tenantId,
             viewId,
             name: input.name,
+            token: `keva_sh_${id}_${secret}`,
             scopes: [...input.scopes],
             writeStamp: input.writeStamp ?? null,
             maxItemBytes: input.maxItemBytes ?? null,

@@ -191,7 +191,8 @@ export function ShareCreateDialog({
             <DialogHeader>
               <DialogTitle>Share link created</DialogTitle>
               <DialogDescription>
-                Copy it now — for security, this link won't be shown again.
+                Anyone with this link can access the shared files. You can copy it again anytime
+                from the view's share links.
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-lg border bg-muted/40 py-1 pr-1 pl-3">

@@ -26,11 +26,11 @@ const SettingsPage = lazy(() =>
 const SharePage = lazy(() =>
   import("./pages/share/SharePage").then(({ SharePage }) => ({ default: SharePage })),
 );
-const SharesPage = lazy(() =>
-  import("./pages/SharesPage").then(({ SharesPage }) => ({ default: SharesPage })),
-);
 const SignupPage = lazy(() =>
   import("./pages/SignupPage").then(({ SignupPage }) => ({ default: SignupPage })),
+);
+const ViewSharesPage = lazy(() =>
+  import("./pages/ViewSharesPage").then(({ ViewSharesPage }) => ({ default: ViewSharesPage })),
 );
 
 const route = (Page: ComponentType) => (
@@ -58,11 +58,10 @@ export const router = createBrowserRouter([
       { path: "/items/:id", element: route(FilesPage) },
       { path: "/v/:viewId", element: route(FilesPage) },
       { path: "/v/:viewId/items/:id", element: route(FilesPage) },
+      { path: "/v/:viewId/shares", element: route(ViewSharesPage) },
       { path: "/query", element: <Navigate to="/" replace /> },
-      { path: "/shares", element: route(SharesPage) },
       { path: "/connection", element: route(ConnectionPage) },
       { path: "/tokens", element: <Navigate to="/connection" replace /> },
-      { path: "/connection/shares", element: <Navigate to="/shares" replace /> },
       { path: "/settings", element: route(SettingsPage) },
       { path: "*", element: route(NotFoundPage) },
     ],

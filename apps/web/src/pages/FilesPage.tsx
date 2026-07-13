@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
@@ -39,7 +39,7 @@ import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format"
 import { decodeFilterParam, draftFromConditions } from "../lib/item-filters";
 import { removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
-import { sharesQueryKey } from "../lib/shares";
+import { listShares, sharesQueryKey } from "../lib/shares";
 import { useFileFilters } from "../lib/use-file-filters";
 import { type UploadQueueRow, useUploadQueue } from "../lib/use-upload-queue";
 import {
@@ -65,6 +65,7 @@ import {
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -355,6 +356,16 @@ function FilesPageContent({
   const [nameDraft, setNameDraft] = useState("");
 
   const viewEdited = Boolean(viewId && view && !sameConditions(activeWhere, view.conditions));
+
+  const sharesQuery = useQuery({
+    queryKey: sharesQueryKey,
+    queryFn: listShares,
+    enabled: Boolean(viewId),
+  });
+  const viewShares = useMemo(
+    () => (viewId ? (sharesQuery.data ?? []).filter((s) => s.viewId === viewId) : []),
+    [sharesQuery.data, viewId],
+  );
 
   const listPath = viewId ? `/v/${viewId}` : "/";
   const itemPath = (itemId: string) =>
@@ -700,10 +711,24 @@ function FilesPageContent({
                 Save as view
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={openShare}>
-              <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
-              Share
-            </Button>
+            <ButtonGroup>
+              <Button variant="outline" size="sm" onClick={openShare}>
+                <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
+                Share
+              </Button>
+              {viewShares.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link to={`/v/${viewId}/shares`} />}
+                  aria-label={`View ${viewShares.length} share ${viewShares.length === 1 ? "link" : "links"} for this view`}
+                  title="Share links for this view"
+                >
+                  <span className="tabular-nums">{viewShares.length}</span>
+                </Button>
+              )}
+            </ButtonGroup>
           </div>
         </div>
       )}

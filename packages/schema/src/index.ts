@@ -467,6 +467,9 @@ export const ShareGrantRecord = Schema.Struct({
   tenantId: Schema.String,
   viewId: Schema.String,
   name: Schema.NonEmptyString,
+  // Plaintext link, persisted so it stays viewable after creation. Null for
+  // grants minted before persistent links existed (only a secret hash was kept).
+  token: Schema.NullOr(Schema.String),
   scopes: Schema.Array(ShareScope),
   conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.NullOr(Properties),

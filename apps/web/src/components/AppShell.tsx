@@ -7,11 +7,10 @@ import {
   Logout01Icon,
   Plug01Icon,
   Settings01Icon,
-  Share03Icon,
   SidebarLeftIcon,
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
@@ -43,10 +42,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-
-const NAV = [
-  { title: "Share", url: "/shares", icon: Share03Icon, exact: false },
-] satisfies readonly { title: string; url: string; icon: IconSvgElement; exact: boolean }[];
 
 function AppSidebar() {
   const { data } = authClient.useSession();
@@ -139,25 +134,6 @@ function AppSidebar() {
                   >
                     <HugeiconsIcon icon={viewIcon(view.icon)} />
                     <span>{view.name}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {NAV.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    isActive={isActive(item.url, item.exact)}
-                    tooltip={item.title}
-                    render={<Link to={item.url} />}
-                  >
-                    <HugeiconsIcon icon={item.icon} />
-                    <span>{item.title}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
