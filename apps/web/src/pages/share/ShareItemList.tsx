@@ -80,7 +80,7 @@ export function ShareItemList({
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      <div className="flex shrink-0 flex-col gap-3 p-3">
+      <div className="mx-auto flex w-full max-w-6xl shrink-0 flex-col gap-3 p-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full min-w-0 sm:w-72">
             <HugeiconsIcon
@@ -99,7 +99,7 @@ export function ShareItemList({
         {notice}
       </div>
 
-      <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto">
+      <div className="mx-auto min-h-0 w-full max-w-6xl min-w-0 flex-1 overflow-auto">
         {!loading && items.length === 0 ? (
           <Empty className="py-16">
             <EmptyHeader>
@@ -114,7 +114,7 @@ export function ShareItemList({
           </Empty>
         ) : (
           <>
-            <Table className="[&_td]:px-3 [&_th]:px-3">
+            <Table className="[&_td]:px-3 [&_td]:py-3.5 [&_th]:px-3 [&_tr]:border-0">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -143,7 +143,7 @@ export function ShareItemList({
                         <TableRow
                           key={item.id}
                           data-state={item.id === selectedId ? "selected" : undefined}
-                          className="cursor-pointer"
+                          className="group cursor-pointer"
                           onClick={() => onSelect(item.id)}
                         >
                           <TableCell>
