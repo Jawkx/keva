@@ -40,6 +40,7 @@ import { decodeFilterParam, draftFromConditions } from "../lib/item-filters";
 import { removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { listShares, sharesQueryKey } from "../lib/shares";
+import { uploadStampFrom } from "../lib/upload-stamp";
 import { useFileFilters } from "../lib/use-file-filters";
 import { type UploadQueueRow, useUploadQueue } from "../lib/use-upload-queue";
 import {
@@ -129,22 +130,6 @@ const canonCondition = (c: QueryCondition) => JSON.stringify([c.key, c.op, c.val
 const sameConditions = (a: readonly QueryCondition[], b: readonly QueryCondition[]): boolean =>
   a.length === b.length &&
   a.map(canonCondition).sort().join("|") === b.map(canonCondition).sort().join("|");
-
-const uploadStampFrom = (where: readonly QueryCondition[]): Record<string, PropertyValue> => {
-  const stamp: Record<string, PropertyValue> = {};
-  for (const c of where) {
-    if (
-      c.op === "eq" &&
-      c.value !== undefined &&
-      !Array.isArray(c.value) &&
-      !c.key.startsWith("system.") &&
-      c.key !== "name"
-    ) {
-      stamp[c.key] = c.value;
-    }
-  }
-  return stamp;
-};
 
 type FileRow = UploadQueueRow;
 

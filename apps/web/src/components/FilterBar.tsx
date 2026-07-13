@@ -1,7 +1,14 @@
 import { useMemo, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
-import { Add01Icon, Cancel01Icon, FilterIcon, Tick02Icon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  Cancel01Icon,
+  FilterIcon,
+  LockIcon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Operator, PropertySummary, QueryCondition } from "@keva/schema";
+import type { Operator, PropertySummary, PropertyValue, QueryCondition } from "@keva/schema";
+import { formatPropertyValue } from "../lib/format";
 import {
   buildFilterWhere,
   createConditionDraft,
@@ -411,6 +418,227 @@ const kindLabel = (id: KindId): string => KIND_OPTIONS.find((o) => o.id === id)?
 // A key whose observed values are only bare nulls — a pure membership tag.
 const isTagOnly = (entry: PropertySummary): boolean =>
   entry.kinds.length > 0 && entry.kinds.every((kind) => kind === "tag");
+
+export interface PropertyStampChip {
+  id: string;
+  key: string;
+  value: FilterScalar;
+}
+
+interface LockedPropertyStampChip {
+  key: string;
+  value: PropertyValue;
+}
+
+function CustomPropertyDialog({
+  open,
+  onOpenChange,
+  keyOptions,
+  lockedKeys,
+  onAdd,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  keyOptions: string[];
+  lockedKeys: ReadonlySet<string>;
+  onAdd: (key: string, value: FilterScalar) => void;
+}) {
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const trimmedKey = key.trim();
+  const suggestions = usePropertyValueScalars(trimmedKey, open && keyOptions.includes(trimmedKey));
+  const valueOptions = useMemo(() => suggestions.map(formatScalar), [suggestions]);
+  const canAdd = trimmedKey.length > 0 && value.trim().length > 0 && !lockedKeys.has(trimmedKey);
+
+  const submit = () => {
+    if (!canAdd) return;
+    onAdd(trimmedKey, inferScalar(value));
+    onOpenChange(false);
+    setKey("");
+    setValue("");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Add upload property</DialogTitle>
+          <DialogDescription>
+            Choose a property and value to stamp on every upload through this share.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <Combobox
+            aria-label="Upload property key"
+            placeholder="key"
+            options={keyOptions}
+            emptyText="No matching keys"
+            value={key}
+            onValueChange={setKey}
+          />
+          <Combobox
+            aria-label="Upload property value"
+            placeholder="value"
+            options={valueOptions}
+            emptyText="No matching values"
+            value={value}
+            onValueChange={setValue}
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={!canAdd} onClick={submit}>
+            Add property
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function PropertyStampChips({
+  locked,
+  value,
+  onChange,
+}: {
+  locked: readonly LockedPropertyStampChip[];
+  value: readonly PropertyStampChip[];
+  onChange: (value: PropertyStampChip[]) => void;
+}) {
+  const summary = usePropertySummary();
+  const keySet = useMemo(() => new Set(summary.map((entry) => entry.key)), [summary]);
+  const lockedKeys = new Set(locked.map((row) => row.key));
+  const available = summary.filter(
+    (entry) => entry.values.length > 0 && !lockedKeys.has(entry.key),
+  );
+  const [valueMenuFor, setValueMenuFor] = useState<string | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
+
+  const upsert = (key: string, nextValue: FilterScalar) => {
+    if (lockedKeys.has(key)) return;
+    const existing = value.find((row) => row.key === key);
+    onChange(
+      existing
+        ? value.map((row) => (row.id === existing.id ? { ...row, value: nextValue } : row))
+        : [...value, { id: `stamp:${crypto.randomUUID()}`, key, value: nextValue }],
+    );
+  };
+
+  const toggle = (key: string, nextValue: FilterScalar) => {
+    const existing = value.find((row) => row.key === key);
+    if (existing && formatScalar(existing.value) === formatScalar(nextValue)) {
+      onChange(value.filter((row) => row.id !== existing.id));
+      return;
+    }
+    upsert(key, nextValue);
+  };
+
+  return (
+    <>
+      {locked.map((row) => (
+        <Chip key={row.key}>
+          <span className={cn(SEGMENT, "max-w-40 text-muted-foreground")}>
+            <span className="truncate">{row.key}</span>
+          </span>
+          <span className={cn(SEGMENT, "text-muted-foreground")}>is</span>
+          <span className={cn(SEGMENT, "max-w-48 font-medium")}>
+            <span className="truncate">{formatPropertyValue(row.value)}</span>
+          </span>
+          <span
+            className="flex items-center px-2 text-muted-foreground"
+            title="Fixed by current view"
+            aria-label={`${row.key} is fixed by current view`}
+          >
+            <HugeiconsIcon icon={LockIcon} className="size-3" />
+          </span>
+        </Chip>
+      ))}
+
+      {value.map((row) => (
+        <Chip key={row.id}>
+          <span className={cn(SEGMENT, "max-w-40 text-muted-foreground")}>
+            <span className="truncate">{row.key}</span>
+          </span>
+          <span className={cn(SEGMENT, "text-muted-foreground")}>is</span>
+          <ValueSegment
+            open={valueMenuFor === row.id}
+            onOpenChange={(open) => setValueMenuFor(open ? row.id : null)}
+            label={formatScalar(row.value)}
+            ariaLabel={`Change upload value for ${row.key}`}
+          >
+            <ScalarValueMenu
+              keyName={row.key}
+              values={[row.value]}
+              multi={false}
+              suggest={keySet.has(row.key)}
+              onChange={(values) => {
+                const next = values[0];
+                if (next !== undefined) upsert(row.key, next);
+              }}
+              onDone={() => setValueMenuFor(null)}
+            />
+          </ValueSegment>
+          <RemoveSegment
+            label={`Remove upload property ${row.key}`}
+            onRemove={() => onChange(value.filter((candidate) => candidate.id !== row.id))}
+          />
+        </Chip>
+      ))}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="icon-sm" aria-label="Add upload property" />}
+        >
+          <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-48">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Properties</DropdownMenuLabel>
+            {available.length > 0 ? (
+              available.map((entry) => (
+                <DropdownMenuSub key={entry.key}>
+                  <DropdownMenuSubTrigger>{entry.key}</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-80 w-44 overflow-y-auto">
+                    {entry.values.map((option) => {
+                      const selected = value.some(
+                        (row) =>
+                          row.key === entry.key && formatScalar(row.value) === formatScalar(option),
+                      );
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={formatScalar(option)}
+                          checked={selected}
+                          closeOnClick={false}
+                          onCheckedChange={() => toggle(entry.key, option)}
+                        >
+                          {formatScalar(option)}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    })}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ))
+            ) : (
+              <DropdownMenuItem disabled>No available properties</DropdownMenuItem>
+            )}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setCustomOpen(true)}>Advanced…</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <CustomPropertyDialog
+        open={customOpen}
+        onOpenChange={setCustomOpen}
+        keyOptions={[...keySet].filter((key) => !lockedKeys.has(key))}
+        lockedKeys={lockedKeys}
+        onAdd={upsert}
+      />
+    </>
+  );
+}
 
 function AdvancedConditionDialog({
   open,

@@ -3,19 +3,21 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
-import type { CreateShareGrant, PropertyValue, QueryCondition, ShareScope } from "@keva/schema";
+import {
+  propertiesMatchCondition,
+  type CreateShareGrant,
+  type PropertyValue,
+  type QueryCondition,
+  type ShareScope,
+} from "@keva/schema";
 import { createShare, sharesQueryKey } from "../lib/shares";
+import { uploadStampFrom } from "../lib/upload-stamp";
 import { viewsQueryKey } from "../lib/views";
 import { describeFilter } from "../lib/item-filters";
+import { validateKey } from "../lib/properties";
 import { useApiError } from "../lib/useApiError";
-import {
-  coerceScalar,
-  scalarToInput,
-  validateKey,
-  valueType,
-  type ScalarType,
-} from "../lib/properties";
 import { CopyButton } from "./CopyButton";
+import { PropertyStampChips, type PropertyStampChip } from "./FilterBar";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -38,13 +40,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-interface StampRow {
-  id: string;
-  key: string;
-  type: Exclude<ScalarType, "null">;
-  value: string;
-}
-
 interface ShareCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,7 +47,6 @@ interface ShareCreateDialogProps {
   conditions: QueryCondition[];
 }
 
-const STAMP_TYPES = ["string", "number", "boolean"] as const;
 const EXPIRY_PRESETS = [
   { id: "never", label: "Never", days: null },
   { id: "1d", label: "1 day", days: 1 },
@@ -60,32 +54,10 @@ const EXPIRY_PRESETS = [
   { id: "30d", label: "30 days", days: 30 },
 ] as const;
 
-const nextId = () => `stamp:${crypto.randomUUID()}`;
-
 // A grant's write stamp must satisfy its conditions; system-field conditions
 // (system.*) and `name` can't be represented by a property stamp, so they block
 // enabling write (the server would reject them anyway).
 const isStampableKey = (key: string): boolean => !key.startsWith("system.") && key !== "name";
-
-const seedStamp = (conditions: QueryCondition[]): StampRow[] =>
-  conditions
-    .filter(
-      (c): c is QueryCondition & { value: PropertyValue } =>
-        c.op === "eq" &&
-        c.value !== undefined &&
-        c.value !== null &&
-        !Array.isArray(c.value) &&
-        isStampableKey(c.key),
-    )
-    .map((c) => {
-      const type = valueType(c.value);
-      return {
-        id: nextId(),
-        key: c.key,
-        type: type === "string" || type === "number" || type === "boolean" ? type : "string",
-        value: scalarToInput(c.value),
-      };
-    });
 
 export function ShareCreateDialog({
   open,
@@ -99,7 +71,7 @@ export function ShareCreateDialog({
   const [name, setName] = useState("");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
-  const [stamp, setStamp] = useState<StampRow[]>(() => seedStamp(conditions));
+  const [stamp, setStamp] = useState<PropertyStampChip[]>([]);
   const [maxItems, setMaxItems] = useState("");
   const [maxTotalMb, setMaxTotalMb] = useState("");
   const [expiry, setExpiry] = useState<(typeof EXPIRY_PRESETS)[number]["id"]>("never");
@@ -110,6 +82,8 @@ export function ShareCreateDialog({
   ];
   const writeBlocked = blockingKeys.length > 0;
   const summary = describeFilter(conditions);
+  const requiredStamp = uploadStampFrom(conditions);
+  const requiredStampEntries = Object.entries(requiredStamp);
 
   const mutation = useMutation({
     mutationFn: async ({
@@ -141,13 +115,16 @@ export function ShareCreateDialog({
   const buildWriteStamp = (): Record<string, PropertyValue> | { error: string } => {
     const result: Record<string, PropertyValue> = {};
     for (const row of stamp) {
-      const key = row.key.trim();
-      if (!key) continue;
-      const keyError = validateKey(key);
-      if (keyError) return { error: `“${key}” — ${keyError}` };
-      const value = coerceScalar(row.type, row.value);
-      if (!value.ok) return { error: `“${key}” — ${value.error}` };
-      result[key] = value.value;
+      const keyError = validateKey(row.key);
+      if (keyError) return { error: `“${row.key}” — ${keyError}` };
+      if (row.key in requiredStamp) {
+        return { error: `“${row.key}” is fixed by the current view` };
+      }
+      result[row.key] = row.value;
+    }
+    Object.assign(result, requiredStamp);
+    if (!conditions.every((condition) => propertiesMatchCondition(result, condition))) {
+      return { error: "The upload properties must match every filter in this view" };
     }
     return result;
   };
@@ -297,78 +274,12 @@ export function ShareCreateDialog({
                   <p className="text-xs text-muted-foreground">
                     These properties are stamped on every uploaded file so it appears in this share.
                   </p>
-                  <div className="flex flex-col gap-2">
-                    {stamp.map((row) => (
-                      <div key={row.id} className="flex flex-wrap items-center gap-2">
-                        <Input
-                          placeholder="key"
-                          className="w-40"
-                          value={row.key}
-                          onChange={(e) =>
-                            setStamp((prev) =>
-                              prev.map((r) =>
-                                r.id === row.id ? { ...r, key: e.target.value } : r,
-                              ),
-                            )
-                          }
-                        />
-                        <Select
-                          value={row.type}
-                          onValueChange={(next) =>
-                            setStamp((prev) =>
-                              prev.map((r) =>
-                                r.id === row.id ? { ...r, type: next as StampRow["type"] } : r,
-                              ),
-                            )
-                          }
-                        >
-                          <SelectTrigger className="w-28">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {STAMP_TYPES.map((t) => (
-                                <SelectItem key={t} value={t}>
-                                  {t}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          placeholder="value"
-                          className="w-40"
-                          value={row.value}
-                          onChange={(e) =>
-                            setStamp((prev) =>
-                              prev.map((r) =>
-                                r.id === row.id ? { ...r, value: e.target.value } : r,
-                              ),
-                            )
-                          }
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setStamp((prev) => prev.filter((r) => r.id !== row.id))}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-fit"
-                      onClick={() =>
-                        setStamp((prev) => [
-                          ...prev,
-                          { id: nextId(), key: "", type: "string", value: "" },
-                        ])
-                      }
-                    >
-                      Add property
-                    </Button>
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5">
+                    <PropertyStampChips
+                      locked={requiredStampEntries.map(([key, value]) => ({ key, value }))}
+                      value={stamp}
+                      onChange={setStamp}
+                    />
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-4">
