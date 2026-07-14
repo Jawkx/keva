@@ -16,6 +16,7 @@ import type { PropertyValue, Properties } from "@keva/schema";
 import {
   buildPropertyValue,
   diffProperties,
+  inferPropertyValue,
   parsePropertiesJson,
   prettyJson,
   scalarToInput,
@@ -455,15 +456,14 @@ function AddRow({
   onAdd: (key: string, value: PropertyValue) => void;
 }) {
   const [key, setKey] = useState("");
-  const [type, setType] = useState<ValueType>("single");
   const [draft, setDraft] = useState("");
-  const [values, setValues] = useState<string[]>([]);
 
   const trimmedKey = key.trim();
   const keyError = trimmedKey ? validateKey(trimmedKey) : null;
   const duplicate = appliedKeys.has(trimmedKey);
   const valueSuggestions = usePropertyValues(trimmedKey, knownSet.has(trimmedKey));
-  const value = buildPropertyValue(type, draft, values);
+  const value = inferPropertyValue(draft);
+  const type = value.ok ? valueType(value.value) : "tag";
   const canAdd = trimmedKey !== "" && !keyError && !duplicate && value.ok;
 
   const submit = () => {
@@ -471,21 +471,23 @@ function AddRow({
     if (!value.ok) return;
     onAdd(trimmedKey, value.value);
     setKey("");
-    setType("single");
     setDraft("");
-    setValues([]);
   };
 
   return (
     <PropRow
-      icon={<TypeMenu value={type} disabled={busy} onChange={setType} />}
+      icon={
+        <span title={typeMeta(type).label}>
+          <HugeiconsIcon icon={typeMeta(type).icon} className="size-4 text-muted-foreground" />
+        </span>
+      }
       labelNode={
         <div className="w-24 shrink-0">
           <SuggestInput
             value={key}
             onValueChange={setKey}
             suggestions={availableKeys}
-            placeholder="new key"
+            placeholder="new prop"
             className={cn(GHOST_INPUT, "font-mono")}
             invalid={!!keyError || duplicate}
             onEnter={submit}
@@ -509,16 +511,7 @@ function AddRow({
         </button>
       }
     >
-      {type === "tag" ? (
-        <span className="text-muted-foreground">Tag</span>
-      ) : type === "multiple" ? (
-        <MultipleValues
-          values={values}
-          suggestions={valueSuggestions}
-          busy={busy}
-          onCommit={setValues}
-        />
-      ) : (
+      {trimmedKey && (
         <SingleValue
           draft={draft}
           valueSuggestions={valueSuggestions}
