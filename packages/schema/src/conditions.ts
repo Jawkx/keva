@@ -32,32 +32,50 @@ const propertiesValueAt = (properties: Properties, key: string): Candidate =>
     ? { exists: true, value: properties[key] ?? null }
     : { exists: false, value: null };
 
-const equals = (left: unknown, right: unknown): boolean =>
-  typeof left === typeof right && Object.is(left, right);
-
-// `contains` against a single operand: substring for a string field, membership
-// for an array field. `in` reuses this per element (OR over alternatives).
-const containsScalar = (
-  candidateValue: PropertyValue | string | number | null,
-  operand: unknown,
-): boolean => {
-  if (typeof candidateValue === "string" && typeof operand === "string") {
-    return candidateValue.includes(operand);
-  }
-  return (
-    Array.isArray(candidateValue) && candidateValue.some((element) => equals(element, operand))
-  );
-};
+const values = (value: PropertyValue | string | number | null): readonly string[] =>
+  Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
 
 const evaluate = (candidate: Candidate, condition: QueryCondition): boolean => {
-  if (condition.op === "exists") return candidate.exists;
+  const field = FIELD_BY_KEY.get(condition.key);
+  if (condition.op === "exists") return field ? candidate.value !== null : candidate.exists;
+  if (condition.op === "missing") return field ? candidate.value === null : !candidate.exists;
   if (!candidate.exists) return false;
   const operand = condition.value;
+  if (!field) {
+    const members = values(candidate.value);
+    if (condition.op === "is_tag") return candidate.value === null;
+    if (condition.op === "has_value") return members.includes(operand as string);
+    if (condition.op === "has_any")
+      return (operand as readonly string[]).some((value) => members.includes(value));
+    if (condition.op === "has_all")
+      return (operand as readonly string[]).every((value) => members.includes(value));
+    if (condition.op === "contains_text")
+      return members.some((value) => value.includes(operand as string));
+    if (condition.op === "contains_any")
+      return (operand as readonly string[]).some((text) =>
+        members.some((value) => value.includes(text)),
+      );
+    return false;
+  }
   switch (condition.op) {
-    case "eq":
-      return equals(candidate.value, operand);
-    case "neq":
-      return !equals(candidate.value, operand);
+    case "eq": {
+      if (
+        field.queryType === "timestamp" &&
+        typeof candidate.value === "string" &&
+        typeof operand === "string"
+      )
+        return Date.parse(candidate.value) === Date.parse(operand);
+      return Object.is(candidate.value, operand);
+    }
+    case "neq": {
+      if (
+        field.queryType === "timestamp" &&
+        typeof candidate.value === "string" &&
+        typeof operand === "string"
+      )
+        return Date.parse(candidate.value) !== Date.parse(operand);
+      return !Object.is(candidate.value, operand);
+    }
     case "gt":
     case "gte":
     case "lt":
@@ -69,6 +87,18 @@ const evaluate = (candidate: Candidate, condition: QueryCondition): boolean => {
         return false;
       const left = candidate.value;
       const right = operand as number | string;
+      if (
+        field.queryType === "timestamp" &&
+        typeof left === "string" &&
+        typeof right === "string"
+      ) {
+        const leftTime = Date.parse(left);
+        const rightTime = Date.parse(right);
+        if (condition.op === "gt") return leftTime > rightTime;
+        if (condition.op === "gte") return leftTime >= rightTime;
+        if (condition.op === "lt") return leftTime < rightTime;
+        return leftTime <= rightTime;
+      }
       if (typeof left === "number" && typeof right === "number") {
         if (condition.op === "gt") return left > right;
         if (condition.op === "gte") return left >= right;
@@ -83,13 +113,15 @@ const evaluate = (candidate: Candidate, condition: QueryCondition): boolean => {
       }
       return false;
     }
-    case "contains":
-      return containsScalar(candidate.value, operand);
-    case "in":
-      return (
-        Array.isArray(operand) &&
-        operand.some((element) => containsScalar(candidate.value, element))
+    case "contains_text":
+      return typeof candidate.value === "string" && candidate.value.includes(operand as string);
+    case "contains_any":
+      if (typeof candidate.value !== "string") return false;
+      return (operand as readonly string[]).some((text) =>
+        (candidate.value as string).includes(text),
       );
+    default:
+      return false;
   }
 };
 

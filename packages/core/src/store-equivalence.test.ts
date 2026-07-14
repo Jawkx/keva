@@ -13,41 +13,41 @@ const store = makePostgresMetadataStore(sql);
 afterAll(() => sql.end({ timeout: 5 }));
 
 const SEED: ReadonlyArray<[string, string, Record<string, unknown>]> = [
-  ["alpha", "text/plain", { kind: "doc", rating: 5, tags: ["x", "y"], note: "hello world" }],
-  ["bravo", "image/png", { kind: "image", rating: 10, tags: ["y", "z"] }],
-  ["carol", "application/pdf", { kind: "doc", rating: 1, label: null }],
+  ["alpha", "text/plain", { kind: "doc", tags: ["x", "y"], note: "hello world" }],
+  ["bravo", "image/png", { kind: "image", tags: ["y", "z"] }],
+  ["carol", "application/pdf", { kind: "doc", label: null }],
 ];
 
 const QUERIES: Record<string, Query> = {
   eqString: {
-    where: [{ key: "kind", op: "eq", value: "doc" }],
+    where: [{ key: "kind", op: "has_value", value: "doc" }],
     limit: 100,
     order: "created_at_asc",
   },
   neqString: {
-    where: [{ key: "kind", op: "neq", value: "image" }],
+    where: [{ key: "name", op: "neq", value: "bravo" }],
     limit: 100,
     order: "created_at_asc",
   },
   arrayMember: {
-    where: [{ key: "tags", op: "contains", value: "y" }],
+    where: [{ key: "tags", op: "has_value", value: "y" }],
     limit: 100,
     order: "created_at_asc",
   },
   substring: {
-    where: [{ key: "note", op: "contains", value: "world" }],
+    where: [{ key: "note", op: "contains_text", value: "world" }],
     limit: 100,
     order: "created_at_asc",
   },
   rangeNumber: {
-    where: [{ key: "rating", op: "gte", value: 5 }],
+    where: [{ key: "system.size", op: "gte", value: 5 }],
     limit: 100,
     order: "created_at_asc",
   },
   existsKey: { where: [{ key: "label", op: "exists" }], limit: 100, order: "created_at_asc" },
-  eqNull: { where: [{ key: "label", op: "eq", value: null }], limit: 100, order: "created_at_asc" },
+  eqNull: { where: [{ key: "label", op: "is_tag" }], limit: 100, order: "created_at_asc" },
   neqPropTypeMismatch: {
-    where: [{ key: "rating", op: "neq", value: "5" }],
+    where: [{ key: "system.etag", op: "neq", value: "etag" }],
     limit: 100,
     order: "created_at_asc",
   },
@@ -61,23 +61,20 @@ const QUERIES: Record<string, Query> = {
     limit: 100,
     order: "created_at_asc",
   },
-  sysSizeNeqTypeMismatch: {
-    where: [{ key: "system.size", op: "neq", value: "x" }],
-    limit: 100,
-    order: "created_at_asc",
-  },
   inSysContentType: {
-    where: [{ key: "system.content_type", op: "in", value: ["application/pdf", "text/"] }],
+    where: [
+      { key: "system.content_type", op: "contains_any", value: ["application/pdf", "text/"] },
+    ],
     limit: 100,
     order: "created_at_asc",
   },
   inPropString: {
-    where: [{ key: "kind", op: "in", value: ["image", "doc"] }],
+    where: [{ key: "kind", op: "has_any", value: ["image", "doc"] }],
     limit: 100,
     order: "created_at_asc",
   },
   inArrayProp: {
-    where: [{ key: "tags", op: "in", value: ["z", "q"] }],
+    where: [{ key: "tags", op: "has_any", value: ["z", "q"] }],
     limit: 100,
     order: "created_at_asc",
   },
@@ -88,13 +85,12 @@ const EXPECTED: Record<string, string[]> = {
   neqString: ["alpha", "carol"],
   arrayMember: ["alpha", "bravo"],
   substring: ["alpha"],
-  rangeNumber: ["alpha", "bravo"],
+  rangeNumber: ["alpha", "bravo", "carol"],
   existsKey: ["carol"],
   eqNull: ["carol"],
   neqPropTypeMismatch: ["alpha", "bravo", "carol"],
   sysContentTypeEq: ["bravo"],
   sysContentTypeNeq: ["alpha", "carol"],
-  sysSizeNeqTypeMismatch: ["alpha", "bravo", "carol"],
   inSysContentType: ["alpha", "carol"],
   inPropString: ["alpha", "bravo", "carol"],
   inArrayProp: ["bravo"],
@@ -198,14 +194,14 @@ const patchAtPropertyLimit = async () => {
   const timestamp = "2026-01-01T00:00:00.000Z";
   await Effect.runPromise(store.insert(readyItem(tenant, id, "limit.txt", timestamp)));
   const properties = Object.fromEntries(
-    Array.from({ length: 256 }, (_, index) => [`key-${index}`, index]),
+    Array.from({ length: 256 }, (_, index) => [`key-${index}`, String(index)]),
   );
   await Effect.runPromise(
     store.patch(tenant, id, { fields: {}, set: properties, unset: [] }, timestamp),
   );
   const rejected = await Effect.runPromise(
     Effect.either(
-      store.patch(tenant, id, { fields: {}, set: { overflow: true }, unset: [] }, timestamp),
+      store.patch(tenant, id, { fields: {}, set: { overflow: "yes" }, unset: [] }, timestamp),
     ),
   );
   const item = await Effect.runPromise(store.get(tenant, id));
@@ -247,8 +243,8 @@ const seedAndListEvents = async () => {
       to: "b.txt",
     }),
     event("33", tenant, itemId, "properties_changed", "2026-01-01T00:02:00.000Z", {
-      set: { rating: 5 },
-      previous: { rating: 1 },
+      set: { rating: "five" },
+      previous: { rating: "one" },
     }),
     event("34", tenant, itemId, "deleted", "2026-01-01T00:02:00.000Z"),
     event(
@@ -318,7 +314,7 @@ describe("postgres store semantics", () => {
     await expect(patchAtPropertyLimit()).resolves.toMatchObject({
       rejected: "QuotaExceeded",
       properties: Object.fromEntries(
-        Array.from({ length: 256 }, (_, index) => [`key-${index}`, index]),
+        Array.from({ length: 256 }, (_, index) => [`key-${index}`, String(index)]),
       ),
     });
   });
@@ -327,7 +323,7 @@ describe("postgres store semantics", () => {
     const { events, pageCursors } = await seedAndListEvents();
     expect(events.map((event) => event.id.slice(-2))).toEqual(["34", "33", "32", "31"]);
     expect(pageCursors).toEqual([true, false]);
-    expect(events[1]!.payload).toEqual({ set: { rating: 5 }, previous: { rating: 1 } });
+    expect(events[1]!.payload).toEqual({ set: { rating: "five" }, previous: { rating: "one" } });
     expect(events[3]!.actor).toEqual({ token: { id: "tok-1", name: "CI token" } });
   });
 

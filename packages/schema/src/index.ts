@@ -1,5 +1,11 @@
 import { Schema } from "effect";
-import { isPropertyKey, isQueryKey, PROPERTY_LIMITS, validateProperties } from "./fields.js";
+import {
+  FIELD_BY_KEY,
+  isPropertyKey,
+  isQueryKey,
+  PROPERTY_LIMITS,
+  validateProperties,
+} from "./fields.js";
 
 export * from "./fields.js";
 export * from "./conditions.js";
@@ -16,6 +22,7 @@ export const PropertyKey = Schema.String.pipe(
 export type PropertyKey = typeof PropertyKey.Type;
 
 export const PropertyString = Schema.String.pipe(
+  Schema.minLength(1),
   Schema.filter(
     (value) => new TextEncoder().encode(value).byteLength <= PROPERTY_LIMITS.stringBytes,
     { message: () => "String properties must be at most 8 KB" },
@@ -23,16 +30,18 @@ export const PropertyString = Schema.String.pipe(
 );
 
 const PropertyArray = <A, I, R>(item: Schema.Schema<A, I, R>) =>
-  Schema.Array(item).pipe(Schema.maxItems(PROPERTY_LIMITS.arrayItems));
+  Schema.Array(item).pipe(
+    Schema.minItems(1),
+    Schema.maxItems(PROPERTY_LIMITS.arrayItems),
+    Schema.filter((values) => new Set(values).size === values.length, {
+      message: () => "Array property values must be unique",
+    }),
+  );
 
 export const PropertyValue = Schema.Union(
   PropertyString,
-  Schema.Number,
-  Schema.Boolean,
   Schema.Null,
   PropertyArray(PropertyString),
-  PropertyArray(Schema.Number),
-  PropertyArray(Schema.Boolean),
 );
 export type PropertyValue = typeof PropertyValue.Type;
 
@@ -120,9 +129,14 @@ export const Operator = Schema.Literal(
   "gte",
   "lt",
   "lte",
-  "contains",
-  "in",
   "exists",
+  "missing",
+  "is_tag",
+  "has_value",
+  "has_any",
+  "has_all",
+  "contains_text",
+  "contains_any",
 );
 export type Operator = typeof Operator.Type;
 
@@ -133,29 +147,63 @@ export const QueryKey = Schema.String.pipe(
   }),
 );
 
+const QueryOperand = Schema.Union(
+  Schema.String,
+  Schema.Number,
+  Schema.Null,
+  Schema.Array(Schema.String),
+);
+
+const isNonEmptyUniqueStrings = (value: unknown): value is readonly string[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every((entry) => typeof entry === "string" && entry.length > 0) &&
+  new Set(value).size === value.length;
+
 export const QueryCondition = Schema.Struct({
   key: QueryKey,
   op: Operator,
-  value: Schema.optional(PropertyValue),
+  value: Schema.optional(QueryOperand),
 }).pipe(
   Schema.filter(
-    ({ op, value }) => {
-      if (op === "exists") return value === undefined;
-      if (value === undefined) return false;
-      if (op === "contains")
-        return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-      if (op === "in")
-        return (
-          Array.isArray(value) &&
-          value.length > 0 &&
-          value.every(
-            (v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean",
-          )
-        );
-      if (["gt", "gte", "lt", "lte"].includes(op)) {
-        return typeof value === "string" || typeof value === "number";
+    ({ key, op, value }) => {
+      const field = FIELD_BY_KEY.get(key);
+      if (!field) {
+        if (["exists", "missing", "is_tag"].includes(op)) return value === undefined;
+        if (op === "has_value" || op === "contains_text")
+          return typeof value === "string" && value.length > 0;
+        if (op === "has_any" || op === "has_all" || op === "contains_any")
+          return isNonEmptyUniqueStrings(value);
+        return false;
       }
-      return !Array.isArray(value);
+
+      if (op === "exists" || op === "missing") return !field.required && value === undefined;
+      if (["is_tag", "has_value", "has_any", "has_all"].includes(op)) return false;
+      const nullable = !field.required;
+      if (op === "eq" || op === "neq") {
+        if (value === null) return nullable;
+        if (field.queryType === "number") return typeof value === "number";
+        if (field.queryType === "timestamp")
+          return typeof value === "string" && isIsoInstant(value);
+        return typeof value === "string" && value.length > 0;
+      }
+      if (["gt", "gte", "lt", "lte"].includes(op)) {
+        return field.queryType === "number"
+          ? typeof value === "number"
+          : field.queryType === "timestamp" && typeof value === "string" && isIsoInstant(value);
+      }
+      if (op === "contains_text")
+        return (
+          (field.queryType === "string" || field.queryType === "nullable-string") &&
+          typeof value === "string" &&
+          value.length > 0
+        );
+      if (op === "contains_any")
+        return (
+          (field.queryType === "string" || field.queryType === "nullable-string") &&
+          isNonEmptyUniqueStrings(value)
+        );
+      return false;
     },
     { message: () => "Operator and value type are incompatible" },
   ),
@@ -245,7 +293,7 @@ export const PropertyKeysResult = Schema.Struct({
 });
 export type PropertyKeysResult = typeof PropertyKeysResult.Type;
 
-export const PropertyScalar = Schema.Union(Schema.String, Schema.Number, Schema.Boolean);
+export const PropertyScalar = Schema.String;
 export type PropertyScalar = typeof PropertyScalar.Type;
 
 export const PropertyValuesResult = Schema.Struct({
@@ -256,7 +304,7 @@ export type PropertyValuesResult = typeof PropertyValuesResult.Type;
 // Observed value shapes for one property key across a tenant's ready items.
 // "tag" is the product name for a bare `null` value (pure membership tag); a
 // key can be mixed, e.g. ["tag", "string"] when some items carry it bare.
-export const PropertyKind = Schema.Literal("tag", "string", "number", "boolean", "array");
+export const PropertyKind = Schema.Literal("tag", "string", "array");
 export type PropertyKind = typeof PropertyKind.Type;
 
 export const PropertySummary = Schema.Struct({

@@ -112,12 +112,12 @@ describe("createKevaMcpServer tool execution", () => {
 
     const result = await client.callTool({
       name: "query_items",
-      arguments: { where: [{ key: "tag", op: "eq", value: "photo" }], limit: 10 },
+      arguments: { where: [{ key: "tag", op: "has_value", value: "photo" }], limit: 10 },
     });
 
     expect(queryItems).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: [{ key: "tag", op: "eq", value: "photo" }],
+        where: [{ key: "tag", op: "has_value", value: "photo" }],
         limit: 10,
       }),
     );
@@ -129,20 +129,20 @@ describe("createKevaMcpServer tool execution", () => {
     await close();
   });
 
-  it("preserves canonical in conditions and ordering", async () => {
+  it("preserves canonical multi-value conditions and ordering", async () => {
     const queryItems = vi.fn(async () => ({ items: [] }));
     const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);
 
     await client.callTool({
       name: "query_items",
       arguments: {
-        where: [{ key: "tag", op: "in", value: ["photo", "video"] }],
+        where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
         order: "created_at_desc",
       },
     });
 
     expect(queryItems).toHaveBeenCalledWith({
-      where: [{ key: "tag", op: "in", value: ["photo", "video"] }],
+      where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
       order: "created_at_desc",
     });
     await close();
@@ -162,6 +162,55 @@ describe("createKevaMcpServer tool execution", () => {
       set: { tag: "x" },
       unset: ["old"],
     });
+    await close();
+  });
+
+  it("rejects invalid property values before calling the engine", async () => {
+    const setProperties = vi.fn(async () => item);
+    const { client, close } = await connect(stubEngine({ setProperties }), ["write"]);
+
+    for (const value of [1, true, "", [], ["x", "x"]]) {
+      const result = await client.callTool({
+        name: "set_properties",
+        arguments: { id: "item-1", set: { tag: value } },
+      });
+      expect(result.isError).toBe(true);
+    }
+    expect(setProperties).not.toHaveBeenCalled();
+    await close();
+  });
+
+  it("rejects query operands that do not match the operator", async () => {
+    const queryItems = vi.fn(async () => ({ items: [] }));
+    const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);
+
+    const result = await client.callTool({
+      name: "query_items",
+      arguments: { where: [{ key: "tag", op: "has_any", values: ["photo"] }] },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(queryItems).not.toHaveBeenCalled();
+    await close();
+  });
+
+  it("rejects operators that do not match the query key", async () => {
+    const queryItems = vi.fn(async () => ({ items: [] }));
+    const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);
+
+    for (const condition of [
+      { key: "tag", op: "eq", value: "photo" },
+      { key: "system.size", op: "has_value", value: "10" },
+      { key: "system.size", op: "gte", value: "10" },
+      { key: "keva.internal", op: "exists" },
+    ]) {
+      const result = await client.callTool({
+        name: "query_items",
+        arguments: { where: [condition] },
+      });
+      expect(result.isError).toBe(true);
+    }
+    expect(queryItems).not.toHaveBeenCalled();
     await close();
   });
 

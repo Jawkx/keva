@@ -80,6 +80,26 @@ export const makeInMemoryShareGrantStore = (
       Effect.gen(function* () {
         const result = yield* Effect.sync(() => {
           const viewId = input.viewId ?? crypto.randomUUID().replaceAll("-", "");
+          const conditions = input.view?.conditions ?? views.get(viewId)?.conditions;
+          if (!conditions) return { status: "missing" as const };
+          if (input.scopes.includes("write")) {
+            if (!conditions.every((condition) => isPropertyKey(condition.key))) {
+              return {
+                status: "invalid" as const,
+                message: "Write grants may only condition on plain property keys",
+              };
+            }
+            if (
+              !conditions.every((condition) =>
+                propertiesMatchCondition(input.writeStamp!, condition),
+              )
+            ) {
+              return {
+                status: "invalid" as const,
+                message: "writeStamp must satisfy every view condition",
+              };
+            }
+          }
           if (input.view) {
             const now = new Date().toISOString();
             views.set(viewId, {
@@ -94,24 +114,6 @@ export const makeInMemoryShareGrantStore = (
           }
           const view = views.get(viewId);
           if (!view || view.tenantId !== tenantId) return { status: "missing" as const };
-          if (input.scopes.includes("write")) {
-            if (!view.conditions.every((condition) => isPropertyKey(condition.key))) {
-              return {
-                status: "invalid" as const,
-                message: "Write grants may only condition on plain property keys",
-              };
-            }
-            if (
-              !view.conditions.every((condition) =>
-                propertiesMatchCondition(input.writeStamp!, condition),
-              )
-            ) {
-              return {
-                status: "invalid" as const,
-                message: "writeStamp must satisfy every view condition",
-              };
-            }
-          }
           const id = crypto.randomUUID().replaceAll("-", "");
           const secret = crypto.randomUUID().replaceAll("-", "");
           const grant: StoredGrant = {
@@ -175,6 +177,7 @@ export const makeInMemoryShareGrantStore = (
                 grant.tenantId === tenantId &&
                 grant.viewId === id &&
                 grant.scopes.includes("write") &&
+                (!grant.expiresAt || new Date(grant.expiresAt) > new Date()) &&
                 (!conditions.every((condition) => isPropertyKey(condition.key)) ||
                   !conditions.every((condition) =>
                     propertiesMatchCondition(grant.writeStamp ?? {}, condition),

@@ -1,12 +1,22 @@
-import type { Operator, QueryCondition } from "@keva/schema";
+import {
+  QueryCondition as QueryConditionSchema,
+  type Operator,
+  type QueryCondition,
+} from "@keva/schema";
+import { Schema } from "effect";
 
-export type FilterScalar = string | number | boolean;
+export type FilterScalar = string | number;
 
 export const FILTER_OPERATORS = [
   "eq",
   "neq",
-  "in",
-  "contains",
+  "missing",
+  "is_tag",
+  "has_value",
+  "has_any",
+  "has_all",
+  "contains_text",
+  "contains_any",
   "gt",
   "gte",
   "lt",
@@ -17,23 +27,48 @@ export const FILTER_OPERATORS = [
 export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
   eq: "is",
   neq: "is not",
-  in: "is any of",
-  contains: "contains",
   gt: "greater than",
   gte: "at least",
   lt: "less than",
   lte: "at most",
   exists: "exists",
+  missing: "is missing",
+  is_tag: "is a tag",
+  has_value: "has value",
+  has_any: "has any",
+  has_all: "has all",
+  contains_text: "contains text",
+  contains_any: "contains any",
 };
 
-export const opNeedsValue = (op: Operator): boolean => op !== "exists";
-export const opAllowsMultiple = (op: Operator): boolean => op === "in" || op === "eq";
+export const opNeedsValue = (op: Operator): boolean =>
+  op !== "exists" && op !== "missing" && op !== "is_tag";
+export const opAllowsMultiple = (op: Operator): boolean =>
+  op === "has_any" || op === "has_all" || op === "contains_any";
 
-export const inferScalar = (raw: string): FilterScalar => {
+const CUSTOM_OPERATORS: readonly Operator[] = [
+  "exists",
+  "missing",
+  "is_tag",
+  "has_value",
+  "has_any",
+  "has_all",
+  "contains_text",
+  "contains_any",
+];
+const TEXT_OPERATORS: readonly Operator[] = ["eq", "neq", "contains_text", "contains_any"];
+const RANGE_OPERATORS: readonly Operator[] = ["eq", "neq", "gt", "gte", "lt", "lte"];
+
+export const operatorsForKey = (key: string): readonly Operator[] => {
+  if (!key.startsWith("system.") && key !== "name") return CUSTOM_OPERATORS;
+  if (key === "system.size") return RANGE_OPERATORS;
+  if (key === "system.created_at" || key === "system.updated_at") return RANGE_OPERATORS;
+  return TEXT_OPERATORS;
+};
+
+export const inferScalar = (raw: string, key = ""): FilterScalar => {
   const trimmed = raw.trim();
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  if (key === "system.size" && /^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
   return trimmed;
 };
 
@@ -56,7 +91,7 @@ const DOCUMENT_TYPES = [
 export interface KindOption {
   id: KindId;
   label: string;
-  // content_type alternatives matched by prefix/substring (`contains` / `in`)
+  // content_type alternatives matched by substring.
   alternatives: readonly string[];
 }
 
@@ -138,9 +173,9 @@ const kindConditions = (kinds: readonly KindId[]): QueryCondition[] => {
   if (kinds.length === 0) return [];
   const alternatives = kinds.flatMap((id) => kindById(id).alternatives);
   if (alternatives.length === 1) {
-    return [{ key: CONTENT_TYPE_KEY, op: "contains", value: alternatives[0]! }];
+    return [{ key: CONTENT_TYPE_KEY, op: "contains_text", value: alternatives[0]! }];
   }
-  return [{ key: CONTENT_TYPE_KEY, op: "in", value: alternatives }];
+  return [{ key: CONTENT_TYPE_KEY, op: "contains_any", value: alternatives }];
 };
 
 const sizeConditions = (id: SizeFacetId): QueryCondition[] => {
@@ -153,21 +188,12 @@ const sizeConditions = (id: SizeFacetId): QueryCondition[] => {
   return conditions;
 };
 
-// `in` arrays must be homogeneous per the schema; mixed picks degrade to strings
-const homogeneous = (values: readonly FilterScalar[]): string[] | number[] | boolean[] => {
-  if (values.every((v): v is number => typeof v === "number")) return [...values];
-  if (values.every((v): v is boolean => typeof v === "boolean")) return [...values];
-  return values.map(String);
-};
-
 const rowCondition = (row: ConditionDraft): QueryCondition | null => {
   const key = row.key.trim();
   if (key.length === 0) return null;
-  if (row.op === "exists") return { key, op: "exists" };
+  if (!opNeedsValue(row.op)) return { key, op: row.op };
   if (row.values.length === 0) return null;
-  if (row.values.length > 1 || row.op === "in") {
-    return { key, op: "in", value: homogeneous(row.values) };
-  }
+  if (opAllowsMultiple(row.op)) return { key, op: row.op, value: row.values.map(String) };
   return { key, op: row.op, value: row.values[0]! };
 };
 
@@ -178,18 +204,18 @@ export const buildFilterWhere = (draft: FilterDraft): QueryCondition[] => [
 ];
 
 const isScalar = (value: unknown): value is FilterScalar =>
-  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+  typeof value === "string" || typeof value === "number";
 
 const matchKindCondition = (condition: QueryCondition): KindId[] | null => {
   if (condition.key !== CONTENT_TYPE_KEY) return null;
-  if (condition.op === "contains" && typeof condition.value === "string") {
+  if (condition.op === "contains_text" && typeof condition.value === "string") {
     const value = condition.value;
     const kind = KIND_OPTIONS.find(
       (option) => option.alternatives.length === 1 && option.alternatives[0] === value,
     );
     return kind ? [kind.id] : null;
   }
-  if (condition.op === "in" && Array.isArray(condition.value)) {
+  if (condition.op === "contains_any" && Array.isArray(condition.value)) {
     const values = new Set(condition.value.map(String));
     const kinds = KIND_OPTIONS.filter((option) =>
       option.alternatives.every((alt) => values.has(alt)),
@@ -260,9 +286,12 @@ const prettyKey = (key: string): string => key.replace(/^system\./, "");
 const rowPhrase = (row: ConditionDraft): string => {
   const key = prettyKey(row.key.trim());
   if (row.op === "exists") return `has ${key}`;
+  if (row.op === "missing") return `does not have ${key}`;
+  if (row.op === "is_tag") return `${key} is a tag`;
   const values = joinOr(row.values.map(formatScalar));
   if (row.op === "eq" && row.values.length <= 1) return `${key} is ${values}`;
-  if (row.values.length > 1 || row.op === "in") return `${key} is any of ${values}`;
+  if (row.op === "has_any" || row.op === "contains_any") return `${key} has any of ${values}`;
+  if (row.op === "has_all") return `${key} has all of ${values}`;
   return `${key} ${FILTER_OPERATOR_LABELS[row.op]} ${values}`;
 };
 
@@ -288,13 +317,7 @@ export const decodeFilterParam = (raw: string | null): QueryCondition[] => {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (c): c is QueryCondition =>
-        typeof c === "object" &&
-        c !== null &&
-        typeof c.key === "string" &&
-        typeof c.op === "string",
-    );
+    return parsed.filter(Schema.is(QueryConditionSchema));
   } catch {
     return [];
   }

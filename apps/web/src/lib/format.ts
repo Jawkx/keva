@@ -63,7 +63,7 @@ export const formatContentType = (contentType: string): string => {
 };
 
 export const formatPropertyValue = (value: PropertyValue): string => {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value);
+  if (value === null) return "Tag";
+  if (Array.isArray(value)) return `[${value.map((item) => JSON.stringify(item)).join(", ")}]`;
+  return typeof value === "string" ? value : "";
 };

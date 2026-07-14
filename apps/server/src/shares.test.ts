@@ -117,7 +117,7 @@ const createShare = async (app: ReturnType<typeof makeApp>, body: object) => {
   return { status: response.status, body: (await response.json()) as CreateShareGrantResult };
 };
 
-const ALPHA: QueryCondition[] = [{ key: "project", op: "eq", value: "alpha" }];
+const ALPHA: QueryCondition[] = [{ key: "project", op: "has_value", value: "alpha" }];
 
 const shareAlpha = async (app: ReturnType<typeof makeApp>, overrides: object = {}) => {
   const { view } = await createView(app, ALPHA);
@@ -131,6 +131,42 @@ const shareAlpha = async (app: ReturnType<typeof makeApp>, overrides: object = {
 };
 
 describe("server share subsystem", () => {
+  it("ignores expired write grants when validating a view update", async () => {
+    const now = new Date().toISOString();
+    const views = new Map<string, ViewRecord>([
+      [
+        "view-1",
+        {
+          id: "view-1",
+          tenantId: TENANT,
+          name: "View",
+          icon: null,
+          conditions: ALPHA,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    ]);
+    const store = makeInMemoryShareGrantStore(views);
+    await Effect.runPromise(
+      store.create(TENANT, {
+        name: "Expired",
+        viewId: "view-1",
+        scopes: ["write"],
+        writeStamp: { project: "alpha" },
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      }),
+    );
+
+    await expect(
+      Effect.runPromise(
+        store.updateView(TENANT, "view-1", {
+          conditions: [{ key: "project", op: "has_value", value: "beta" }],
+        }),
+      ),
+    ).resolves.toMatchObject({ conditions: [{ value: "beta" }] });
+  });
+
   it("rejects share management without an admin session", async () => {
     const app = makeApp();
     const response = await app.request("/api/shares", {
@@ -166,6 +202,20 @@ describe("server share subsystem", () => {
       view: { name: "Inline view", conditions: ALPHA },
     });
     expect(body.record.viewId).toBe(body.view.id);
+  });
+
+  it("does not retain an inline view when share validation fails", async () => {
+    const app = makeApp();
+    const { status } = await createShare(app, {
+      name: "Invalid inline share",
+      scopes: ["read", "write"],
+      writeStamp: { project: "beta" },
+      view: { name: "Orphan candidate", conditions: ALPHA },
+    });
+    expect(status).toBe(400);
+
+    const response = await app.request("/api/views", { headers: admin });
+    expect(await response.json()).toEqual([]);
   });
 
   it("rejects a write grant whose view conditions aren't plain property keys", async () => {
@@ -250,7 +300,9 @@ describe("server share subsystem", () => {
     const patched = await app.request(`/api/views/${view.id}`, {
       method: "PATCH",
       headers: admin,
-      body: JSON.stringify({ conditions: [{ key: "project", op: "eq", value: "beta" }] }),
+      body: JSON.stringify({
+        conditions: [{ key: "project", op: "has_value", value: "beta" }],
+      }),
     });
     expect(patched.status).toBe(200);
     expect(await namesVia()).toEqual(["later.txt"]);
@@ -268,7 +320,9 @@ describe("server share subsystem", () => {
     const updated = await app.request(`/api/views/${view.id}`, {
       method: "PATCH",
       headers: admin,
-      body: JSON.stringify({ conditions: [{ key: "project", op: "eq", value: "beta" }] }),
+      body: JSON.stringify({
+        conditions: [{ key: "project", op: "has_value", value: "beta" }],
+      }),
     });
     expect(updated.status).toBe(409);
     expect(await updated.json()).toMatchObject({

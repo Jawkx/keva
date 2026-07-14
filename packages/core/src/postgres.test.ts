@@ -97,7 +97,7 @@ describe("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(p);
         const created = yield* createReady(p, "persist.txt", "durable bytes");
-        yield* engine.patch(created, { set: { project: "keva", rating: 9 }, unset: [] });
+        yield* engine.patch(created, { set: { project: "keva", rating: "nine" }, unset: [] });
         return created;
       }),
     );
@@ -113,7 +113,7 @@ describe("Postgres metadata store", () => {
         ),
     );
     expect(fetched.status).toBe("ready");
-    expect(fetched.properties).toEqual({ project: "keva", rating: 9 });
+    expect(fetched.properties).toEqual({ project: "keva", rating: "nine" });
   });
 
   it("serves the query operator matrix, tenant-scoped", async () => {
@@ -124,26 +124,26 @@ describe("Postgres metadata store", () => {
       Effect.gen(function* () {
         const engine = makeKevaEngine(principal(tenantA));
         const a = yield* createReady(principal(tenantA), "a.txt", "a");
-        yield* engine.patch(a, { set: { kind: "doc", tags: ["x", "y"], rating: 5 }, unset: [] });
+        yield* engine.patch(a, { set: { kind: "doc", tags: ["x", "y"] }, unset: [] });
         yield* createReady(principal(tenantB), "b.txt", "b");
 
         const eqHit = yield* engine.query({
-          where: [{ key: "kind", op: "eq", value: "doc" }],
+          where: [{ key: "kind", op: "has_value", value: "doc" }],
           limit: 100,
           order: "created_at_asc",
         });
         const neqHit = yield* engine.query({
-          where: [{ key: "kind", op: "neq", value: "image" }],
+          where: [{ key: "name", op: "neq", value: "other.txt" }],
           limit: 100,
           order: "created_at_asc",
         });
         const member = yield* engine.query({
-          where: [{ key: "tags", op: "contains", value: "y" }],
+          where: [{ key: "tags", op: "has_value", value: "y" }],
           limit: 100,
           order: "created_at_asc",
         });
         const range = yield* engine.query({
-          where: [{ key: "rating", op: "gte", value: 5 }],
+          where: [{ key: "system.size", op: "gte", value: 1 }],
           limit: 100,
           order: "created_at_asc",
         });
@@ -153,7 +153,7 @@ describe("Postgres metadata store", () => {
           order: "created_at_asc",
         });
         const crossTenant = yield* makeKevaEngine(principal(tenantB)).query({
-          where: [{ key: "kind", op: "eq", value: "doc" }],
+          where: [{ key: "kind", op: "has_value", value: "doc" }],
           limit: 100,
           order: "created_at_asc",
         });

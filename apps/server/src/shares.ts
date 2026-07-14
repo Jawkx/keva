@@ -207,6 +207,10 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
     }),
   create: (tenantId, input) =>
     Effect.gen(function* () {
+      if (input.view) {
+        const validation = writeGrantValidation(input, input.view.conditions);
+        if (validation) return yield* validation;
+      }
       const result = yield* Effect.tryPromise({
         try: async () => {
           return sql.begin(async (transaction) => {
@@ -228,7 +232,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
               view = rows[0];
             }
             if (!view) return { status: "missing" as const };
-            const validation = writeGrantValidation(input, view.conditions);
+            const validation = input.view ? null : writeGrantValidation(input, view.conditions);
             if (validation) return { status: "invalid" as const, message: validation.message };
             const id = randomTokenPart(9);
             const secret = randomTokenPart(32);

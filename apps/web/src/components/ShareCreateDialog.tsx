@@ -257,12 +257,12 @@ export function ShareCreateDialog({
                   {writeBlocked ? (
                     <p className="text-xs text-muted-foreground">
                       Uploads are available for views filtered by properties, so incoming files can
-                      be tagged automatically. This view also filters by {blockingKeys.join(", ")},
-                      which uploads can’t match.
+                      have matching properties applied automatically. This view also filters by{" "}
+                      {blockingKeys.join(", ")}, which uploads can’t match.
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Uploaded files are tagged so they appear in this share.
+                      Uploaded files receive the properties needed to appear in this share.
                     </p>
                   )}
                 </div>

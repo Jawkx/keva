@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { FIELD_BY_KEY, isIsoInstant, isPropertyKey } from "@keva/schema";
 import type {
   DownloadResult,
   ItemPatch,
@@ -7,35 +8,124 @@ import type {
   PropertyKeysResult,
   PropertyValuesResult,
   Query,
-  QueryCondition,
   QueryResult,
   UsageResult,
 } from "@keva/schema";
 import { z } from "zod";
 
-const propertyScalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-const propertyValue = z.union([
-  propertyScalar,
-  z.array(z.string()),
-  z.array(z.number()),
-  z.array(z.boolean()),
-]);
+const nonEmptyString = z.string().min(1);
+const uniqueNonEmptyStrings = z
+  .array(nonEmptyString)
+  .min(1)
+  .refine((values) => new Set(values).size === values.length, "Values must be unique");
+const propertyValue = z.union([z.null(), nonEmptyString, uniqueNonEmptyStrings]);
+
+const queryCondition = z
+  .discriminatedUnion("op", [
+    z.object({
+      key: z.string().describe("System field key."),
+      op: z.enum(["eq", "neq"]),
+      value: z
+        .union([z.null(), nonEmptyString, z.number()])
+        .describe("Exact scalar operand. Numbers are valid only for numeric system fields."),
+    }),
+    z.object({
+      key: z.string().describe("Comparable system field key."),
+      op: z.enum(["gt", "gte", "lt", "lte"]),
+      value: z
+        .union([nonEmptyString, z.number()])
+        .describe("Ordered scalar operand. Numbers are valid only for numeric system fields."),
+    }),
+    z.object({ key: z.string(), op: z.enum(["exists", "missing", "is_tag"]) }),
+    z.object({ key: z.string(), op: z.literal("has_value"), value: nonEmptyString }),
+    z.object({
+      key: z.string(),
+      op: z.enum(["has_any", "has_all", "contains_any"]),
+      value: uniqueNonEmptyStrings.describe("Non-empty unique query operands."),
+    }),
+    z.object({ key: z.string(), op: z.literal("contains_text"), value: nonEmptyString }),
+  ])
+  .superRefine((condition, context) => {
+    const field = FIELD_BY_KEY.get(condition.key);
+    const fail = () =>
+      context.addIssue({
+        code: "custom",
+        message: "Operator and value type are incompatible with the query key",
+      });
+
+    if (!field) {
+      if (!isPropertyKey(condition.key)) return fail();
+      if (
+        ![
+          "exists",
+          "missing",
+          "is_tag",
+          "has_value",
+          "has_any",
+          "has_all",
+          "contains_text",
+          "contains_any",
+        ].includes(condition.op)
+      )
+        fail();
+      return;
+    }
+
+    if (condition.op === "exists" || condition.op === "missing") {
+      if (field.required) fail();
+      return;
+    }
+    if (["is_tag", "has_value", "has_any", "has_all"].includes(condition.op)) {
+      fail();
+      return;
+    }
+    if (condition.op === "eq" || condition.op === "neq") {
+      if (condition.value === null) {
+        if (field.required) fail();
+        return;
+      }
+      if (field.queryType === "number") {
+        if (typeof condition.value !== "number") fail();
+        return;
+      }
+      if (typeof condition.value !== "string") return fail();
+      if (field.queryType === "timestamp" && !isIsoInstant(condition.value)) fail();
+      return;
+    }
+    if (
+      condition.op === "gt" ||
+      condition.op === "gte" ||
+      condition.op === "lt" ||
+      condition.op === "lte"
+    ) {
+      if (field.queryType === "number") {
+        if (typeof condition.value !== "number") fail();
+        return;
+      }
+      if (
+        field.queryType !== "timestamp" ||
+        typeof condition.value !== "string" ||
+        !isIsoInstant(condition.value)
+      )
+        fail();
+      return;
+    }
+    if (
+      (condition.op === "contains_text" || condition.op === "contains_any") &&
+      field.queryType !== "string" &&
+      field.queryType !== "nullable-string"
+    )
+      fail();
+  });
 
 const queryArgs = z.object({
   where: z
-    .array(
-      z.object({
-        key: z.string().describe("Property key to match (e.g. 'tag', 'author')."),
-        op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains", "in", "exists"]),
-        value: propertyValue
-          .optional()
-          .describe("Comparison value; omit for the 'exists' operator."),
-      }),
-    )
+    .array(queryCondition)
     .optional()
     .describe(
-      "Property conditions, ANDed together. A property with a null value is a bare tag; " +
-        "match tagged items with op 'exists' on the tag's key.",
+      "Conditions are ANDed. exists/missing test key presence, is_tag matches null, " +
+        "has_value/has_any/has_all inspect exact array values, contains_text does a text substring match, " +
+        "and contains_any matches any text or array substring from its value array. eq/neq/ordered comparisons apply only to system fields; numeric operands are valid only for numeric fields such as system.size.",
     ),
   search: z.string().max(256).optional().describe("Free-text match over item names."),
   limit: z
@@ -68,7 +158,7 @@ const setPropertiesArgs = z.object({
     .record(z.string(), propertyValue)
     .optional()
     .describe(
-      "Properties to set or overwrite. May include the writable 'name' field. " +
+      "Properties to set or overwrite using null, a non-empty string, or a non-empty array of unique non-empty strings. May include the writable 'name' field. " +
         "IMPORTANT: a null value does NOT delete the key — it sets a bare tag " +
         "(pure membership marker, e.g. {\"urgent\": null} tags the item 'urgent'). " +
         "To remove a property, list its key in 'unset' instead.",
@@ -80,7 +170,7 @@ const setPropertiesArgs = z.object({
 });
 
 export type QueryToolInput = {
-  readonly where?: readonly QueryCondition[] | undefined;
+  readonly where?: z.infer<typeof queryCondition>[] | undefined;
   readonly search?: Query["search"] | undefined;
   readonly limit?: Query["limit"] | undefined;
   readonly cursor?: Query["cursor"] | undefined;

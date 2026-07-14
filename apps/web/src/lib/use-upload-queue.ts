@@ -38,7 +38,7 @@ const optimisticRow = (id: string, file: File, upload: PendingUpload): UploadQue
     status: "pending",
     createdAt: now,
     updatedAt: now,
-    properties: {},
+    properties: upload.input.properties ?? {},
     upload,
   };
 };

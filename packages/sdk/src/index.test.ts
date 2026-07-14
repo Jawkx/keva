@@ -219,8 +219,9 @@ describe("KevaClient", () => {
       tenantId: "tenant",
       viewId: "view1",
       name: "Alpha",
+      token: "keva_sh_abc_def",
       scopes: ["read", "write"] as const,
-      conditions: [{ key: "project", op: "eq" as const, value: "alpha" }],
+      conditions: [{ key: "project", op: "has_value" as const, value: "alpha" }],
       writeStamp: { project: "alpha" },
       maxItemBytes: null,
       maxTotalBytes: null,
@@ -271,6 +272,21 @@ describe("KevaClient", () => {
   it("recognizes share tokens by prefix", () => {
     expect(isShareToken("keva_sh_a_b")).toBe(true);
     expect(isShareToken("keva_sk_a_b")).toBe(false);
+  });
+
+  it("rejects non-string custom properties before sending a request", async () => {
+    let called = false;
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async () => {
+        called = true;
+        return Response.json(item);
+      },
+    });
+
+    expect(() => client.patch(item.id, { set: { rating: 5 as never }, unset: [] })).toThrow();
+    expect(called).toBe(false);
   });
 });
 

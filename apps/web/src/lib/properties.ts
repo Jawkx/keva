@@ -8,39 +8,37 @@ import {
 } from "@keva/schema";
 import { Schema } from "effect";
 
-export type ScalarType = "string" | "number" | "boolean" | "null";
-export type ValueType = ScalarType | "array";
+export type ValueType = "tag" | "single" | "multiple";
 
 export const valueType = (value: PropertyValue): ValueType => {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "array";
-  if (typeof value === "number") return "number";
-  if (typeof value === "boolean") return "boolean";
-  return "string";
+  if (value === null) return "tag";
+  if (Array.isArray(value)) return "multiple";
+  return "single";
 };
 
-export type CoerceScalarResult =
+export type PropertyInputResult =
   | { readonly ok: true; readonly value: PropertyValue }
   | { readonly ok: false; readonly error: string };
 
-export const coerceScalar = (type: ScalarType, raw: string): CoerceScalarResult => {
-  if (type === "null") return { ok: true, value: null };
-  if (type === "boolean") return { ok: true, value: raw.trim().toLowerCase() === "true" };
-  if (type === "number") {
-    if (raw.trim() === "") return { ok: false, error: "Enter a number" };
-    const n = Number(raw);
-    return Number.isFinite(n)
-      ? { ok: true, value: n }
-      : { ok: false, error: "Enter a finite number" };
+export const buildPropertyValue = (
+  type: ValueType,
+  raw: string,
+  values: readonly string[] = [],
+): PropertyInputResult => {
+  if (type === "tag") return { ok: true, value: null };
+  if (type === "single") {
+    const value = raw.trim();
+    return value ? { ok: true, value } : { ok: false, error: "Enter a value" };
   }
-  return { ok: true, value: raw };
+  if (values.length === 0) return { ok: false, error: "Add at least one value" };
+  if (values.some((value) => value.trim().length === 0))
+    return { ok: false, error: "Values cannot be empty" };
+  if (new Set(values).size !== values.length) return { ok: false, error: "Values must be unique" };
+  return { ok: true, value: [...values] };
 };
 
-export const scalarToInput = (value: PropertyValue): string => {
-  if (value === null || Array.isArray(value)) return "";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  return String(value);
-};
+export const scalarToInput = (value: PropertyValue): string =>
+  typeof value === "string" ? value : "";
 
 export const validateKey = (key: string): string | null => {
   if (!key) return "Key is required";
@@ -81,7 +79,7 @@ export const parsePropertiesJson = (text: string): ParseResult => {
 
 const valuesEqual = (a: PropertyValue, b: PropertyValue): boolean => {
   if (Array.isArray(a) && Array.isArray(b))
-    return a.length === b.length && a.every((item, i) => item === b[i]);
+    return a.length === b.length && a.every((item) => b.includes(item));
   return a === b;
 };
 

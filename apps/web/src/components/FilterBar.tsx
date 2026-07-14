@@ -13,12 +13,12 @@ import {
   buildFilterWhere,
   createConditionDraft,
   FILTER_OPERATOR_LABELS,
-  FILTER_OPERATORS,
   formatScalar,
   inferScalar,
   KIND_OPTIONS,
   opAllowsMultiple,
   opNeedsValue,
+  operatorsForKey,
   removeConditionDraft,
   SIZE_OPTIONS,
   updateConditionDraft,
@@ -215,7 +215,7 @@ function ScalarValueMenu({
   const pick = (index: number) => {
     if (index < visible.length) toggle(visible[index]!);
     else if (custom) {
-      toggle(inferScalar(trimmed));
+      toggle(inferScalar(trimmed, keyName));
       setQuery("");
     }
   };
@@ -263,9 +263,11 @@ function ScalarValueMenu({
 }
 
 function TextValueMenu({
+  keyName,
   value,
   onCommit,
 }: {
+  keyName: string;
   value: FilterScalar | undefined;
   onCommit: (value: FilterScalar) => void;
 }) {
@@ -280,7 +282,7 @@ function TextValueMenu({
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && text.trim().length > 0) onCommit(inferScalar(text));
+          if (event.key === "Enter" && text.trim().length > 0) onCommit(inferScalar(text, keyName));
         }}
       />
       <p className="px-1 text-xs text-muted-foreground">Press Enter to apply</p>
@@ -340,7 +342,7 @@ function ValueSegment({
   );
 }
 
-const TEXT_INPUT_OPS: readonly Operator[] = ["contains", "gt", "gte", "lt", "lte"];
+const TEXT_INPUT_OPS: readonly Operator[] = ["contains_text", "gt", "gte", "lt", "lte"];
 
 function RowChip({
   row,
@@ -359,8 +361,7 @@ function RowChip({
   onValuesChange: (values: FilterScalar[], done?: boolean) => void;
   onRemove: () => void;
 }) {
-  const opLabel =
-    row.values.length > 1 ? FILTER_OPERATOR_LABELS.in : FILTER_OPERATOR_LABELS[row.op];
+  const opLabel = FILTER_OPERATOR_LABELS[row.op];
   const valueLabel = row.values.map(formatScalar).join(", ");
 
   return (
@@ -376,7 +377,7 @@ function RowChip({
           {opLabel}
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-40">
-          {FILTER_OPERATORS.map((op) => (
+          {operatorsForKey(row.key).map((op) => (
             <DropdownMenuItem key={op} onClick={() => onOpChange(op)}>
               <span className="flex-1">{FILTER_OPERATOR_LABELS[op]}</span>
               {op === row.op && <HugeiconsIcon icon={Tick02Icon} className="size-3.5" />}
@@ -393,6 +394,7 @@ function RowChip({
         >
           {TEXT_INPUT_OPS.includes(row.op) ? (
             <TextValueMenu
+              keyName={row.key}
               value={row.values[0]}
               onCommit={(value) => onValuesChange([value], true)}
             />
@@ -422,7 +424,7 @@ const isTagOnly = (entry: PropertySummary): boolean =>
 export interface PropertyStampChip {
   id: string;
   key: string;
-  value: FilterScalar;
+  value: PropertyValue;
 }
 
 interface LockedPropertyStampChip {
@@ -441,7 +443,7 @@ function CustomPropertyDialog({
   onOpenChange: (open: boolean) => void;
   keyOptions: string[];
   lockedKeys: ReadonlySet<string>;
-  onAdd: (key: string, value: FilterScalar) => void;
+  onAdd: (key: string, value: PropertyValue) => void;
 }) {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
@@ -452,7 +454,7 @@ function CustomPropertyDialog({
 
   const submit = () => {
     if (!canAdd) return;
-    onAdd(trimmedKey, inferScalar(value));
+    onAdd(trimmedKey, value.trim());
     onOpenChange(false);
     setKey("");
     setValue("");
@@ -510,13 +512,11 @@ export function PropertyStampChips({
   const summary = usePropertySummary();
   const keySet = useMemo(() => new Set(summary.map((entry) => entry.key)), [summary]);
   const lockedKeys = new Set(locked.map((row) => row.key));
-  const available = summary.filter(
-    (entry) => entry.values.length > 0 && !lockedKeys.has(entry.key),
-  );
+  const available = summary.filter((entry) => !lockedKeys.has(entry.key));
   const [valueMenuFor, setValueMenuFor] = useState<string | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
 
-  const upsert = (key: string, nextValue: FilterScalar) => {
+  const upsert = (key: string, nextValue: PropertyValue) => {
     if (lockedKeys.has(key)) return;
     const existing = value.find((row) => row.key === key);
     onChange(
@@ -526,13 +526,27 @@ export function PropertyStampChips({
     );
   };
 
-  const toggle = (key: string, nextValue: FilterScalar) => {
+  const toggleTag = (key: string) => {
     const existing = value.find((row) => row.key === key);
-    if (existing && formatScalar(existing.value) === formatScalar(nextValue)) {
+    if (existing?.value === null) {
       onChange(value.filter((row) => row.id !== existing.id));
       return;
     }
-    upsert(key, nextValue);
+    upsert(key, null);
+  };
+
+  const toggle = (key: string, nextValue: string) => {
+    const existing = value.find((row) => row.key === key);
+    if (!existing || existing.value === null) {
+      upsert(key, nextValue);
+      return;
+    }
+    const current = Array.isArray(existing.value) ? [...existing.value] : [existing.value];
+    const next = current.includes(nextValue)
+      ? current.filter((item) => item !== nextValue)
+      : [...current, nextValue];
+    if (next.length === 0) onChange(value.filter((row) => row.id !== existing.id));
+    else upsert(key, next.length === 1 ? next[0]! : next);
   };
 
   return (
@@ -565,17 +579,17 @@ export function PropertyStampChips({
           <ValueSegment
             open={valueMenuFor === row.id}
             onOpenChange={(open) => setValueMenuFor(open ? row.id : null)}
-            label={formatScalar(row.value)}
+            label={formatPropertyValue(row.value)}
             ariaLabel={`Change upload value for ${row.key}`}
           >
             <ScalarValueMenu
               keyName={row.key}
-              values={[row.value]}
+              values={typeof row.value === "string" ? [row.value] : []}
               multi={false}
               suggest={keySet.has(row.key)}
               onChange={(values) => {
                 const next = values[0];
-                if (next !== undefined) upsert(row.key, next);
+                if (next !== undefined) upsert(row.key, String(next));
               }}
               onDone={() => setValueMenuFor(null)}
             />
@@ -601,10 +615,21 @@ export function PropertyStampChips({
                 <DropdownMenuSub key={entry.key}>
                   <DropdownMenuSubTrigger>{entry.key}</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="max-h-80 w-44 overflow-y-auto">
+                    {entry.kinds.includes("tag") && (
+                      <DropdownMenuCheckboxItem
+                        checked={value.some((row) => row.key === entry.key && row.value === null)}
+                        closeOnClick={false}
+                        onCheckedChange={() => toggleTag(entry.key)}
+                      >
+                        Tag
+                      </DropdownMenuCheckboxItem>
+                    )}
                     {entry.values.map((option) => {
                       const selected = value.some(
                         (row) =>
-                          row.key === entry.key && formatScalar(row.value) === formatScalar(option),
+                          row.key === entry.key &&
+                          (row.value === option ||
+                            (Array.isArray(row.value) && row.value.includes(option))),
                       );
                       return (
                         <DropdownMenuCheckboxItem
@@ -652,7 +677,7 @@ function AdvancedConditionDialog({
   onAdd: (row: ConditionDraft) => void;
 }) {
   const [key, setKey] = useState("");
-  const [op, setOp] = useState<Operator>("eq");
+  const [op, setOp] = useState<Operator>("has_value");
   const [value, setValue] = useState("");
 
   const trimmedKey = key.trim();
@@ -665,10 +690,16 @@ function AdvancedConditionDialog({
 
   const submit = () => {
     if (!canAdd) return;
-    onAdd(createConditionDraft(trimmedKey, op, opNeedsValue(op) ? [inferScalar(value)] : []));
+    onAdd(
+      createConditionDraft(
+        trimmedKey,
+        op,
+        opNeedsValue(op) ? [inferScalar(value, trimmedKey)] : [],
+      ),
+    );
     onOpenChange(false);
     setKey("");
-    setOp("eq");
+    setOp("has_value");
     setValue("");
   };
 
@@ -689,7 +720,11 @@ function AdvancedConditionDialog({
             options={keyOptions}
             emptyText="No matching keys"
             value={key}
-            onValueChange={setKey}
+            onValueChange={(nextKey) => {
+              setKey(nextKey);
+              const allowed = operatorsForKey(nextKey.trim());
+              if (!allowed.includes(op)) setOp(allowed[0] ?? "has_value");
+            }}
           />
           <Select value={op} onValueChange={(next) => setOp(next as Operator)}>
             <SelectTrigger>
@@ -697,7 +732,7 @@ function AdvancedConditionDialog({
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {FILTER_OPERATORS.map((option) => (
+                {operatorsForKey(trimmedKey).map((option) => (
                   <SelectItem key={option} value={option}>
                     {FILTER_OPERATOR_LABELS[option]}
                   </SelectItem>
@@ -759,20 +794,24 @@ function FilterMenu({
         : [...draft.kinds, id],
     });
 
-  const existsRow = (key: string) => draft.rows.find((r) => r.key === key && r.op === "exists");
+  const existsRow = (key: string) =>
+    draft.rows.find((r) => r.key === key && (r.op === "exists" || r.op === "is_tag"));
 
-  const toggleExists = (key: string) => {
+  const toggleExists = (key: string, tagOnly = false) => {
     const row = existsRow(key);
     commit(
       row
         ? removeConditionDraft(draft, row.id)
-        : { ...draft, rows: [...draft.rows, createConditionDraft(key, "exists", [])] },
+        : {
+            ...draft,
+            rows: [...draft.rows, createConditionDraft(key, tagOnly ? "is_tag" : "exists", [])],
+          },
     );
   };
 
-  // The row a value toggle operates on: the first eq/in condition for the key.
+  // The row a value toggle operates on: scalar/array membership for the key.
   const valueRow = (key: string) =>
-    draft.rows.find((r) => r.key === key && (r.op === "eq" || r.op === "in"));
+    draft.rows.find((r) => r.key === key && (r.op === "has_value" || r.op === "has_any"));
 
   const valueSelected = (key: string, value: FilterScalar) =>
     valueRow(key)?.values.some((v) => formatScalar(v) === formatScalar(value)) ?? false;
@@ -780,7 +819,7 @@ function FilterMenu({
   const toggleValue = (key: string, value: FilterScalar) => {
     const row = valueRow(key);
     if (!row) {
-      commit({ ...draft, rows: [...draft.rows, createConditionDraft(key, "eq", [value])] });
+      commit({ ...draft, rows: [...draft.rows, createConditionDraft(key, "has_value", [value])] });
       return;
     }
     const token = formatScalar(value);
@@ -840,7 +879,7 @@ function FilterMenu({
                     key={entry.key}
                     checked={Boolean(existsRow(entry.key))}
                     closeOnClick={false}
-                    onCheckedChange={() => toggleExists(entry.key)}
+                    onCheckedChange={() => toggleExists(entry.key, true)}
                   >
                     {entry.key}
                   </DropdownMenuCheckboxItem>
@@ -924,7 +963,7 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
 
   const dropIfEmpty = (rowId: string) => {
     const row = draft.rows.find((r) => r.id === rowId);
-    if (row && row.op !== "exists" && row.values.length === 0) {
+    if (row && opNeedsValue(row.op) && row.values.length === 0) {
       onDraftChange(removeConditionDraft(draft, rowId));
     }
   };
@@ -1011,7 +1050,7 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
       )}
 
       {draft.rows.map((row) =>
-        row.values.length > 0 || row.op === "exists" || valueMenuFor === row.id ? (
+        row.values.length > 0 || !opNeedsValue(row.op) || valueMenuFor === row.id ? (
           <RowChip
             key={row.id}
             row={row}

@@ -47,7 +47,7 @@ const sharePrincipal = (tenantId: string, options: ShareOptions = {}): Principal
   via: "share",
   share: {
     grantId: options.grantId ?? "grant-1",
-    conditions: options.conditions ?? [{ key: "project", op: "eq", value: "alpha" }],
+    conditions: options.conditions ?? [{ key: "project", op: "has_value", value: "alpha" }],
     ...(options.writeStamp === undefined ? {} : { writeStamp: options.writeStamp }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),
   },
@@ -323,22 +323,22 @@ describe("KevaEngine", () => {
     }
   });
 
-  it("writes properties and serves eq + contains membership queries", async () => {
+  it("writes properties and serves value membership queries", async () => {
     const layer = testLayer();
     const program = Effect.gen(function* () {
       const engine = makeKevaEngine(principal("tenant-a"));
       const item = yield* upload("tenant-a", "notes.txt", new TextEncoder().encode("hello keva"));
       yield* engine.patch(item.id, {
-        set: { location: "bali", rating: 5, tags: ["diving", "summer"] },
+        set: { location: "bali", rating: "five", tags: ["summer", "diving"] },
         unset: [],
       });
       const byLocation = yield* engine.query({
-        where: [{ key: "location", op: "eq", value: "bali" }],
+        where: [{ key: "location", op: "has_value", value: "bali" }],
         limit: 100,
         order: "created_at_asc",
       });
       const byTag = yield* engine.query({
-        where: [{ key: "tags", op: "contains", value: "diving" }],
+        where: [{ key: "tags", op: "has_value", value: "diving" }],
         limit: 100,
         order: "created_at_asc",
       });
@@ -351,7 +351,7 @@ describe("KevaEngine", () => {
     expect(result.byTag.items).toHaveLength(1);
     expect(result.fetched.properties).toEqual({
       location: "bali",
-      rating: 5,
+      rating: "five",
       tags: ["diving", "summer"],
     });
   });
@@ -363,10 +363,10 @@ describe("KevaEngine", () => {
       const one = yield* upload("tenant-a", "a.txt", new TextEncoder().encode("a"));
       const two = yield* upload("tenant-a", "b.txt", new TextEncoder().encode("b"));
       yield* engine.patch(one.id, {
-        set: { location: "bali", rating: 5, tags: ["x"] },
+        set: { location: "bali", rating: "five", tags: ["x"] },
         unset: [],
       });
-      yield* engine.patch(two.id, { set: { location: "tokyo", rating: 5 }, unset: [] });
+      yield* engine.patch(two.id, { set: { location: "tokyo", rating: "five" }, unset: [] });
       const other = yield* upload("tenant-b", "c.txt", new TextEncoder().encode("c"));
       yield* makeKevaEngine(principal("tenant-b")).patch(other.id, {
         set: { secret: "nope" },
@@ -384,8 +384,8 @@ describe("KevaEngine", () => {
     const result = await Effect.runPromise(program);
     expect(result.keys).toEqual({ keys: ["location", "rating", "tags"] });
     expect(result.locations).toEqual({ values: ["bali", "tokyo"] });
-    expect(result.ratings).toEqual({ values: [5] });
-    expect(result.tags).toEqual({ values: [] });
+    expect(result.ratings).toEqual({ values: ["five"] });
+    expect(result.tags).toEqual({ values: ["x"] });
   });
 
   it("summarizes per-key value shapes, surfacing bare nulls as tags", async () => {
@@ -395,10 +395,10 @@ describe("KevaEngine", () => {
       const one = yield* upload("tenant-a", "a.txt", new TextEncoder().encode("a"));
       const two = yield* upload("tenant-a", "b.txt", new TextEncoder().encode("b"));
       yield* engine.patch(one.id, {
-        set: { logo: null, project: "keva", rating: 5, tags: ["x"] },
+        set: { logo: null, project: "keva", rating: "five", tags: ["x"] },
         unset: [],
       });
-      yield* engine.patch(two.id, { set: { project: null, reviewed: true }, unset: [] });
+      yield* engine.patch(two.id, { set: { project: null, reviewed: "yes" }, unset: [] });
       return yield* engine.propertySummary();
     }).pipe(Effect.provide(layer));
 
@@ -407,9 +407,9 @@ describe("KevaEngine", () => {
       entries: [
         { key: "logo", kinds: ["tag"], values: [] },
         { key: "project", kinds: ["string", "tag"], values: ["keva"] },
-        { key: "rating", kinds: ["number"], values: [5] },
-        { key: "reviewed", kinds: ["boolean"], values: [true] },
-        { key: "tags", kinds: ["array"], values: [] },
+        { key: "rating", kinds: ["string"], values: ["five"] },
+        { key: "reviewed", kinds: ["string"], values: ["yes"] },
+        { key: "tags", kinds: ["array"], values: ["x"] },
       ],
     });
   });
@@ -493,9 +493,9 @@ describe("KevaEngine item history", () => {
       const engine = makeKevaEngine(actorPrincipal);
       const item = yield* upload("tenant-a", "page.txt", new TextEncoder().encode("x"));
       yield* Effect.sleep(2);
-      yield* engine.patch(item.id, { set: { a: 1 }, unset: [] });
+      yield* engine.patch(item.id, { set: { a: "one" }, unset: [] });
       yield* Effect.sleep(2);
-      yield* engine.patch(item.id, { set: { b: 2 }, unset: [] });
+      yield* engine.patch(item.id, { set: { b: "two" }, unset: [] });
       const firstPage = yield* engine.events(item.id, { limit: 2 });
       const secondPage = yield* engine.events(item.id, {
         limit: 2,
@@ -548,7 +548,7 @@ describe("KevaEngine share access", () => {
       const share = makeKevaEngine(sharePrincipal("tenant-a"));
       const all = yield* share.query({ where: [], limit: 100, order: "created_at_asc" });
       const widen = yield* share.query({
-        where: [{ key: "project", op: "eq", value: "beta" }],
+        where: [{ key: "project", op: "has_value", value: "beta" }],
         limit: 100,
         order: "created_at_asc",
       });
@@ -782,7 +782,7 @@ describe("KevaEngine share access", () => {
       const p = sharePrincipal("tenant-a", { scopes: ["read", "write", "delete"] });
       const engine = makeKevaEngine(p);
       return {
-        patch: yield* Effect.either(engine.patch(alpha.id, { set: { x: 1 }, unset: [] })),
+        patch: yield* Effect.either(engine.patch(alpha.id, { set: { x: "one" }, unset: [] })),
         del: yield* Effect.either(engine.delete(alpha.id)),
         usage: yield* Effect.either(engine.usage()),
         keys: yield* Effect.either(engine.propertyKeys()),

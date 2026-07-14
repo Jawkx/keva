@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Add01Icon, Alert02Icon, ArrowLeft01Icon, Share03Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
-import { ConditionChips } from "../components/ConditionChips";
 import { CopyButton } from "../components/CopyButton";
 import { PageHeader } from "../components/PageHeader";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
@@ -135,7 +134,6 @@ export function ViewSharesPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Link</TableHead>
                   <TableHead>Access</TableHead>
-                  <TableHead>Shared files</TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead>Last used</TableHead>
                   <TableHead className="w-0" />
@@ -171,9 +169,6 @@ export function ViewSharesPage() {
                             </Badge>
                           ))}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <ConditionChips conditions={share.conditions} />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {share.expiresAt === null ? (

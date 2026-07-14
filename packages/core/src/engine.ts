@@ -4,7 +4,9 @@ import {
   NotFound,
   QuotaExceeded,
   ValidationError,
+  canonicalizeProperties,
   itemMatchesCondition,
+  propertyValuesEqual,
   routePatch,
   type ItemEventAction,
   type ItemEventPayload,
@@ -75,9 +77,6 @@ const eventFor = (
   createdAt: now(),
 });
 
-const sameValue = (a: PropertyValue | undefined, b: PropertyValue | undefined): boolean =>
-  JSON.stringify(a) === JSON.stringify(b);
-
 export const makeKevaEngine = (principal: Principal) => ({
   initiate: (input: InitiateUpload) =>
     Effect.gen(function* () {
@@ -134,7 +133,7 @@ export const makeKevaEngine = (principal: Principal) => ({
         stagingKey: `staging/${principal.tenantId}/${id}`,
         createdAt: timestamp,
         updatedAt: timestamp,
-        properties,
+        properties: canonicalizeProperties(properties),
       };
       if (share && limits && (limits.maxItems !== null || limits.maxTotalBytes !== null)) {
         yield* metadata.reserveShareUpload({
@@ -263,7 +262,7 @@ export const makeKevaEngine = (principal: Principal) => ({
           const changedSet: Record<string, PropertyValue> = {};
           const previousValues: Record<string, PropertyValue> = {};
           for (const [key, value] of Object.entries(updated.properties)) {
-            if (sameValue(previous.properties[key], value)) continue;
+            if (propertyValuesEqual(previous.properties[key], value)) continue;
             changedSet[key] = value;
             if (key in previous.properties) previousValues[key] = previous.properties[key]!;
           }

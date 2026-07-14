@@ -33,14 +33,13 @@ export function usePropertyValueScalars(key: string, enabled: boolean) {
     enabled: enabled && key.length > 0,
     staleTime: 60_000,
   });
-  return query.data ?? EMPTY_SCALARS;
+  return query.data ?? EMPTY;
 }
 
 export function usePropertyValues(key: string, enabled: boolean) {
   const scalars = usePropertyValueScalars(key, enabled);
-  return useMemo(() => scalars.map(String), [scalars]);
+  return useMemo(() => [...new Set(scalars)], [scalars]);
 }
 
 const EMPTY: string[] = [];
-const EMPTY_SCALARS: (string | number | boolean)[] = [];
 const EMPTY_SUMMARY: PropertySummary[] = [];

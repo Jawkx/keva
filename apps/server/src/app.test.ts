@@ -65,11 +65,12 @@ const seedItem = async (
   };
   await putToStorage(initiated, "x");
   await app.request(`/api/items/${initiated.item.id}/confirm`, { method: "POST", headers: auth });
-  await app.request(`/api/items/${initiated.item.id}`, {
+  const patched = await app.request(`/api/items/${initiated.item.id}`, {
     method: "PATCH",
     headers: { ...auth, "content-type": "application/json" },
     body: JSON.stringify({ set: properties }),
   });
+  expect(patched.status).toBe(200);
   return initiated.item.id;
 };
 
@@ -196,8 +197,8 @@ describe("server API", () => {
 
   it("serves distinct property key and value suggestions", async () => {
     const app = createApp({ layer });
-    await seedItem(app, "one.txt", { location: "bali", rating: 5 });
-    await seedItem(app, "two.txt", { location: "tokyo", rating: 5 });
+    await seedItem(app, "one.txt", { location: "bali", rating: "five" });
+    await seedItem(app, "two.txt", { location: "tokyo", rating: "five" });
 
     const keys = await app.request("/api/properties/keys", { headers: auth });
     expect(keys.status).toBe(200);

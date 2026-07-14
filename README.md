@@ -34,10 +34,25 @@ const keva = new KevaClient({
 });
 
 const item = await keva.upload(
-  { name: "hello.txt", contentType: "text/plain", size: 5 },
+  {
+    name: "hello.txt",
+    contentType: "text/plain",
+    size: 5,
+    properties: {
+      finance: null,
+      department: "finance",
+      people: ["alice", "bob"],
+    },
+  },
   new TextEncoder().encode("hello"),
 );
 ```
+
+Custom properties are bare tags (`null`), non-empty strings, or non-empty arrays
+of unique strings. Arrays are unordered. Numeric-looking and boolean-looking
+metadata remains text; typed comparisons are reserved for system fields such as
+`system.size`. Setting a property to `null` applies a tag. Remove a property with
+the patch API's `unset` field.
 
 The SDK base URL should point at the API prefix (`/api`), not the server root.
 Item responses intentionally exclude tenant IDs and physical storage keys. The

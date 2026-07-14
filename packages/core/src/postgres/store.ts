@@ -1,5 +1,6 @@
 import {
   FIELD_BY_KEY,
+  canonicalizeProperties,
   decodeCursor as decodeSharedCursor,
   encodeCursor,
   Internal,
@@ -69,7 +70,7 @@ const mapRow = (row: ItemRow): KevaItem => ({
   stagingKey: row.staging_key,
   createdAt: asIso(row.created_at),
   updatedAt: asIso(row.updated_at),
-  properties: row.properties,
+  properties: canonicalizeProperties(row.properties),
 });
 
 interface ItemEventRow {
@@ -107,7 +108,7 @@ const insertEvent = async (sql: Sql, event: ItemEvent): Promise<void> => {
     insert into item_events (id, tenant_id, item_id, item_name, action, actor, payload, created_at)
     values (
       ${event.id}, ${event.tenantId}, ${event.itemId}, ${event.itemName}, ${event.action},
-      ${jsonbParam(event.actor)}::jsonb, ${jsonbParam(event.payload)}::jsonb, ${event.createdAt}
+      ${jsonbParam(event.actor)}::text::jsonb, ${jsonbParam(event.payload)}::text::jsonb, ${event.createdAt}
     )
   `;
 };
@@ -164,30 +165,8 @@ const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
   const column = systemColumn(sql, condition.key);
   const value = condition.value;
   if (column) {
-    if (condition.op === "exists") return sql`true`;
-    // `in` is an OR of `contains` over the listed values; expand it before the
-    // scalar type-mismatch guard below (its operand is an array, not a scalar).
-    if (condition.op === "in") {
-      const members = Array.isArray(value) ? value : [];
-      if (column.type === "number") {
-        const numbers = members.filter((m): m is number => typeof m === "number");
-        return anyOf(
-          sql,
-          numbers.map((m) => sql`${column.fragment} = ${m}`),
-        );
-      }
-      const strings = members.filter((m): m is string => typeof m === "string");
-      return anyOf(
-        sql,
-        strings.map((m) => sql`position(${m} in ${column.fragment}) > 0`),
-      );
-    }
-    const expected = column.type === "number" ? "number" : "string";
-    const typeMismatch = value !== null && typeof value !== expected;
-    // Type-strict values of different types are necessarily unequal, but cannot
-    // match equality, ordering, or contains comparisons.
-    if (condition.op === "neq" && typeMismatch) return sql`true`;
-    if (typeMismatch) return sql`false`;
+    if (condition.op === "exists") return sql`${column.fragment} is not null`;
+    if (condition.op === "missing") return sql`${column.fragment} is null`;
     if (condition.op === "eq") {
       return value === null
         ? sql`${column.fragment} is null`
@@ -196,41 +175,51 @@ const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
     if (condition.op === "neq") {
       return value === null
         ? sql`${column.fragment} is not null`
-        : sql`${column.fragment} is not null and ${column.fragment} <> ${value as string | number}`;
+        : sql`(${column.fragment} is null or ${column.fragment} <> ${value as string | number})`;
     }
-    if (condition.op === "contains") {
-      return typeof value === "string" && column.type !== "number"
-        ? sql`position(${value} in ${column.fragment}) > 0`
-        : sql`false`;
+    if (condition.op === "contains_text") {
+      return sql`position(${value as string} in ${column.fragment}) > 0`;
+    }
+    if (condition.op === "contains_any") {
+      return anyOf(
+        sql,
+        (value as readonly string[]).map(
+          (member) => sql`position(${member} in ${column.fragment}) > 0`,
+        ),
+      );
     }
     return sql`${column.fragment} ${comparison(sql, condition.op)} ${value as string | number}`;
   }
 
   const key = condition.key;
   if (condition.op === "exists") return sql`properties ? ${key}`;
-  if (condition.op === "eq") {
-    return sql`properties @> ${jsonbParam({ [key]: value })}::jsonb`;
-  }
-  if (condition.op === "neq") {
-    return sql`properties ? ${key} and not (properties @> ${jsonbParam({ [key]: value })}::jsonb)`;
-  }
-  const containsMember = (member: string | number | boolean): Fragment => {
-    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${jsonbParam([member])}::jsonb)`;
-    return typeof member === "string"
-      ? sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and position(${member} in properties ->> ${key}) > 0))`
-      : arrayMatch;
+  if (condition.op === "missing") return sql`not (properties ? ${key})`;
+  if (condition.op === "is_tag") return sql`properties -> ${key} = 'null'::jsonb`;
+  const hasValue = (member: string): Fragment => {
+    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${jsonbParam([member])}::text::jsonb)`;
+    return sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and properties ->> ${key} = ${member}))`;
   };
-  if (condition.op === "contains") {
-    return containsMember(value as string | number | boolean);
+  const containsText = (text: string): Fragment => sql`(
+    (jsonb_typeof(properties -> ${key}) = 'string' and position(${text} in properties ->> ${key}) > 0)
+    or (jsonb_typeof(properties -> ${key}) = 'array' and exists (
+      select 1 from jsonb_array_elements_text(properties -> ${key}) as member
+      where position(${text} in member) > 0
+    ))
+  )`;
+  if (condition.op === "has_value") return hasValue(value as string);
+  if (condition.op === "has_any") {
+    return anyOf(sql, (value as readonly string[]).map(hasValue));
   }
-  if (condition.op === "in") {
-    const members = (Array.isArray(value) ? value : []) as (string | number | boolean)[];
-    return anyOf(sql, members.map(containsMember));
+  if (condition.op === "has_all") {
+    return (value as readonly string[])
+      .map(hasValue)
+      .reduce((left, right) => sql`${left} and ${right}`);
   }
-  if (typeof value === "number") {
-    return sql`(jsonb_typeof(properties -> ${key}) = 'number' and (properties ->> ${key})::numeric ${comparison(sql, condition.op)} ${value})`;
+  if (condition.op === "contains_text") return containsText(value as string);
+  if (condition.op === "contains_any") {
+    return anyOf(sql, (value as readonly string[]).map(containsText));
   }
-  return sql`(jsonb_typeof(properties -> ${key}) = 'string' and properties ->> ${key} ${comparison(sql, condition.op)} ${value as string})`;
+  return sql`false`;
 };
 
 const escapeLikePattern = (value: string): string =>
@@ -279,6 +268,7 @@ const reserveTenantQuota = async (
 };
 
 const insertItemRow = async (transaction: Sql, item: KevaItem): Promise<void> => {
+  const properties = canonicalizeProperties(item.properties);
   await transaction`
     insert into items (
       id, tenant_id, name, content_type, declared_size, size, etag,
@@ -289,7 +279,7 @@ const insertItemRow = async (transaction: Sql, item: KevaItem): Promise<void> =>
       ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
       ${item.source}, ${item.status}, ${item.storageKey},
       ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
-      ${jsonbParam(item.properties)}::jsonb
+      ${jsonbParam(properties)}::text::jsonb
     )
   `;
 };
@@ -428,7 +418,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           }
           const updated = await transaction<ItemRow[]>`
           update items
-          set ${transaction(values)}, properties = ${jsonbParam(properties)}::jsonb
+          set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
           returning *
         `;
@@ -462,7 +452,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             if (field) values[field.column] = value;
           }
           const updated = await transaction<ItemRow[]>`
-            update items set ${transaction(values)}, properties = ${jsonbParam(properties)}::jsonb
+            update items set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb
             where tenant_id = ${tenantId} and id = ${id} and status = 'ready' returning *
           `;
           if (!updated[0]) return { status: "missing" };
@@ -622,10 +612,15 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   propertyValues: (tenantId, key) =>
     attempt(async () => {
       const rows = await sql<{ value: PropertyScalar }[]>`
-        select distinct properties -> ${key} as value
-        from items
+        select distinct value
+        from items, lateral (
+          select properties ->> ${key} as value
+          where jsonb_typeof(properties -> ${key}) = 'string'
+          union all
+          select jsonb_array_elements_text(properties -> ${key}) as value
+          where jsonb_typeof(properties -> ${key}) = 'array'
+        ) discovered
         where tenant_id = ${tenantId} and status = 'ready'
-          and jsonb_typeof(properties -> ${key}) in ('string', 'number', 'boolean')
         order by value
         limit ${SUGGESTION_VALUE_LIMIT}
       `;
@@ -649,9 +644,12 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           from kv
           group by key
         ), scalar_values as (
-          select distinct key, value
-          from kv
-          where kind in ('string', 'number', 'boolean')
+          select distinct key, value #>> '{}' as value
+          from kv where kind = 'string'
+          union
+          select distinct kv.key, member.value
+          from kv, lateral jsonb_array_elements_text(kv.value) as member(value)
+          where kind = 'array'
         ), ranked_values as (
           select key, value,
                  row_number() over (partition by key order by value) as rank
@@ -710,8 +708,8 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           id, tenant_id, item_id, item_name, action, actor, payload, created_at
         ) values (
           ${event.id}, ${event.tenantId}, ${event.itemId}, ${event.itemName},
-          ${event.action}, ${jsonbParam(event.actor)}::jsonb,
-          ${jsonbParam(event.payload)}::jsonb, ${event.createdAt}
+          ${event.action}, ${jsonbParam(event.actor)}::text::jsonb,
+          ${jsonbParam(event.payload)}::text::jsonb, ${event.createdAt}
         )
       `;
     }),

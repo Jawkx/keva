@@ -96,7 +96,7 @@ describe("server integration — HTTP roundtrip", () => {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
-        where: [{ key: "tags", op: "contains", value: "brown" }],
+        where: [{ key: "tags", op: "has_value", value: "brown" }],
       }),
     });
     expect(queried.status).toBe(200);

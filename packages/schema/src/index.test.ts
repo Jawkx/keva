@@ -9,6 +9,7 @@ import {
   type KevaItem,
   Principal,
   Properties,
+  propertyValuesEqual,
   propertiesMatchCondition,
   Query,
   toOwnerItem,
@@ -19,8 +20,13 @@ import {
 } from "./index.js";
 
 describe("schema", () => {
-  it("rejects mixed arrays and reserved keys", () => {
+  it("rejects invalid arrays, legacy scalars, and reserved keys", () => {
     expect(() => Schema.decodeUnknownSync(Properties)({ tags: ["a", 1] })).toThrow();
+    expect(() => Schema.decodeUnknownSync(Properties)({ tags: [] })).toThrow();
+    expect(() => Schema.decodeUnknownSync(Properties)({ tags: ["a", "a"] })).toThrow();
+    expect(() => Schema.decodeUnknownSync(Properties)({ empty: "" })).toThrow();
+    expect(() => Schema.decodeUnknownSync(Properties)({ rating: 5 })).toThrow();
+    expect(() => Schema.decodeUnknownSync(Properties)({ enabled: true })).toThrow();
     expect(() => Schema.decodeUnknownSync(Properties)({ "system.owner": "me" })).toThrow();
   });
 
@@ -28,7 +34,7 @@ describe("schema", () => {
     expect(validateProperties({ "system.owner": "me" })).toBe("invalid-key");
     expect(
       validateProperties(
-        Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`key-${index}`, index])),
+        Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`key-${index}`, "x"])),
       ),
     ).toBe("too-many-keys");
     expect(validateProperties({ note: "x".repeat(8 * 1024 + 1) })).toBe("invalid-value");
@@ -42,7 +48,7 @@ describe("schema", () => {
     });
     expect(() =>
       Schema.decodeUnknownSync(Query)({
-        where: [{ key: "rating", op: "gt", value: true }],
+        where: [{ key: "rating", op: "eq", value: "x" }],
       }),
     ).toThrow();
     expect(() =>
@@ -50,17 +56,57 @@ describe("schema", () => {
         where: [{ key: "system.unknown", op: "exists" }],
       }),
     ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(Query)({
+        where: [{ key: "keva.internal", op: "exists" }],
+      }),
+    ).toThrow();
     expect(
       Schema.decodeUnknownSync(Query)({
-        where: [{ key: "system.content_type", op: "in", value: ["text/", "application/pdf"] }],
+        where: [
+          {
+            key: "system.content_type",
+            op: "contains_any",
+            value: ["text/", "application/pdf"],
+          },
+        ],
       }).where,
-    ).toEqual([{ key: "system.content_type", op: "in", value: ["text/", "application/pdf"] }]);
+    ).toEqual([
+      { key: "system.content_type", op: "contains_any", value: ["text/", "application/pdf"] },
+    ]);
     expect(() =>
-      Schema.decodeUnknownSync(Query)({ where: [{ key: "kind", op: "in", value: "doc" }] }),
+      Schema.decodeUnknownSync(Query)({ where: [{ key: "kind", op: "has_any", value: "doc" }] }),
     ).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(Query)({ where: [{ key: "kind", op: "in", value: [] }] }),
+      Schema.decodeUnknownSync(Query)({ where: [{ key: "kind", op: "has_any", value: [] }] }),
     ).toThrow();
+  });
+
+  it("validates operators against custom and system field types", () => {
+    const decode = Schema.decodeUnknownSync(Query);
+    expect(
+      decode({ where: [{ key: "tags", op: "has_all", value: ["a", "b"] }] }).where,
+    ).toHaveLength(1);
+    expect(decode({ where: [{ key: "system.etag", op: "neq", value: null }] }).where).toHaveLength(
+      1,
+    );
+    expect(
+      decode({ where: [{ key: "system.created_at", op: "gt", value: "2026-01-01T00:00:00Z" }] })
+        .where,
+    ).toHaveLength(1);
+    expect(() => decode({ where: [{ key: "tag", op: "eq", value: "x" }] })).toThrow();
+    expect(() => decode({ where: [{ key: "name", op: "has_value", value: "x" }] })).toThrow();
+    expect(() => decode({ where: [{ key: "name", op: "eq", value: null }] })).toThrow();
+    expect(() => decode({ where: [{ key: "name", op: "exists" }] })).toThrow();
+    expect(() =>
+      decode({ where: [{ key: "system.created_at", op: "gt", value: "yesterday" }] }),
+    ).toThrow();
+    expect(() => decode({ where: [{ key: "tags", op: "has_any", value: ["a", "a"] }] })).toThrow();
+  });
+
+  it("compares array property values as unordered sets", () => {
+    expect(propertyValuesEqual(["a", "b"], ["b", "a"])).toBe(true);
+    expect(propertyValuesEqual(["a"], ["b"])).toBe(false);
   });
 
   it("validates optional query search", () => {
@@ -119,40 +165,45 @@ const sampleItem = (overrides: Partial<KevaItem> = {}): KevaItem => ({
   stagingKey: "staging/tenant-a/1",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
-  properties: { project: "alpha", tags: ["x", "y"], rating: 5 },
+  properties: { project: "alpha", tags: ["x", "y"], label: null },
   ...overrides,
 });
 
 describe("condition evaluator", () => {
   it("evaluates property conditions across operators", () => {
     const item = sampleItem();
-    expect(itemMatchesCondition(item, { key: "project", op: "eq", value: "alpha" })).toBe(true);
-    expect(itemMatchesCondition(item, { key: "project", op: "eq", value: "beta" })).toBe(false);
-    expect(itemMatchesCondition(item, { key: "project", op: "exists" })).toBe(true);
-    expect(itemMatchesCondition(item, { key: "missing", op: "exists" })).toBe(false);
-    expect(itemMatchesCondition(item, { key: "missing", op: "eq", value: "x" })).toBe(false);
-    expect(itemMatchesCondition(item, { key: "rating", op: "gt", value: 3 })).toBe(true);
-    expect(itemMatchesCondition(item, { key: "rating", op: "lt", value: 3 })).toBe(false);
-    expect(itemMatchesCondition(item, { key: "tags", op: "contains", value: "x" })).toBe(true);
-    expect(itemMatchesCondition(item, { key: "tags", op: "contains", value: "z" })).toBe(false);
-    expect(itemMatchesCondition(item, { key: "project", op: "neq", value: "beta" })).toBe(true);
-    expect(itemMatchesCondition(item, { key: "project", op: "in", value: ["beta", "alpha"] })).toBe(
+    expect(itemMatchesCondition(item, { key: "project", op: "has_value", value: "alpha" })).toBe(
       true,
     );
-    expect(itemMatchesCondition(item, { key: "project", op: "in", value: ["beta", "gamma"] })).toBe(
-      false,
+    expect(itemMatchesCondition(item, { key: "project", op: "exists" })).toBe(true);
+    expect(itemMatchesCondition(item, { key: "missing", op: "exists" })).toBe(false);
+    expect(itemMatchesCondition(item, { key: "missing", op: "missing" })).toBe(true);
+    expect(itemMatchesCondition(item, { key: "tags", op: "has_value", value: "x" })).toBe(true);
+    expect(itemMatchesCondition(item, { key: "tags", op: "has_value", value: "z" })).toBe(false);
+    expect(
+      itemMatchesCondition(item, { key: "project", op: "has_any", value: ["beta", "alpha"] }),
+    ).toBe(true);
+    expect(
+      itemMatchesCondition(item, { key: "project", op: "has_any", value: ["beta", "gamma"] }),
+    ).toBe(false);
+    expect(itemMatchesCondition(item, { key: "tags", op: "has_all", value: ["y", "x"] })).toBe(
+      true,
     );
-    expect(itemMatchesCondition(item, { key: "tags", op: "in", value: ["z", "x"] })).toBe(true);
-    expect(itemMatchesCondition(item, { key: "tags", op: "in", value: ["z", "q"] })).toBe(false);
+    expect(itemMatchesCondition(item, { key: "label", op: "is_tag" })).toBe(true);
+    expect(itemMatchesCondition(item, { key: "tags", op: "contains_text", value: "y" })).toBe(true);
     expect(
       itemMatchesCondition(item, {
         key: "system.content_type",
-        op: "in",
+        op: "contains_any",
         value: ["text/", "application/pdf"],
       }),
     ).toBe(true);
     expect(
-      itemMatchesCondition(item, { key: "system.content_type", op: "in", value: ["image/"] }),
+      itemMatchesCondition(item, {
+        key: "system.content_type",
+        op: "contains_any",
+        value: ["image/"],
+      }),
     ).toBe(false);
   });
 
@@ -161,13 +212,27 @@ describe("condition evaluator", () => {
     expect(itemMatchesCondition(item, { key: "name", op: "eq", value: "report.pdf" })).toBe(true);
     expect(itemMatchesCondition(item, { key: "system.size", op: "gte", value: 2048 })).toBe(true);
     expect(itemMatchesCondition(item, { key: "system.size", op: "gt", value: 4096 })).toBe(false);
+    expect(
+      itemMatchesCondition(item, {
+        key: "system.created_at",
+        op: "eq",
+        value: "2025-12-31T19:00:00-05:00",
+      }),
+    ).toBe(true);
+    expect(
+      itemMatchesCondition(item, {
+        key: "system.created_at",
+        op: "lt",
+        value: "2026-01-01T00:00:01Z",
+      }),
+    ).toBe(true);
   });
 
   it("evaluates property-blob conditions without an item", () => {
     const stamp = { project: "alpha" };
-    expect(propertiesMatchCondition(stamp, { key: "project", op: "eq", value: "alpha" })).toBe(
-      true,
-    );
+    expect(
+      propertiesMatchCondition(stamp, { key: "project", op: "has_value", value: "alpha" }),
+    ).toBe(true);
     expect(propertiesMatchCondition(stamp, { key: "project", op: "exists" })).toBe(true);
     expect(propertiesMatchCondition(stamp, { key: "other", op: "exists" })).toBe(false);
   });
@@ -219,7 +284,7 @@ describe("CreateView / UpdateView", () => {
   it("decodes a view with conditions", () => {
     const view = Schema.decodeUnknownSync(CreateView)({
       name: "Diving",
-      conditions: [{ key: "trip", op: "eq", value: "iceland" }],
+      conditions: [{ key: "trip", op: "has_value", value: "iceland" }],
     });
     expect(view.conditions).toHaveLength(1);
   });
@@ -253,7 +318,7 @@ describe("share principal + redaction", () => {
       via: "share",
       share: {
         grantId: "g1",
-        conditions: [{ key: "project", op: "eq", value: "alpha" }],
+        conditions: [{ key: "project", op: "has_value", value: "alpha" }],
         writeStamp: { project: "alpha" },
         limits: { maxItemBytes: null, maxTotalBytes: 1000, maxItems: null },
       },

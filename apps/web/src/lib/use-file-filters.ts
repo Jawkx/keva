@@ -60,10 +60,18 @@ export function useFileFilters({
   const filterByProperty = useCallback(
     (key: string, value: PropertyValue) => {
       const condition: QueryCondition =
-        value === null || Array.isArray(value) ? { key, op: "exists" } : { key, op: "eq", value };
+        value === null
+          ? { key, op: "is_tag" }
+          : Array.isArray(value)
+            ? { key, op: "has_all", value }
+            : { key, op: "has_value", value };
       const next = [
         ...activeWhere.filter(
-          (item) => !(item.key === key && (item.op === "eq" || item.op === "exists")),
+          (item) =>
+            !(
+              item.key === key &&
+              ["exists", "is_tag", "has_value", "has_any", "has_all"].includes(item.op)
+            ),
         ),
         condition,
       ];

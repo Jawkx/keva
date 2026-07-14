@@ -117,8 +117,21 @@ declare module "@tanstack/react-table" {
 
 const propertyChipLabel = (key: string, value: PropertyValue): string => {
   if (value === null) return key;
-  if (Array.isArray(value)) return `${key}:${value.length}`;
   return `${key}:${formatPropertyValue(value)}`;
+};
+
+const uploadStampDescription = (
+  entries: readonly (readonly [string, PropertyValue])[],
+  subject = "New uploads will",
+): string => {
+  const tags = entries.filter(([, value]) => value === null).map(([key]) => key);
+  const values = entries
+    .filter((entry): entry is readonly [string, Exclude<PropertyValue, null>] => entry[1] !== null)
+    .map(([key, value]) => `${key}: ${formatPropertyValue(value)}`);
+  if (tags.length > 0 && values.length > 0)
+    return `${subject} be tagged ${tags.join(", ")} and receive ${values.join(", ")}`;
+  if (tags.length > 0) return `${subject} be tagged ${tags.join(", ")}`;
+  return `${subject} receive ${values.join(", ")}`;
 };
 
 const PAGE_SIZE = 50;
@@ -720,10 +733,7 @@ function FilesPageContent({
       {!selectMode && uploadStampEntries.length > 0 && (
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
           <span className="text-xs text-muted-foreground">
-            New uploads will be tagged{" "}
-            <span className="font-medium text-foreground">
-              {uploadStampEntries.map(([k, v]) => `${k}:${formatPropertyValue(v)}`).join(", ")}
-            </span>
+            {uploadStampDescription(uploadStampEntries)}
           </span>
         </div>
       )}
@@ -851,8 +861,7 @@ function FilesPageContent({
             <p className="font-medium">Drop to upload</p>
             {uploadStampEntries.length > 0 && (
               <p className="text-sm text-muted-foreground">
-                Tagged{" "}
-                {uploadStampEntries.map(([k, v]) => `${k}:${formatPropertyValue(v)}`).join(", ")}
+                {uploadStampDescription(uploadStampEntries, "Files will")}
               </p>
             )}
           </div>

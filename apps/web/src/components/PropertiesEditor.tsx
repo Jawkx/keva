@@ -5,23 +5,21 @@ import {
   BracesIcon,
   Cancel01Icon,
   FloppyDiskIcon,
-  HashIcon,
   ListViewIcon,
   LockIcon,
   TableRowsSplitIcon,
   Tag01Icon,
   TextFontIcon,
-  ToggleOnIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import type { PropertyValue, Properties } from "@keva/schema";
 import {
-  coerceScalar,
+  buildPropertyValue,
   diffProperties,
   parsePropertiesJson,
   prettyJson,
   scalarToInput,
-  type ScalarType,
+  type ValueType,
   validateKey,
   valueType,
 } from "../lib/properties";
@@ -35,7 +33,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
@@ -49,25 +46,14 @@ export interface SystemField {
 
 export const propertyListClass = "divide-y divide-border overflow-hidden rounded-lg border";
 
-const editTypeOf = (value: PropertyValue): ScalarType => {
-  const type = valueType(value);
-  return type === "array" ? "string" : type;
-};
+const editTypeOf = valueType;
 
-const buildValue = (type: ScalarType, draft: string) =>
-  type === "string" && draft.trim() === ""
-    ? ({ ok: true, value: null } as const)
-    : type === "number" && draft.trim() === ""
-      ? ({ ok: false, error: "Enter a number" } as const)
-      : coerceScalar(type, draft);
-
-const TYPE_OPTS: { type: ScalarType; label: string; icon: IconSvgElement }[] = [
-  { type: "null", label: "Bare tag", icon: Tag01Icon },
-  { type: "string", label: "Text", icon: TextFontIcon },
-  { type: "number", label: "Number", icon: HashIcon },
-  { type: "boolean", label: "Boolean", icon: ToggleOnIcon },
+const TYPE_OPTS: { type: ValueType; label: string; icon: IconSvgElement }[] = [
+  { type: "tag", label: "Tag", icon: Tag01Icon },
+  { type: "single", label: "Single value", icon: TextFontIcon },
+  { type: "multiple", label: "Multiple values", icon: ListViewIcon },
 ];
-const typeMeta = (type: ScalarType) => TYPE_OPTS.find((o) => o.type === type)!;
+const typeMeta = (type: ValueType) => TYPE_OPTS.find((o) => o.type === type)!;
 
 const GHOST_INPUT =
   "h-7 border-transparent bg-transparent px-1.5 shadow-none hover:border-input dark:bg-transparent";
@@ -227,9 +213,9 @@ function TypeMenu({
   disabled,
   onChange,
 }: {
-  value: ScalarType;
+  value: ValueType;
   disabled?: boolean | undefined;
-  onChange: (type: ScalarType) => void;
+  onChange: (type: ValueType) => void;
 }) {
   const currentIcon = typeMeta(value).icon;
   return (
@@ -262,8 +248,7 @@ function TypeMenu({
   );
 }
 
-function ScalarValue({
-  type,
+function SingleValue({
   draft,
   valueSuggestions,
   busy,
@@ -272,7 +257,6 @@ function ScalarValue({
   onCommit,
   onEnter,
 }: {
-  type: ScalarType;
   draft: string;
   valueSuggestions: readonly string[];
   busy: boolean;
@@ -281,25 +265,6 @@ function ScalarValue({
   onCommit?: ((draft: string) => void) | undefined;
   onEnter?: (() => void) | undefined;
 }) {
-  if (type === "null") return <span className="text-muted-foreground">—</span>;
-  if (type === "boolean") {
-    return (
-      <Toggle
-        variant="outline"
-        size="sm"
-        pressed={draft === "true"}
-        disabled={busy}
-        className="min-w-14 font-mono"
-        onPressedChange={(pressed) => {
-          const d = pressed ? "true" : "false";
-          onDraft(d);
-          onCommit?.(d);
-        }}
-      >
-        {draft === "true" ? "true" : "false"}
-      </Toggle>
-    );
-  }
   return (
     <SuggestInput
       value={draft}
@@ -307,12 +272,59 @@ function ScalarValue({
       onBlur={onCommit ? () => onCommit(draft) : undefined}
       onEnter={onEnter}
       suggestions={valueSuggestions}
-      inputMode={type === "number" ? "decimal" : undefined}
-      placeholder={type === "number" ? "0" : "value"}
+      placeholder="value"
       className={GHOST_INPUT}
       autoFocus={autoFocus}
       disabled={busy}
     />
+  );
+}
+
+function MultipleValues({
+  values,
+  suggestions,
+  busy,
+  onCommit,
+}: {
+  values: readonly string[];
+  suggestions: readonly string[];
+  busy: boolean;
+  onCommit: (values: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const next = draft.trim();
+    if (!next || values.includes(next)) return;
+    onCommit([...values, next]);
+    setDraft("");
+  };
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+      {values.map((value) => (
+        <span key={value} className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5">
+          <span>{value}</span>
+          <button
+            type="button"
+            aria-label={`Remove value ${value}`}
+            disabled={busy || values.length === 1}
+            onClick={() => onCommit(values.filter((item) => item !== value))}
+            className="text-muted-foreground hover:text-destructive disabled:opacity-40"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+          </button>
+        </span>
+      ))}
+      <SuggestInput
+        value={draft}
+        onValueChange={setDraft}
+        onEnter={add}
+        suggestions={suggestions.filter((item) => !values.includes(item))}
+        placeholder="Add value"
+        aria-label="Add property value"
+        className={cn(GHOST_INPUT, "min-w-28 flex-1")}
+        disabled={busy}
+      />
+    </div>
   );
 }
 
@@ -331,12 +343,11 @@ function CustomRow({
   onCommit: (value: PropertyValue) => Promise<Properties>;
   onRemove: () => void;
 }) {
-  const [type, setType] = useState<ScalarType>(editTypeOf(value));
+  const [type, setType] = useState<ValueType>(editTypeOf(value));
   const [draft, setDraft] = useState(scalarToInput(value));
   const [inputError, setInputError] = useState<string | null>(null);
   const [baseline, setBaseline] = useState(value);
   const valueSuggestions = usePropertyValues(propKey, known);
-  const isArray = Array.isArray(value);
   const baselineChanged = JSON.stringify(baseline) !== JSON.stringify(value);
   const dirty = draft !== scalarToInput(baseline) || type !== editTypeOf(baseline);
   const conflict = dirty && baselineChanged;
@@ -351,13 +362,13 @@ function CustomRow({
   // would pass a prop-based guard and double-send the same patch.
   const lastCommitted = useRef(value);
 
-  const commitScalar = (next: ReturnType<typeof buildValue>) => {
+  const commitValue = (next: ReturnType<typeof buildPropertyValue>) => {
     if (!next.ok) {
       setInputError(next.error);
       return;
     }
     setInputError(null);
-    if (next.value === lastCommitted.current) return;
+    if (JSON.stringify(next.value) === JSON.stringify(lastCommitted.current)) return;
     const rollback = lastCommitted.current;
     lastCommitted.current = next.value;
     onCommit(next.value)
@@ -377,24 +388,21 @@ function CustomRow({
   const overwrite = () => {
     setBaseline(value);
     lastCommitted.current = value;
-    commitScalar(buildValue(type, draft));
+    commitValue(buildPropertyValue(type, draft, Array.isArray(baseline) ? baseline : []));
   };
 
   return (
     <PropRow
       icon={
-        isArray ? (
-          <HugeiconsIcon icon={ListViewIcon} className="size-3.5 text-muted-foreground" />
-        ) : (
-          <TypeMenu
-            value={type}
-            disabled={busy}
-            onChange={(nextType) => {
-              setType(nextType);
-              commitScalar(buildValue(nextType, draft));
-            }}
-          />
-        )
+        <TypeMenu
+          value={type}
+          disabled={busy}
+          onChange={(nextType) => {
+            setType(nextType);
+            const values = Array.isArray(value) ? value : value === null ? [] : [value];
+            commitValue(buildPropertyValue(nextType, draft || values[0] || "", values));
+          }}
+        />
       }
       label={propKey}
       mono
@@ -409,18 +417,22 @@ function CustomRow({
         </>
       }
     >
-      {isArray ? (
-        <span className="truncate font-mono text-muted-foreground" title={value.join(" | ")}>
-          {value.join(" | ")}
-        </span>
+      {type === "tag" ? (
+        <span className="text-muted-foreground">Tag</span>
+      ) : type === "multiple" ? (
+        <MultipleValues
+          values={Array.isArray(value) ? value : value === null ? [] : [value]}
+          suggestions={valueSuggestions}
+          busy={busy}
+          onCommit={(values) => commitValue(buildPropertyValue("multiple", "", values))}
+        />
       ) : (
-        <ScalarValue
-          type={type}
+        <SingleValue
           draft={draft}
           valueSuggestions={valueSuggestions}
           busy={busy}
           onDraft={setDraft}
-          onCommit={(d) => commitScalar(buildValue(type, d))}
+          onCommit={(d) => commitValue(buildPropertyValue("single", d))}
         />
       )}
       {inputError && <span className="text-xs text-destructive">{inputError}</span>}
@@ -443,14 +455,15 @@ function AddRow({
   onAdd: (key: string, value: PropertyValue) => void;
 }) {
   const [key, setKey] = useState("");
-  const [type, setType] = useState<ScalarType>("string");
+  const [type, setType] = useState<ValueType>("single");
   const [draft, setDraft] = useState("");
+  const [values, setValues] = useState<string[]>([]);
 
   const trimmedKey = key.trim();
   const keyError = trimmedKey ? validateKey(trimmedKey) : null;
   const duplicate = appliedKeys.has(trimmedKey);
   const valueSuggestions = usePropertyValues(trimmedKey, knownSet.has(trimmedKey));
-  const value = buildValue(type, draft);
+  const value = buildPropertyValue(type, draft, values);
   const canAdd = trimmedKey !== "" && !keyError && !duplicate && value.ok;
 
   const submit = () => {
@@ -458,8 +471,9 @@ function AddRow({
     if (!value.ok) return;
     onAdd(trimmedKey, value.value);
     setKey("");
-    setType("string");
+    setType("single");
     setDraft("");
+    setValues([]);
   };
 
   return (
@@ -495,14 +509,24 @@ function AddRow({
         </button>
       }
     >
-      <ScalarValue
-        type={type}
-        draft={draft}
-        valueSuggestions={valueSuggestions}
-        busy={busy}
-        onDraft={setDraft}
-        onEnter={submit}
-      />
+      {type === "tag" ? (
+        <span className="text-muted-foreground">Tag</span>
+      ) : type === "multiple" ? (
+        <MultipleValues
+          values={values}
+          suggestions={valueSuggestions}
+          busy={busy}
+          onCommit={setValues}
+        />
+      ) : (
+        <SingleValue
+          draft={draft}
+          valueSuggestions={valueSuggestions}
+          busy={busy}
+          onDraft={setDraft}
+          onEnter={submit}
+        />
+      )}
       {!value.ok && <span className="text-xs text-destructive">{value.error}</span>}
     </PropRow>
   );

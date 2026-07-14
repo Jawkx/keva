@@ -36,6 +36,24 @@ const encodedBytes = (value: unknown): number =>
 
 const stringBytes = (value: string): number => new TextEncoder().encode(value).byteLength;
 
+export const canonicalizePropertyValue = (value: PropertyValue): PropertyValue =>
+  Array.isArray(value) ? [...value].sort() : value;
+
+export const canonicalizeProperties = (
+  properties: Readonly<Record<string, PropertyValue>>,
+): Record<string, PropertyValue> =>
+  Object.fromEntries(
+    Object.entries(properties).map(([key, value]) => [key, canonicalizePropertyValue(value)]),
+  );
+
+export const propertyValuesEqual = (
+  left: PropertyValue | undefined,
+  right: PropertyValue | undefined,
+): boolean => {
+  if (!Array.isArray(left) || !Array.isArray(right)) return Object.is(left, right);
+  return left.length === right.length && left.every((value) => right.includes(value));
+};
+
 export const queryKeyPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const RESERVED_PREFIXES = ["system.", "keva."] as const;
 
@@ -46,13 +64,19 @@ export const isPropertyKey = (key: string): boolean =>
   queryKeyPattern.test(key) && key.length <= PROPERTY_LIMITS.keyLength && !isReservedKey(key);
 
 const isPropertyValueWithinLimits = (value: PropertyValue): boolean => {
-  if (typeof value === "string") return stringBytes(value) <= PROPERTY_LIMITS.stringBytes;
+  if (typeof value === "string")
+    return value.length > 0 && stringBytes(value) <= PROPERTY_LIMITS.stringBytes;
   if (!Array.isArray(value)) return true;
-  if (value.length > PROPERTY_LIMITS.arrayItems) return false;
   return (
-    value.every((entry) => typeof entry === "string") ||
-    value.every((entry) => typeof entry === "number") ||
-    value.every((entry) => typeof entry === "boolean")
+    value.length > 0 &&
+    value.length <= PROPERTY_LIMITS.arrayItems &&
+    new Set(value).size === value.length &&
+    value.every(
+      (entry) =>
+        typeof entry === "string" &&
+        entry.length > 0 &&
+        stringBytes(entry) <= PROPERTY_LIMITS.stringBytes,
+    )
   );
 };
 
@@ -168,9 +192,7 @@ export const FIELD_BY_KEY: ReadonlyMap<string, FieldDescriptor> = new Map(
 );
 
 // A key is queryable if it is a declared field or a valid user-property key.
-// (`keva.`-prefixed keys pass the pattern but match nothing — preserved as-is.)
-export const isQueryKey = (key: string): boolean =>
-  FIELD_BY_KEY.has(key) || (!key.startsWith("system.") && queryKeyPattern.test(key));
+export const isQueryKey = (key: string): boolean => FIELD_BY_KEY.has(key) || isPropertyKey(key);
 
 export interface RoutedPatch {
   readonly fields: Readonly<Record<string, PropertyValue>>;
@@ -206,7 +228,7 @@ export const routePatch = (
     if (!isPropertyKey(key)) {
       return { ok: false, error: { key, reason: "invalid or reserved key" } };
     }
-    properties[key] = value;
+    properties[key] = canonicalizePropertyValue(value);
   }
 
   for (const key of unset) {
