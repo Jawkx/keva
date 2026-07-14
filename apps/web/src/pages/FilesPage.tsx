@@ -242,7 +242,7 @@ const columns = [
     cell: (ctx) => {
       const { properties } = ctx.row.original;
       const keys = Object.keys(properties).slice(0, 3);
-      if (keys.length === 0) return <span className="text-muted-foreground">—</span>;
+      if (keys.length === 0) return null;
       const onFilter = ctx.table.options.meta?.onFilterByProperty;
       return (
         <div className="flex flex-wrap gap-1">
