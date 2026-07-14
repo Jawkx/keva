@@ -1,6 +1,5 @@
+import { TriangleAlert } from "lucide-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Alert02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import type { ItemEvent } from "@keva/sdk";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate, formatPropertyValue, formatRelative } from "../lib/format";
@@ -83,7 +82,7 @@ export function FileActivity({ itemId }: { readonly itemId: string }) {
   if (eventsQuery.error) {
     return (
       <Alert variant="destructive">
-        <HugeiconsIcon icon={Alert02Icon} />
+        <TriangleAlert />
         <AlertTitle>{errorMessage(eventsQuery.error)}</AlertTitle>
       </Alert>
     );

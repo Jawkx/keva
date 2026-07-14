@@ -1,5 +1,4 @@
-import { Unlink01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { Unlink } from "lucide-react";
 import {
   Empty,
   EmptyDescription,
@@ -15,7 +14,7 @@ export function ShareUnavailable() {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <HugeiconsIcon icon={Unlink01Icon} />
+            <Unlink />
           </EmptyMedia>
           <EmptyTitle>This link is no longer available</EmptyTitle>
           <EmptyDescription>

@@ -1,7 +1,6 @@
+import { KeyRound, Plug } from "lucide-react";
 import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Key01Icon, Plug01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { PageHeader } from "../components/PageHeader";
 import { ApiTokensSection } from "./connection/ApiTokensSection";
 import { ConnectedAppsSection } from "./connection/ConnectedAppsSection";
@@ -45,7 +44,7 @@ export function ConnectionPage() {
             variant={tab === "mcp" ? "default" : "outline"}
             onClick={() => setTab("mcp")}
           >
-            <HugeiconsIcon icon={Plug01Icon} data-icon="inline-start" />
+            <Plug data-icon="inline-start" />
             MCP
           </Button>
           <Button
@@ -53,7 +52,7 @@ export function ConnectionPage() {
             variant={tab === "api" ? "default" : "outline"}
             onClick={() => setTab("api")}
           >
-            <HugeiconsIcon icon={Key01Icon} data-icon="inline-start" />
+            <KeyRound data-icon="inline-start" />
             API tokens
           </Button>
         </div>

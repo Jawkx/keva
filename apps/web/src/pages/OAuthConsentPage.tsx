@@ -1,6 +1,5 @@
+import { Plug, TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { Alert02Icon, Plug01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { parseConsentRequest, SCOPE_DESCRIPTIONS, submitConsent } from "../lib/oauth";
 import { useMountEffect } from "../lib/useMountEffect";
 import { Alert, AlertTitle } from "@/components/ui/alert";
@@ -39,7 +38,7 @@ export function OAuthConsentPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <HugeiconsIcon icon={Plug01Icon} className="size-5 text-muted-foreground" />
+              <Plug className="size-5 text-muted-foreground" />
               Authorize access
             </CardTitle>
             <CardDescription>
@@ -49,7 +48,7 @@ export function OAuthConsentPage() {
           <CardContent className="flex flex-col gap-4">
             {error && (
               <Alert variant="destructive">
-                <HugeiconsIcon icon={Alert02Icon} />
+                <TriangleAlert />
                 <AlertTitle>{error}</AlertTitle>
               </Alert>
             )}

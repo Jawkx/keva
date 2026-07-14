@@ -1,7 +1,6 @@
+import { Link } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import {
   propertiesMatchCondition,
@@ -173,7 +172,7 @@ export function ShareCreateDialog({
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-lg border bg-muted/40 py-1 pr-1 pl-3">
-              <HugeiconsIcon icon={Link01Icon} className="size-4 shrink-0 text-muted-foreground" />
+              <Link className="size-4 shrink-0 text-muted-foreground" />
               <input
                 readOnly
                 value={link}

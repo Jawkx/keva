@@ -1,6 +1,5 @@
+import { Plug } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plug01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import { listConnections, revokeConnection } from "../../lib/connections";
 import { formatDate } from "../../lib/format";
@@ -58,7 +57,7 @@ export function ConnectedAppsSection() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <HugeiconsIcon icon={Plug01Icon} />
+              <Plug />
             </EmptyMedia>
             <EmptyTitle>No connected applications</EmptyTitle>
             <EmptyDescription>Agents you authorize over MCP will appear here.</EmptyDescription>

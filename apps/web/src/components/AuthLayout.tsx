@@ -1,13 +1,5 @@
+import { FileCode2, FileSpreadsheet, FileText, Image, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  File02Icon,
-  FileSpreadsheetIcon,
-  Image01Icon,
-  Pdf01Icon,
-  Svg01Icon,
-  TextIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
 
 function Chip({ children, accent }: { children: ReactNode; accent?: boolean }) {
@@ -28,16 +20,17 @@ function Chip({ children, accent }: { children: ReactNode; accent?: boolean }) {
 type MockFile = {
   name: string;
   meta: string;
-  icon: IconSvgElement;
+  icon: LucideIcon;
   chips: [label: string, accent: boolean][];
 };
 
 function FileCard({ file }: { file: MockFile }) {
+  const Icon = file.icon;
   return (
     <div className="mr-6 w-72 shrink-0 rounded-xl border border-white/10 bg-[#141922] p-5">
       <div className="flex items-center gap-3.5">
         <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-          <HugeiconsIcon icon={file.icon} className="size-[22px]" />
+          <Icon className="size-[22px]" />
         </div>
         <div className="min-w-0">
           <div className="truncate text-base font-medium text-white/90">{file.name}</div>
@@ -59,7 +52,7 @@ const FILES: MockFile[] = [
   {
     name: "annual-report.pdf",
     meta: "PDF · 2.4 MB",
-    icon: Pdf01Icon,
+    icon: FileText,
     chips: [
       ["category=finance", false],
       ["year=2026", true],
@@ -68,13 +61,13 @@ const FILES: MockFile[] = [
   {
     name: "brand-logo.svg",
     meta: "SVG · 12 KB",
-    icon: Svg01Icon,
+    icon: FileCode2,
     chips: [["project=brand", false]],
   },
   {
     name: "q2-budget.xlsx",
     meta: "XLSX · 88 KB",
-    icon: FileSpreadsheetIcon,
+    icon: FileSpreadsheet,
     chips: [
       ["category=finance", false],
       ["status=final", true],
@@ -83,19 +76,19 @@ const FILES: MockFile[] = [
   {
     name: "rooftop.jpg",
     meta: "JPEG · 3.1 MB",
-    icon: Image01Icon,
+    icon: Image,
     chips: [["album=travel", false]],
   },
   {
     name: "contract.pdf",
     meta: "PDF · 480 KB",
-    icon: File02Icon,
+    icon: FileText,
     chips: [
       ["type=legal", false],
       ["signed=true", true],
     ],
   },
-  { name: "notes.md", meta: "MD · 4 KB", icon: TextIcon, chips: [["pinned=true", false]] },
+  { name: "notes.md", meta: "MD · 4 KB", icon: FileText, chips: [["pinned=true", false]] },
 ];
 
 function FileRow({ ariaHidden }: { ariaHidden?: boolean }) {

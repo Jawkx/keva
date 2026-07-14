@@ -1,14 +1,9 @@
+import { LoaderCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Loading03Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 
-function Spinner({
-  className,
-  ...props
-}: Omit<React.ComponentProps<typeof HugeiconsIcon>, "icon">) {
+function Spinner({ className, ...props }: React.ComponentProps<typeof LoaderCircle>) {
   return (
-    <HugeiconsIcon
-      icon={Loading03Icon}
+    <LoaderCircle
       data-slot="spinner"
       role="status"
       aria-label="Loading"

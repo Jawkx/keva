@@ -1,16 +1,7 @@
+import { ChevronsUpDown, Database, Files, LogOut, PanelLeft, Plug, Settings } from "lucide-react";
 import { type MouseEvent, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  DatabaseIcon,
-  Files01Icon,
-  Logout01Icon,
-  Plug01Icon,
-  Settings01Icon,
-  SidebarLeftIcon,
-  UnfoldMoreIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
@@ -99,10 +90,7 @@ function AppSidebar() {
               alt="Keva"
               className="size-7 rounded-sm object-cover opacity-100 transition-opacity duration-200 group-hover/logo:opacity-0"
             />
-            <HugeiconsIcon
-              icon={SidebarLeftIcon}
-              className="absolute size-5 opacity-0 transition-opacity duration-200 group-hover/logo:opacity-100"
-            />
+            <PanelLeft className="absolute size-5 opacity-0 transition-opacity duration-200 group-hover/logo:opacity-100" />
           </button>
         </div>
       </SidebarHeader>
@@ -121,22 +109,25 @@ function AppSidebar() {
                   tooltip="All files"
                   render={<Link to="/" />}
                 >
-                  <HugeiconsIcon icon={Files01Icon} />
+                  <Files />
                   <span>All</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {views?.map((view) => (
-                <SidebarMenuItem key={view.id}>
-                  <SidebarMenuButton
-                    isActive={location.pathname.startsWith(`/v/${view.id}`)}
-                    tooltip={view.name}
-                    render={<Link to={`/v/${view.id}`} />}
-                  >
-                    <HugeiconsIcon icon={viewIcon(view.icon)} />
-                    <span>{view.name}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {views?.map((view) => {
+                const Icon = viewIcon(view.icon);
+                return (
+                  <SidebarMenuItem key={view.id}>
+                    <SidebarMenuButton
+                      isActive={location.pathname.startsWith(`/v/${view.id}`)}
+                      tooltip={view.name}
+                      render={<Link to={`/v/${view.id}`} />}
+                    >
+                      <Icon />
+                      <span>{view.name}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -150,14 +141,14 @@ function AppSidebar() {
               tooltip="Connection"
               render={<Link to="/connection" />}
             >
-              <HugeiconsIcon icon={Plug01Icon} />
+              <Plug />
               <span>Connection</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
         {usage && usage.itemCount > 0 && (
           <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-            <HugeiconsIcon icon={DatabaseIcon} className="size-3.5 shrink-0" />
+            <Database className="size-3.5 shrink-0" />
             <span className="truncate">
               <span className="font-medium text-foreground tabular-nums">
                 {formatBytes(usage.totalBytes)}
@@ -182,10 +173,7 @@ function AppSidebar() {
                   <span className="truncate text-sm font-medium">{name}</span>
                   <span className="truncate text-xs text-muted-foreground">{email}</span>
                 </div>
-                <HugeiconsIcon
-                  icon={UnfoldMoreIcon}
-                  className="ml-auto size-4 text-muted-foreground"
-                />
+                <ChevronsUpDown className="ml-auto size-4 text-muted-foreground" />
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="min-w-56">
                 <DropdownMenuGroup>
@@ -194,14 +182,14 @@ function AppSidebar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuItem render={<Link to="/settings" />}>
-                    <HugeiconsIcon icon={Settings01Icon} />
+                    <Settings />
                     Settings
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuItem variant="destructive" disabled={signingOut} onClick={onSignOut}>
-                    <HugeiconsIcon icon={Logout01Icon} />
+                    <LogOut />
                     {signingOut ? "Signing out…" : "Sign out"}
                   </DropdownMenuItem>
                 </DropdownMenuGroup>

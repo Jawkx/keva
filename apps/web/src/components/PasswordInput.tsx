@@ -1,6 +1,5 @@
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
-import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -19,7 +18,7 @@ export function PasswordInput(props: React.ComponentProps<typeof InputGroupInput
           aria-label={show ? "Hide password" : "Show password"}
           onClick={() => setShow((s) => !s)}
         >
-          {show ? <HugeiconsIcon icon={ViewOffIcon} /> : <HugeiconsIcon icon={ViewIcon} />}
+          {show ? <EyeOff /> : <Eye />}
         </InputGroupButton>
       </InputGroupAddon>
     </InputGroup>

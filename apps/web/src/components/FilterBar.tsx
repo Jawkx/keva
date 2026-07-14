@@ -1,12 +1,5 @@
+import { Check, ListFilter, LockKeyhole, Plus, X } from "lucide-react";
 import { useMemo, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
-import {
-  Add01Icon,
-  Cancel01Icon,
-  FilterIcon,
-  LockIcon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import type { Operator, PropertySummary, PropertyValue, QueryCondition } from "@keva/schema";
 import { formatPropertyValue } from "../lib/format";
 import {
@@ -99,7 +92,7 @@ function MenuRow({
             checked && "border-primary bg-primary text-primary-foreground",
           )}
         >
-          {checked && <HugeiconsIcon icon={Tick02Icon} className="size-3" />}
+          {checked && <Check className="size-3" />}
         </span>
       )}
       <span className="min-w-0 flex-1 truncate">{children}</span>
@@ -311,7 +304,7 @@ function RemoveSegment({ label, onRemove }: { label: string; onRemove: () => voi
       className="flex items-center px-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
       onClick={onRemove}
     >
-      <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+      <X className="size-3" />
     </button>
   );
 }
@@ -385,7 +378,7 @@ function RowChip({
           {operators.map((op) => (
             <DropdownMenuItem key={op} onClick={() => onOpChange(op)}>
               <span className="flex-1">{FILTER_OPERATOR_LABELS[op]}</span>
-              {op === displayedOp && <HugeiconsIcon icon={Tick02Icon} className="size-3.5" />}
+              {op === displayedOp && <Check className="size-3.5" />}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -574,7 +567,7 @@ export function PropertyStampChips({
             title="Fixed by current view"
             aria-label={`${row.key} is fixed by current view`}
           >
-            <HugeiconsIcon icon={LockIcon} className="size-3" />
+            <LockKeyhole className="size-3" />
           </span>
         </Chip>
       ))}
@@ -614,7 +607,7 @@ export function PropertyStampChips({
         <DropdownMenuTrigger
           render={<Button variant="ghost" size="icon-sm" aria-label="Add upload property" />}
         >
-          <HugeiconsIcon icon={Add01Icon} className="size-3.5" />
+          <Plus className="size-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
           <DropdownMenuGroup>
@@ -946,7 +939,7 @@ export function FilterMenuButton(props: FilterMenuProps) {
       trigger={<Button variant="outline" />}
       triggerContent={
         <>
-          <HugeiconsIcon icon={FilterIcon} data-icon="inline-start" />
+          <ListFilter data-icon="inline-start" />
           Filter
         </>
       }
@@ -1102,7 +1095,7 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
         onDraftChange={onDraftChange}
         onApply={onApply}
         trigger={<Button variant="ghost" size="icon-sm" aria-label="Add filter" />}
-        triggerContent={<HugeiconsIcon icon={Add01Icon} className="size-3.5" />}
+        triggerContent={<Plus className="size-3.5" />}
       />
       {where.length > 0 && (
         <Button variant="ghost" size="sm" onClick={onClear}>

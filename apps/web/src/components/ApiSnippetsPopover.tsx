@@ -1,7 +1,6 @@
+import { CodeXml } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { CodeIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import type { QueryCondition } from "@keva/schema";
 import { CodeBlock } from "./CodeBlock";
 import { Button } from "@/components/ui/button";
@@ -43,7 +42,7 @@ export function ApiSnippetsPopover({ search, where }: { search: string; where: Q
           />
         }
       >
-        <HugeiconsIcon icon={CodeIcon} />
+        <CodeXml />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[34rem] max-w-[calc(100vw-2rem)] gap-4 p-4">
         <CodeBlock label="curl" code={snippets.curl} />

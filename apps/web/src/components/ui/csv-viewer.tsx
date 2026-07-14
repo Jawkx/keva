@@ -4,6 +4,16 @@
 // Re-add this header if updated via `shadcn add @extend/csv-viewer`.
 "use client";
 
+import {
+  ArrowLeft,
+  ArrowRight,
+  CircleMinus,
+  CirclePlus,
+  Download,
+  Ellipsis,
+  Search,
+  Upload,
+} from "lucide-react";
 import * as React from "react";
 import type * as GlideDataGrid from "@glideapps/glide-data-grid";
 import type {
@@ -19,17 +29,6 @@ import { CompactSelection, emptyGridSelection } from "@glideapps/glide-data-grid
 
 import "@glideapps/glide-data-grid/dist/index.css";
 
-import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
-  Download01Icon,
-  MinusSignCircleIcon,
-  MoreHorizontalIcon,
-  PlusSignCircleIcon,
-  Search01Icon,
-  Upload01Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import Papa from "papaparse";
 
 import { cn } from "@/lib/utils";
@@ -260,19 +259,15 @@ function CsvFileActionsMenu({
           />
         }
       >
-        <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
+        <Ellipsis className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
-          <HugeiconsIcon icon={Download01Icon} className="size-4" />
+          <Download className="size-4" />
           Download
         </DropdownMenuItem>
         <DropdownMenuItem disabled={isPending} onClick={onUploadClick}>
-          {isPending ? (
-            <Spinner className="size-4" />
-          ) : (
-            <HugeiconsIcon icon={Upload01Icon} className="size-4" />
-          )}
+          {isPending ? <Spinner className="size-4" /> : <Upload className="size-4" />}
           Upload
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -437,7 +432,7 @@ function CsvSearchPopover({
             />
           }
         >
-          <HugeiconsIcon icon={Search01Icon} className="size-4" />
+          <Search className="size-4" />
         </PopoverTrigger>
       </ToolbarTooltip>
       <PopoverContent align="end" className="w-72">
@@ -486,7 +481,7 @@ function CsvSearchPopover({
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
               >
-                <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+                <ArrowLeft className="size-4" />
               </Button>
               <Button
                 type="button"
@@ -496,7 +491,7 @@ function CsvSearchPopover({
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
               >
-                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+                <ArrowRight className="size-4" />
               </Button>
             </div>
           </div>
@@ -707,7 +702,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
                   disabled={zoom <= ZOOM_OPTIONS[0]}
                   onClick={() => stepZoom(-1)}
                 >
-                  <HugeiconsIcon icon={MinusSignCircleIcon} className="size-4" />
+                  <CircleMinus className="size-4" />
                 </Button>
               </ToolbarTooltip>
               <Select
@@ -734,7 +729,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
                   disabled={zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
                   onClick={() => stepZoom(1)}
                 >
-                  <HugeiconsIcon icon={PlusSignCircleIcon} className="size-4" />
+                  <CirclePlus className="size-4" />
                 </Button>
               </ToolbarTooltip>
             </div>
@@ -792,7 +787,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
                 disabled={isPending}
                 onClick={() => inputRef.current?.click()}
               >
-                <HugeiconsIcon icon={Upload01Icon} className="size-4" />
+                <Upload className="size-4" />
                 Upload CSV
               </Button>
             </div>

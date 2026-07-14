@@ -1,6 +1,5 @@
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Delete02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +30,7 @@ export function ConfirmRevoke({ title, description, label, onConfirm }: ConfirmR
           <Button size="icon-sm" variant="ghost" className="text-destructive" aria-label={label} />
         }
       >
-        <HugeiconsIcon icon={Delete02Icon} />
+        <Trash2 />
       </AlertDialogTrigger>
       <AlertDialogContent size="sm">
         <AlertDialogHeader>

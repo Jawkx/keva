@@ -1,15 +1,14 @@
+import { Monitor, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { useTheme } from "next-themes";
-import { ComputerIcon, Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { useMountEffect } from "../lib/useMountEffect";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const OPTIONS = [
-  { value: "light", label: "Light", icon: Sun03Icon },
-  { value: "system", label: "System", icon: ComputerIcon },
-  { value: "dark", label: "Dark", icon: Moon02Icon },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "system", label: "System", icon: Monitor },
+  { value: "dark", label: "Dark", icon: Moon },
 ] as const;
 
 export function AppearanceCard() {
@@ -33,12 +32,15 @@ export function AppearanceCard() {
           }}
           aria-label="Theme"
         >
-          {OPTIONS.map((option) => (
-            <ToggleGroupItem key={option.value} value={option.value} className="gap-2 px-4">
-              <HugeiconsIcon icon={option.icon} />
-              {option.label}
-            </ToggleGroupItem>
-          ))}
+          {OPTIONS.map((option) => {
+            const Icon = option.icon;
+            return (
+              <ToggleGroupItem key={option.value} value={option.value} className="gap-2 px-4">
+                <Icon />
+                {option.label}
+              </ToggleGroupItem>
+            );
+          })}
         </ToggleGroup>
       </CardContent>
     </Card>

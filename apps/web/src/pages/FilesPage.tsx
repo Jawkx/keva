@@ -1,3 +1,17 @@
+import {
+  ArrowDown,
+  CloudUpload,
+  EllipsisVertical,
+  Files,
+  LoaderCircle,
+  Pencil,
+  Save,
+  Search,
+  Share2,
+  Trash2,
+  TriangleAlert,
+  Upload,
+} from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -11,21 +25,6 @@ import {
   type RowSelectionState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import {
-  Alert02Icon,
-  ArrowDown01Icon,
-  CloudUploadIcon,
-  Delete02Icon,
-  Files01Icon,
-  FloppyDiskIcon,
-  Loading03Icon,
-  MoreVerticalIcon,
-  PencilEdit01Icon,
-  Search01Icon,
-  Share03Icon,
-  Upload01Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
@@ -170,8 +169,7 @@ const columns = [
       const upload = row.original.upload;
       if (upload?.status === "uploading") {
         return (
-          <HugeiconsIcon
-            icon={Loading03Icon}
+          <LoaderCircle
             aria-label="Uploading"
             className="size-4 animate-spin text-muted-foreground"
           />
@@ -186,7 +184,7 @@ const columns = [
             onClick={() => table.options.meta?.onRetryUpload(row.original)}
             className="flex size-5 items-center justify-center rounded text-destructive hover:bg-destructive/10"
           >
-            <HugeiconsIcon icon={Alert02Icon} className="size-4" />
+            <TriangleAlert className="size-4" />
           </button>
         );
       }
@@ -619,7 +617,7 @@ function FilesPageContent({
                   />
                 }
               >
-                <HugeiconsIcon icon={Delete02Icon} data-icon="inline-start" />
+                <Trash2 data-icon="inline-start" />
                 Delete
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -650,10 +648,7 @@ function FilesPageContent({
         ) : (
           <>
             <div className="relative w-full min-w-0 sm:w-72">
-              <HugeiconsIcon
-                icon={Search01Icon}
-                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-              />
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search by name or type…"
                 className="pl-8"
@@ -668,7 +663,7 @@ function FilesPageContent({
                 onApply={applyWhere}
               />
               <Button onClick={() => uploadInputRef.current?.click()}>
-                <HugeiconsIcon icon={Upload01Icon} data-icon="inline-start" />
+                <Upload data-icon="inline-start" />
                 Upload
               </Button>
             </div>
@@ -698,20 +693,20 @@ function FilesPageContent({
                     onClick={saveViewEdits}
                     disabled={updateViewMutation.isPending}
                   >
-                    <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+                    <Save data-icon="inline-start" />
                     Save
                   </Button>
                 </>
               )
             ) : (
               <Button variant="ghost" size="sm" onClick={() => setSaveViewOpen(true)}>
-                <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+                <Save data-icon="inline-start" />
                 Save as view
               </Button>
             )}
             <ButtonGroup>
               <Button variant="outline" size="sm" onClick={openShare}>
-                <HugeiconsIcon icon={Share03Icon} data-icon="inline-start" />
+                <Share2 data-icon="inline-start" />
                 Share
               </Button>
               {viewShares.length > 0 && (
@@ -742,7 +737,7 @@ function FilesPageContent({
           <Empty className="py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={Search01Icon} />
+                <Search />
               </EmptyMedia>
               <EmptyTitle>No matches</EmptyTitle>
               <EmptyDescription>No items match your search and filters.</EmptyDescription>
@@ -758,6 +753,7 @@ function FilesPageContent({
     </div>
   );
 
+  const HeaderViewIcon = viewIcon(view?.icon);
   const headerControls = (
     <>
       {viewId && view ? (
@@ -772,9 +768,9 @@ function FilesPageContent({
                 aria-label="Change view icon"
                 className="group/vicon relative flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-muted"
               >
-                <HugeiconsIcon icon={viewIcon(view.icon)} className="size-6" />
+                <HeaderViewIcon className="size-6" />
                 <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vicon:opacity-100">
-                  <HugeiconsIcon icon={PencilEdit01Icon} className="size-3.5" />
+                  <Pencil className="size-3.5" />
                 </span>
               </button>
             }
@@ -803,7 +799,7 @@ function FilesPageContent({
                 onClick={startNameEdit}
                 className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/vname:opacity-100 focus-visible:opacity-100"
               >
-                <HugeiconsIcon icon={PencilEdit01Icon} className="size-4" />
+                <Pencil className="size-4" />
               </button>
             </div>
           )}
@@ -811,16 +807,16 @@ function FilesPageContent({
             <DropdownMenuTrigger
               render={<Button variant="ghost" size="icon" aria-label="View options" />}
             >
-              <HugeiconsIcon icon={MoreVerticalIcon} />
+              <EllipsisVertical />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuItem onClick={startNameEdit}>
-                <HugeiconsIcon icon={PencilEdit01Icon} />
+                <Pencil />
                 Rename
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onClick={() => setDeleteViewOpen(true)}>
-                <HugeiconsIcon icon={Delete02Icon} />
+                <Trash2 />
                 Delete view
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -828,7 +824,7 @@ function FilesPageContent({
         </div>
       ) : (
         <span className="flex items-center gap-2.5 px-2.5 py-1.5 text-[21px] leading-none font-medium">
-          <HugeiconsIcon icon={Files01Icon} className="size-6 shrink-0" />
+          <Files className="size-6 shrink-0" />
           All
         </span>
       )}
@@ -857,7 +853,7 @@ function FilesPageContent({
       {pageDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8 text-center">
-            <HugeiconsIcon icon={CloudUploadIcon} className="size-7 text-primary" />
+            <CloudUpload className="size-7 text-primary" />
             <p className="font-medium">Drop to upload</p>
             {uploadStampEntries.length > 0 && (
               <p className="text-sm text-muted-foreground">
@@ -871,7 +867,7 @@ function FilesPageContent({
       {error && (
         <div className="shrink-0 p-4">
           <Alert variant="destructive">
-            <HugeiconsIcon icon={Alert02Icon} />
+            <TriangleAlert />
             <AlertTitle>{error}</AlertTitle>
           </Alert>
         </div>
@@ -882,7 +878,7 @@ function FilesPageContent({
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={Files01Icon} />
+                <Files />
               </EmptyMedia>
               <EmptyTitle>No items yet</EmptyTitle>
               <EmptyDescription>
@@ -890,7 +886,7 @@ function FilesPageContent({
               </EmptyDescription>
             </EmptyHeader>
             <Button onClick={() => uploadInputRef.current?.click()}>
-              <HugeiconsIcon icon={Upload01Icon} data-icon="inline-start" />
+              <Upload data-icon="inline-start" />
               Upload
             </Button>
           </Empty>
@@ -1017,7 +1013,7 @@ function SortButton({ label }: { label: string }) {
   return (
     <span className="-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-foreground">
       {label}
-      <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" />
+      <ArrowDown className="size-3.5" />
     </span>
   );
 }

@@ -1,5 +1,4 @@
-import { Plug01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { Plug } from "lucide-react";
 import { CodeBlock } from "../../components/CodeBlock";
 import { CopyButton } from "../../components/CopyButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +18,7 @@ export function McpSetupCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <HugeiconsIcon icon={Plug01Icon} className="size-5 text-muted-foreground" />
+          <Plug className="size-5 text-muted-foreground" />
           Model Context Protocol
         </CardTitle>
         <CardDescription>

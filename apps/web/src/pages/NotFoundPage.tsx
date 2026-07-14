@@ -1,6 +1,5 @@
+import { CircleAlert } from "lucide-react";
 import { Link } from "react-router-dom";
-import { AlertCircleIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -15,7 +14,7 @@ export function NotFoundPage() {
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <HugeiconsIcon icon={AlertCircleIcon} />
+          <CircleAlert />
         </EmptyMedia>
         <EmptyTitle>Page not found</EmptyTitle>
         <EmptyDescription>

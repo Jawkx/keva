@@ -486,7 +486,7 @@ export const ViewRecord = Schema.Struct({
   id: Schema.String,
   tenantId: Schema.String,
   name: Schema.NonEmptyString,
-  // A HugeIcons key resolved to an icon by the web client; null = default icon.
+  // A Lucide icon key resolved by the web client; null = default icon.
   icon: Schema.NullOr(Schema.String),
   conditions: Schema.Array(QueryCondition),
   createdAt: Schema.String,

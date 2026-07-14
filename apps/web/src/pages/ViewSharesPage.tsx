@@ -1,8 +1,7 @@
+import { ArrowLeft, Plus, Share2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Add01Icon, Alert02Icon, ArrowLeft01Icon, Share03Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import { CopyButton } from "../components/CopyButton";
 import { PageHeader } from "../components/PageHeader";
@@ -66,7 +65,7 @@ export function ViewSharesPage() {
 
   const createButton = (
     <Button variant="outline" onClick={() => setCreateOpen(true)}>
-      <HugeiconsIcon icon={Add01Icon} data-icon="inline-start" />
+      <Plus data-icon="inline-start" />
       New share link
     </Button>
   );
@@ -88,7 +87,7 @@ export function ViewSharesPage() {
           to={viewId ? `/v/${viewId}` : "/"}
           className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
-          <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+          <ArrowLeft className="size-4" />
           {view ? view.name : "Back"}
         </Link>
 
@@ -104,7 +103,7 @@ export function ViewSharesPage() {
 
         {error ? (
           <Alert variant="destructive">
-            <HugeiconsIcon icon={Alert02Icon} />
+            <TriangleAlert />
             <AlertTitle>{error}</AlertTitle>
           </Alert>
         ) : sharesQuery.isLoading ? (
@@ -117,7 +116,7 @@ export function ViewSharesPage() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={Share03Icon} />
+                <Share2 />
               </EmptyMedia>
               <EmptyTitle>No share links yet</EmptyTitle>
               <EmptyDescription>

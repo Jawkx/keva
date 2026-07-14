@@ -1,17 +1,17 @@
-import { type ReactNode, useMemo, useRef, useState } from "react";
 import {
-  Add01Icon,
-  Alert02Icon,
-  BracesIcon,
-  Cancel01Icon,
-  FloppyDiskIcon,
-  ListViewIcon,
-  LockIcon,
-  TableRowsSplitIcon,
-  Tag01Icon,
-  TextFontIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+  Braces,
+  List,
+  LockKeyhole,
+  Plus,
+  Rows3,
+  Save,
+  Tag,
+  TriangleAlert,
+  Type,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import type { PropertyValue, Properties } from "@keva/schema";
 import {
   buildPropertyValue,
@@ -49,10 +49,10 @@ export const propertyListClass = "divide-y divide-border overflow-hidden rounded
 
 const editTypeOf = valueType;
 
-const TYPE_OPTS: { type: ValueType; label: string; icon: IconSvgElement }[] = [
-  { type: "tag", label: "Tag", icon: Tag01Icon },
-  { type: "single", label: "Single value", icon: TextFontIcon },
-  { type: "multiple", label: "Multiple values", icon: ListViewIcon },
+const TYPE_OPTS: { type: ValueType; label: string; icon: LucideIcon }[] = [
+  { type: "tag", label: "Tag", icon: Tag },
+  { type: "single", label: "Single value", icon: Type },
+  { type: "multiple", label: "Multiple values", icon: List },
 ];
 const typeMeta = (type: ValueType) => TYPE_OPTS.find((o) => o.type === type)!;
 
@@ -117,10 +117,10 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
           aria-label="Editor mode"
         >
           <ToggleGroupItem value="rows" title="Rows">
-            <HugeiconsIcon icon={TableRowsSplitIcon} />
+            <Rows3 />
           </ToggleGroupItem>
           <ToggleGroupItem value="json" title="JSON">
-            <HugeiconsIcon icon={BracesIcon} />
+            <Braces />
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
@@ -176,7 +176,7 @@ const systemRowNodes = (rows: readonly SystemField[]) =>
       key={`sys:${f.key}`}
       icon={
         <span title="System · read-only">
-          <HugeiconsIcon icon={LockIcon} className="size-3.5 text-muted-foreground" />
+          <LockKeyhole className="size-3.5 text-muted-foreground" />
         </span>
       }
       label={f.key}
@@ -204,7 +204,7 @@ function RemoveButton({
       className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100 [&>svg]:size-4"
       onClick={onClick}
     >
-      <HugeiconsIcon icon={Cancel01Icon} />
+      <X />
     </button>
   );
 }
@@ -218,7 +218,7 @@ function TypeMenu({
   disabled?: boolean | undefined;
   onChange: (type: ValueType) => void;
 }) {
-  const currentIcon = typeMeta(value).icon;
+  const CurrentIcon = typeMeta(value).icon;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -231,16 +231,16 @@ function TypeMenu({
           />
         }
       >
-        <HugeiconsIcon icon={currentIcon} className="text-muted-foreground" />
+        <CurrentIcon className="text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-36">
-        {TYPE_OPTS.map(({ type, label, icon }) => (
+        {TYPE_OPTS.map(({ type, label, icon: Icon }) => (
           <DropdownMenuItem
             key={type}
             onClick={() => onChange(type)}
             className={cn(type === value && "bg-accent/60")}
           >
-            <HugeiconsIcon icon={icon} />
+            <Icon />
             {label}
           </DropdownMenuItem>
         ))}
@@ -311,7 +311,7 @@ function MultipleValues({
             onClick={() => onCommit(values.filter((item) => item !== value))}
             className="text-muted-foreground hover:text-destructive disabled:opacity-40"
           >
-            <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+            <X className="size-3" />
           </button>
         </span>
       ))}
@@ -464,6 +464,7 @@ function AddRow({
   const valueSuggestions = usePropertyValues(trimmedKey, knownSet.has(trimmedKey));
   const value = inferPropertyValue(draft);
   const type = value.ok ? valueType(value.value) : "tag";
+  const Icon = typeMeta(type).icon;
   const canAdd = trimmedKey !== "" && !keyError && !duplicate && value.ok;
 
   const submit = () => {
@@ -478,7 +479,7 @@ function AddRow({
     <PropRow
       icon={
         <span title={typeMeta(type).label}>
-          <HugeiconsIcon icon={typeMeta(type).icon} className="size-4 text-muted-foreground" />
+          <Icon className="size-4 text-muted-foreground" />
         </span>
       }
       labelNode={
@@ -507,7 +508,7 @@ function AddRow({
           className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-40 [&>svg]:size-4"
           onClick={submit}
         >
-          <HugeiconsIcon icon={Add01Icon} />
+          <Plus />
         </button>
       }
     >
@@ -611,12 +612,12 @@ function JsonView({
       <div className="flex items-center justify-between gap-3">
         {conflict ? (
           <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
-            <HugeiconsIcon icon={Alert02Icon} className="size-3.5 shrink-0" />
+            <TriangleAlert className="size-3.5 shrink-0" />
             Server properties changed while you were editing.
           </p>
         ) : !parsed.ok ? (
           <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
-            <HugeiconsIcon icon={Alert02Icon} className="size-3.5 shrink-0" />
+            <TriangleAlert className="size-3.5 shrink-0" />
             <span className="truncate" title={parsed.error}>
               {parsed.error}
             </span>
@@ -652,7 +653,7 @@ function JsonView({
             disabled={busy || conflict || !parsed.ok || changeCount === 0}
             onClick={() => void save()}
           >
-            <HugeiconsIcon icon={FloppyDiskIcon} data-icon="inline-start" />
+            <Save data-icon="inline-start" />
             Save
           </Button>
         </div>

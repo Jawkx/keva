@@ -1,6 +1,5 @@
+import { Check, Copy } from "lucide-react";
 import { useState } from "react";
-import { Copy01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -33,9 +32,9 @@ export function CopyButton({
   return (
     <Button size={size} variant={variant} onClick={onCopy} aria-label={label}>
       {copied ? (
-        <HugeiconsIcon icon={Tick02Icon} data-icon={iconOnly ? undefined : "inline-start"} />
+        <Check data-icon={iconOnly ? undefined : "inline-start"} />
       ) : (
-        <HugeiconsIcon icon={Copy01Icon} data-icon={iconOnly ? undefined : "inline-start"} />
+        <Copy data-icon={iconOnly ? undefined : "inline-start"} />
       )}
       {!iconOnly && (copied ? "Copied" : label)}
     </Button>

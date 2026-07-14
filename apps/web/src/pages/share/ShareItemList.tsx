@@ -1,7 +1,6 @@
+import { Files, Search } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Files01Icon, Search01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   formatBytes,
   formatContentType,
@@ -83,10 +82,7 @@ export function ShareItemList({
       <div className="mx-auto flex w-full max-w-6xl shrink-0 flex-col gap-3 p-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full min-w-0 sm:w-72">
-            <HugeiconsIcon
-              icon={Search01Icon}
-              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search by name or type…"
               className="pl-8"
@@ -104,7 +100,7 @@ export function ShareItemList({
           <Empty className="py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={Files01Icon} />
+                <Files />
               </EmptyMedia>
               <EmptyTitle>No files in this share</EmptyTitle>
               <EmptyDescription>
