@@ -4,6 +4,9 @@ import {
   createConditionDraft,
   decodeFilterParam,
   inferScalar,
+  operatorForValueCount,
+  operatorsForKey,
+  visibleOperator,
 } from "./item-filters";
 
 describe("item filters", () => {
@@ -26,6 +29,29 @@ describe("item filters", () => {
       { key: "project", op: "has_value", value: "keva" },
       { key: "audience", op: "has_all", value: ["internal", "mobile"] },
     ]);
+  });
+
+  it("collapses singular and plural query operators in the filter UI", () => {
+    expect(operatorsForKey("project")).toEqual([
+      "exists",
+      "missing",
+      "is_tag",
+      "has_value",
+      "contains_text",
+    ]);
+    expect(operatorsForKey("project", ["tag"])).toEqual(["exists", "missing"]);
+    expect(operatorsForKey("project", ["string"])).toEqual([
+      "exists",
+      "missing",
+      "has_value",
+      "contains_text",
+    ]);
+    expect(operatorsForKey("project", ["array"])).toContain("has_all");
+    expect(visibleOperator("has_any")).toBe("has_value");
+    expect(visibleOperator("contains_any")).toBe("contains_text");
+    expect(operatorForValueCount("has_value", 2)).toBe("has_any");
+    expect(operatorForValueCount("has_any", 1)).toBe("has_value");
+    expect(operatorForValueCount("contains_text", 2)).toBe("contains_any");
   });
 
   it("rejects malformed URL conditions with the shared schema", () => {

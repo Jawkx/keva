@@ -1,6 +1,7 @@
 import {
   QueryCondition as QueryConditionSchema,
   type Operator,
+  type PropertyKind,
   type QueryCondition,
 } from "@keva/schema";
 import { Schema } from "effect";
@@ -34,11 +35,11 @@ export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
   exists: "exists",
   missing: "is missing",
   is_tag: "is a tag",
-  has_value: "has value",
-  has_any: "has any",
+  has_value: "is",
+  has_any: "is",
   has_all: "has all",
-  contains_text: "contains text",
-  contains_any: "contains any",
+  contains_text: "contains",
+  contains_any: "contains",
 };
 
 export const opNeedsValue = (op: Operator): boolean =>
@@ -51,19 +52,48 @@ const CUSTOM_OPERATORS: readonly Operator[] = [
   "missing",
   "is_tag",
   "has_value",
-  "has_any",
   "has_all",
   "contains_text",
-  "contains_any",
 ];
-const TEXT_OPERATORS: readonly Operator[] = ["eq", "neq", "contains_text", "contains_any"];
+const UNKNOWN_CUSTOM_OPERATORS: readonly Operator[] = [
+  "exists",
+  "missing",
+  "is_tag",
+  "has_value",
+  "contains_text",
+];
+const TEXT_OPERATORS: readonly Operator[] = ["eq", "neq", "contains_text"];
 const RANGE_OPERATORS: readonly Operator[] = ["eq", "neq", "gt", "gte", "lt", "lte"];
 
-export const operatorsForKey = (key: string): readonly Operator[] => {
-  if (!key.startsWith("system.") && key !== "name") return CUSTOM_OPERATORS;
+export const operatorsForKey = (
+  key: string,
+  kinds?: readonly PropertyKind[],
+): readonly Operator[] => {
+  if (!key.startsWith("system.") && key !== "name") {
+    if (!kinds) return UNKNOWN_CUSTOM_OPERATORS;
+    if (kinds.every((kind) => kind === "tag")) return ["exists", "missing"];
+    return CUSTOM_OPERATORS.filter((op) => {
+      if (op === "is_tag") return kinds.includes("tag");
+      if (op === "has_all") return kinds.includes("array");
+      return true;
+    });
+  }
   if (key === "system.size") return RANGE_OPERATORS;
   if (key === "system.created_at" || key === "system.updated_at") return RANGE_OPERATORS;
   return TEXT_OPERATORS;
+};
+
+export const visibleOperator = (op: Operator): Operator => {
+  if (op === "has_any") return "has_value";
+  if (op === "contains_any") return "contains_text";
+  return op;
+};
+
+export const operatorForValueCount = (op: Operator, count: number): Operator => {
+  const visible = visibleOperator(op);
+  if (visible === "has_value" && count > 1) return "has_any";
+  if (visible === "contains_text" && count > 1) return "contains_any";
+  return visible;
 };
 
 export const inferScalar = (raw: string, key = ""): FilterScalar => {

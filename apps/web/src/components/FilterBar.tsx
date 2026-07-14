@@ -18,10 +18,12 @@ import {
   KIND_OPTIONS,
   opAllowsMultiple,
   opNeedsValue,
+  operatorForValueCount,
   operatorsForKey,
   removeConditionDraft,
   SIZE_OPTIONS,
   updateConditionDraft,
+  visibleOperator,
   type ConditionDraft,
   type FilterDraft,
   type FilterScalar,
@@ -342,7 +344,7 @@ function ValueSegment({
   );
 }
 
-const TEXT_INPUT_OPS: readonly Operator[] = ["contains_text", "gt", "gte", "lt", "lte"];
+const TEXT_INPUT_OPS: readonly Operator[] = ["gt", "gte", "lt", "lte"];
 
 function RowChip({
   row,
@@ -350,6 +352,7 @@ function RowChip({
   open,
   onOpenChange,
   onOpChange,
+  operators,
   onValuesChange,
   onRemove,
 }: {
@@ -358,10 +361,12 @@ function RowChip({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpChange: (op: Operator) => void;
+  operators: readonly Operator[];
   onValuesChange: (values: FilterScalar[], done?: boolean) => void;
   onRemove: () => void;
 }) {
-  const opLabel = FILTER_OPERATOR_LABELS[row.op];
+  const displayedOp = visibleOperator(row.op);
+  const opLabel = FILTER_OPERATOR_LABELS[displayedOp];
   const valueLabel = row.values.map(formatScalar).join(", ");
 
   return (
@@ -377,10 +382,10 @@ function RowChip({
           {opLabel}
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-40">
-          {operatorsForKey(row.key).map((op) => (
+          {operators.map((op) => (
             <DropdownMenuItem key={op} onClick={() => onOpChange(op)}>
               <span className="flex-1">{FILTER_OPERATOR_LABELS[op]}</span>
-              {op === row.op && <HugeiconsIcon icon={Tick02Icon} className="size-3.5" />}
+              {op === displayedOp && <HugeiconsIcon icon={Tick02Icon} className="size-3.5" />}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -402,7 +407,11 @@ function RowChip({
             <ScalarValueMenu
               keyName={row.key}
               values={row.values}
-              multi={opAllowsMultiple(row.op)}
+              multi={
+                opAllowsMultiple(row.op) ||
+                displayedOp === "has_value" ||
+                displayedOp === "contains_text"
+              }
               suggest={suggest}
               onChange={(values) => onValuesChange(values)}
               onDone={() => onOpenChange(false)}
@@ -669,11 +678,13 @@ function AdvancedConditionDialog({
   open,
   onOpenChange,
   keyOptions,
+  summary,
   onAdd,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   keyOptions: string[];
+  summary: readonly PropertySummary[];
   onAdd: (row: ConditionDraft) => void;
 }) {
   const [key, setKey] = useState("");
@@ -681,6 +692,7 @@ function AdvancedConditionDialog({
   const [value, setValue] = useState("");
 
   const trimmedKey = key.trim();
+  const kinds = summary.find((entry) => entry.key === trimmedKey)?.kinds;
   const suggestions = usePropertyValueScalars(
     trimmedKey,
     open && opNeedsValue(op) && keyOptions.includes(trimmedKey),
@@ -722,7 +734,8 @@ function AdvancedConditionDialog({
             value={key}
             onValueChange={(nextKey) => {
               setKey(nextKey);
-              const allowed = operatorsForKey(nextKey.trim());
+              const nextKinds = summary.find((entry) => entry.key === nextKey.trim())?.kinds;
+              const allowed = operatorsForKey(nextKey.trim(), nextKinds);
               if (!allowed.includes(op)) setOp(allowed[0] ?? "has_value");
             }}
           />
@@ -732,7 +745,7 @@ function AdvancedConditionDialog({
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {operatorsForKey(trimmedKey).map((option) => (
+                {operatorsForKey(trimmedKey, kinds).map((option) => (
                   <SelectItem key={option} value={option}>
                     {FILTER_OPERATOR_LABELS[option]}
                   </SelectItem>
@@ -919,6 +932,7 @@ function FilterMenu({
         open={advancedOpen}
         onOpenChange={setAdvancedOpen}
         keyOptions={[...keySet]}
+        summary={summary}
         onAdd={(row) => commit({ ...draft, rows: [...draft.rows, row] })}
       />
     </>
@@ -982,8 +996,15 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
     if (op === row.op) return;
     let values = row.values;
     if (!opNeedsValue(op)) values = [];
-    else if (!opAllowsMultiple(op) && values.length > 1) values = values.slice(0, 1);
-    commit(updateConditionDraft(draft, row.id, { op, values }));
+    else if (
+      !opAllowsMultiple(op) &&
+      op !== "has_value" &&
+      op !== "contains_text" &&
+      values.length > 1
+    )
+      values = values.slice(0, 1);
+    const storedOp = operatorForValueCount(op, values.length);
+    commit(updateConditionDraft(draft, row.id, { op: storedOp, values }));
     if (opNeedsValue(op) && values.length === 0) setValueMenuFor(row.id);
   };
 
@@ -1058,8 +1079,17 @@ export function FilterBar({ draft, onDraftChange, onApply, onClear }: FilterBarP
             open={valueMenuFor === row.id}
             onOpenChange={valueMenuChange(row.id)}
             onOpChange={(op) => changeRowOp(row, op)}
+            operators={operatorsForKey(
+              row.key,
+              summary.find((entry) => entry.key === row.key)?.kinds,
+            )}
             onValuesChange={(values, done) => {
-              commit(updateConditionDraft(draft, row.id, { values }));
+              commit(
+                updateConditionDraft(draft, row.id, {
+                  op: operatorForValueCount(row.op, values.length),
+                  values,
+                }),
+              );
               if (done) setValueMenuFor(null);
             }}
             onRemove={() => commit(removeConditionDraft(draft, row.id))}
