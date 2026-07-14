@@ -3,15 +3,30 @@ import { createKevaMcpServer, type McpEngine } from "@keva/mcp";
 import {
   ItemId,
   ItemPatch,
+  ItemEventsResult,
+  InitiateUpload,
+  OwnerInitiateUploadResult,
+  OwnerItem,
+  OwnerQueryResult,
+  PropertySummaryResult,
+  BatchDeleteResult,
+  CreateView,
+  UpdateView,
+  ViewRecord,
+  CreateShareGrant,
+  CreateShareGrantResult,
+  ShareGrantRecord,
   DownloadResult,
-  KevaItem,
   PropertyKeysResult,
   PropertyValuesResult,
   Query,
-  QueryResult,
   UsageResult,
   Internal,
+  NotFound,
+  StorageUnavailable,
   ValidationError,
+  isFutureInstant,
+  toOwnerItem,
   type KevaError,
   type Principal,
 } from "@keva/schema";
@@ -22,6 +37,8 @@ import type { Context } from "hono";
 import type { AppServices } from "./app.js";
 import { mcpScopesToKevaScopes } from "./auth.js";
 import type { ConnectionStore, McpActorNames, McpAuthorizationServer } from "./better-auth.js";
+import { ShareGrantStore } from "./shares.js";
+import { ViewStore } from "./views.js";
 
 type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;
 
@@ -95,18 +112,19 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         runtime,
         Effect.gen(function* () {
           const query = yield* decode(Query, input);
-          return yield* engine.query(query);
+          const result = yield* engine.query(query);
+          return { ...result, items: result.items.map(toOwnerItem) };
         }),
-        QueryResult,
+        OwnerQueryResult,
       ),
     getItem: (id) =>
       runValidated(
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
-          return yield* engine.get(itemId);
+          return toOwnerItem(yield* engine.get(itemId));
         }),
-        KevaItem,
+        OwnerItem,
       ),
     getContentUrl: (id) =>
       runValidated(
@@ -117,10 +135,81 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         }),
         DownloadResult,
       ),
+    getItemEvents: ({ id, limit, cursor }) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const itemId = yield* decode(ItemId, id);
+          return yield* engine.events(itemId, {
+            ...(limit !== undefined ? { limit } : {}),
+            ...(cursor !== undefined ? { cursor } : {}),
+          });
+        }),
+        ItemEventsResult,
+      ),
     getUsage: () => runValidated(runtime, engine.usage(), UsageResult),
     listPropertyKeys: () => runValidated(runtime, engine.propertyKeys(), PropertyKeysResult),
     listPropertyValues: ({ key }) =>
       runValidated(runtime, engine.propertyValues(key), PropertyValuesResult),
+    getPropertySummary: () =>
+      runValidated(runtime, engine.propertySummary(), PropertySummaryResult),
+    beginUpload: (input) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const upload = yield* decode(InitiateUpload, input);
+          const result = yield* engine.initiate(upload);
+          return { ...result, item: toOwnerItem(result.item) };
+        }),
+        OwnerInitiateUploadResult,
+      ),
+    completeUpload: (id) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const itemId = yield* decode(ItemId, id);
+          return toOwnerItem(yield* engine.confirm(itemId));
+        }),
+        OwnerItem,
+      ),
+    uploadContent: (input) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const bytes = yield* Effect.try({
+            try: () =>
+              input.encoding === "base64"
+                ? Uint8Array.from(atob(input.content), (character) => character.charCodeAt(0))
+                : new TextEncoder().encode(input.content),
+            catch: () => new ValidationError({ message: "Content is not valid base64" }),
+          });
+          if (bytes.byteLength > 1024 * 1024) {
+            return yield* new ValidationError({
+              message: "Inline MCP uploads are limited to 1 MiB",
+            });
+          }
+          const result = yield* engine.initiate({
+            name: input.name,
+            contentType: input.contentType,
+            size: bytes.byteLength,
+            source: input.source,
+            properties: input.properties,
+          });
+          yield* Effect.tryPromise({
+            try: async () => {
+              const response = await fetch(result.uploadUrl, {
+                method: "PUT",
+                headers: result.headers,
+                body: bytes,
+              });
+              if (!response.ok) throw new Error(`Blob upload failed with ${response.status}`);
+            },
+            catch: () => new StorageUnavailable({ message: "Blob upload failed" }),
+          });
+          return toOwnerItem(yield* engine.confirm(result.item.id));
+        }),
+        OwnerItem,
+      ),
     setProperties: (input) =>
       runValidated(
         runtime,
@@ -130,9 +219,9 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
             ...(input.set !== undefined ? { set: input.set } : {}),
             ...(input.unset !== undefined ? { unset: input.unset } : {}),
           });
-          return yield* engine.patch(itemId, patch);
+          return toOwnerItem(yield* engine.patch(itemId, patch));
         }),
-        KevaItem,
+        OwnerItem,
       ),
     deleteItem: (id) =>
       runEngine(
@@ -140,6 +229,111 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
           yield* engine.delete(itemId);
+        }),
+      ),
+    deleteItems: (ids) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const itemIds = yield* Effect.forEach(ids, (id) => decode(ItemId, id));
+          const results = yield* Effect.forEach(
+            itemIds,
+            (id) =>
+              engine.delete(id).pipe(
+                Effect.as({ id, error: undefined as string | undefined }),
+                Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+              ),
+            { concurrency: 8 },
+          );
+          return {
+            deleted: results.filter((result) => !result.error).map((result) => result.id),
+            failed: results
+              .filter((result) => result.error)
+              .map((result) => ({ id: result.id, error: result.error! })),
+          };
+        }),
+        BatchDeleteResult,
+      ),
+    createView: (input) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const body = yield* decode(CreateView, input);
+          const views = yield* ViewStore;
+          return yield* views.create(principal.tenantId, body);
+        }),
+        ViewRecord,
+      ),
+    listViews: () =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const views = yield* ViewStore;
+          return yield* views.list(principal.tenantId);
+        }),
+        Schema.Array(ViewRecord),
+      ),
+    getView: (id) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const views = yield* ViewStore;
+          const view = yield* views.get(principal.tenantId, id);
+          if (!view) return yield* new NotFound({ message: "View not found" });
+          return view;
+        }),
+        ViewRecord,
+      ),
+    updateView: (id, input) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const body = yield* decode(UpdateView, input);
+          const shares = yield* ShareGrantStore;
+          const view = yield* shares.updateView(principal.tenantId, id, body);
+          if (!view) return yield* new NotFound({ message: "View not found" });
+          return view;
+        }),
+        ViewRecord,
+      ),
+    deleteView: (id) =>
+      runEngine(
+        runtime,
+        Effect.gen(function* () {
+          const views = yield* ViewStore;
+          return { deleted: yield* views.delete(principal.tenantId, id) };
+        }),
+      ),
+    createShare: (input) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const body = yield* decode(CreateShareGrant, input);
+          if (body.expiresAt && !isFutureInstant(body.expiresAt)) {
+            return yield* new ValidationError({
+              message: "Share expiration must be in the future",
+            });
+          }
+          const shares = yield* ShareGrantStore;
+          return yield* shares.create(principal.tenantId, body);
+        }),
+        CreateShareGrantResult,
+      ),
+    listShares: () =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const shares = yield* ShareGrantStore;
+          return yield* shares.list(principal.tenantId);
+        }),
+        Schema.Array(ShareGrantRecord),
+      ),
+    revokeShare: (id) =>
+      runEngine(
+        runtime,
+        Effect.gen(function* () {
+          const shares = yield* ShareGrantStore;
+          return { revoked: yield* shares.revoke(principal.tenantId, id) };
         }),
       ),
   };

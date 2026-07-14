@@ -48,8 +48,10 @@ export const submitConsent = async (accept: boolean, consentCode: string): Promi
 
 export const SCOPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "keva:read": "Read your items, their metadata, and file contents",
-  "keva:write": "Create and update item properties",
+  "keva:write": "Upload items and update their names and properties",
   "keva:delete": "Delete items and their contents",
+  "keva:views": "Create and manage your saved views",
+  "keva:shares": "Create and revoke links that share your items",
   openid: "Verify your identity",
   profile: "See your basic profile information",
   email: "See your email address",

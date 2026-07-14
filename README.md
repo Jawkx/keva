@@ -59,6 +59,39 @@ Item responses intentionally exclude tenant IDs and physical storage keys. The
 private `@keva/sdk` is currently `0.0.0` and unpublished, so these internal
 fields were removed immediately rather than carried through a deprecation period.
 
+## MCP uploads
+
+MCP clients authorized with `keva:write` have two upload paths:
+
+- `upload_content` uploads UTF-8 text or base64-encoded content in one tool call.
+  The decoded content is limited to 1 MiB. Base64 input must be the encoded data
+  only, without a `data:` URL prefix.
+- `begin_upload` and `complete_upload` support files up to 5 GiB. This path
+  requires the MCP host to make an HTTP `PUT` request to the presigned storage
+  URL returned by `begin_upload`.
+
+For the large-file path:
+
+1. Call `begin_upload` with the file name, MIME type, and exact byte size.
+2. `PUT` exactly that many bytes to the returned `uploadUrl`, using every header
+   from the returned `headers` object unchanged.
+3. Do not send the Keva OAuth token, cookies, or other Keva credentials to the
+   storage URL. The presigned URL is the authorization for that upload.
+4. After the `PUT` succeeds with a 2xx response, call `complete_upload` with the
+   pending item's ID.
+
+Do not call `complete_upload` before a successful `PUT`. The presigned URL is
+short-lived; if it expires, start a new upload. Pending uploads that are never
+completed are removed by the storage lifecycle cleanup.
+
+```sh
+# Values come from begin_upload. Header names and values vary by storage backend.
+curl --fail-with-body --request PUT \
+  --header 'Content-Type: application/octet-stream' \
+  --data-binary @./archive.zip \
+  'https://presigned-storage-url.example/...'
+```
+
 ## Local admin console
 
 The quota console is a local operator tool. Start the Node API with persistent

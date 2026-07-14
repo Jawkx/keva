@@ -55,7 +55,7 @@ export const Properties = Schema.Record({
 );
 export type Properties = typeof Properties.Type;
 
-export const Scope = Schema.Literal("read", "write", "delete", "admin");
+export const Scope = Schema.Literal("read", "write", "delete", "views", "shares", "admin");
 export type Scope = typeof Scope.Type;
 
 export const ItemStatus = Schema.Literal("pending", "ready", "deleting");

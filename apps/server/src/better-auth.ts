@@ -92,7 +92,13 @@ export const resolvePersonalOrganization = async (
   });
 };
 
-export const KEVA_MCP_SCOPES = ["keva:read", "keva:write", "keva:delete"] as const;
+export const KEVA_MCP_SCOPES = [
+  "keva:read",
+  "keva:write",
+  "keva:delete",
+  "keva:views",
+  "keva:shares",
+] as const;
 
 export const createBetterAuth = (config: BetterAuthConfig): KevaAuth =>
   betterAuth({

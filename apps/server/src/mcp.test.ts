@@ -1,7 +1,12 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
-import { Effect, Layer } from "effect";
+import { Effect, Exit, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ApiTokenStore, mcpScopesToKevaScopes, StaticTokenAuthLive } from "./auth.js";
+import {
+  ApiTokenStore,
+  mcpScopesToKevaScopes,
+  requireStorageManagement,
+  StaticTokenAuthLive,
+} from "./auth.js";
 import { createApp } from "./app.js";
 import type { McpAuthorizationServer } from "./better-auth.js";
 import { type McpDeps, principalFromMcpToken } from "./mcp.js";
@@ -76,7 +81,12 @@ const stubMcpDeps = (overrides: {
 
 describe("mcpScopesToKevaScopes", () => {
   it("maps keva:* scopes onto the engine's Scope enum", () => {
-    expect(mcpScopesToKevaScopes("keva:read keva:write")).toEqual(["read", "write"]);
+    expect(mcpScopesToKevaScopes("keva:read keva:write keva:views keva:shares")).toEqual([
+      "read",
+      "write",
+      "views",
+      "shares",
+    ]);
     expect(mcpScopesToKevaScopes("openid keva:delete")).toEqual(["delete"]);
   });
 
@@ -91,6 +101,28 @@ describe("mcpScopesToKevaScopes", () => {
 
   it("deduplicates", () => {
     expect(mcpScopesToKevaScopes("keva:read keva:read")).toEqual(["read"]);
+  });
+});
+
+describe("requireStorageManagement", () => {
+  it("keeps account admin separate from scoped storage management", async () => {
+    const sessionAdmin = await Effect.runPromiseExit(
+      requireStorageManagement({ tenantId: "t", scopes: ["admin"], via: "session" }, "views"),
+    );
+    const viewAgent = await Effect.runPromiseExit(
+      requireStorageManagement({ tenantId: "t", scopes: ["views"], via: "token" }, "views"),
+    );
+    const shareAgent = await Effect.runPromiseExit(
+      requireStorageManagement({ tenantId: "t", scopes: ["shares"], via: "token" }, "views"),
+    );
+    const tokenAdmin = await Effect.runPromiseExit(
+      requireStorageManagement({ tenantId: "t", scopes: ["admin"], via: "token" }, "views"),
+    );
+
+    expect(Exit.isSuccess(sessionAdmin)).toBe(true);
+    expect(Exit.isSuccess(viewAgent)).toBe(true);
+    expect(Exit.isFailure(shareAgent)).toBe(true);
+    expect(Exit.isFailure(tokenAdmin)).toBe(true);
   });
 });
 

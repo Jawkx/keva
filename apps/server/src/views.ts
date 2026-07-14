@@ -129,9 +129,8 @@ export const makePostgresViewStore = (sql: Sql): ViewStoreService => ({
     }),
 });
 
-// No Postgres means view management is unreachable (it requires an admin
-// session, which needs a DB); every op surfaces a typed StorageUnavailable
-// rather than an untyped defect. Mirrors unavailableShareStore.
+// No Postgres means view management is unreachable; every op surfaces a typed
+// StorageUnavailable rather than an untyped defect. Mirrors unavailableShareStore.
 const viewsNeedDatabase = () =>
   Effect.fail(new StorageUnavailable({ message: "Views require a database" }));
 

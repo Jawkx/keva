@@ -346,16 +346,27 @@ export const requireAdminSession = (principal: Principal): Effect.Effect<void, F
     ? Effect.void
     : Effect.fail(new Forbidden({ message: "Token management requires an admin session" }));
 
+export const requireStorageManagement = (
+  principal: Principal,
+  scope: "views" | "shares",
+): Effect.Effect<void, Forbidden> =>
+  (principal.via === "session" && principal.scopes.includes("admin")) ||
+  principal.scopes.includes(scope)
+    ? Effect.void
+    : Effect.fail(new Forbidden({ message: `Missing '${scope}' scope` }));
+
 // MCP clients request OAuth scopes (`keva:read`/`keva:write`/`keva:delete`,
 // advertised in the protected-resource metadata); the granted set arrives on
 // the access token as a space-separated string. Map it onto keva's Scope enum,
 // dropping OIDC scopes (openid/profile/…). `admin` is never granted over MCP —
-// token/connection management stays a session-only action. A token with no
-// `keva:*` grant receives no keva tools or permissions.
+// token/connection management stays a session-only action. Views and shares
+// have narrow scopes that do not confer account administration.
 const MCP_SCOPE_MAP: Readonly<Record<string, Scope>> = {
   "keva:read": "read",
   "keva:write": "write",
   "keva:delete": "delete",
+  "keva:views": "views",
+  "keva:shares": "shares",
 };
 
 export const mcpScopesToKevaScopes = (scopes: string): Scope[] => {

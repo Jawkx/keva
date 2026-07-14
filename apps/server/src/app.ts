@@ -23,7 +23,12 @@ import {
 } from "@keva/schema";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { Hono, type Context } from "hono";
-import { ApiTokenStore, Authenticator, requireAdminSession } from "./auth.js";
+import {
+  ApiTokenStore,
+  Authenticator,
+  requireAdminSession,
+  requireStorageManagement,
+} from "./auth.js";
 import type { AdminStore } from "./admin.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
@@ -294,7 +299,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
         const body = yield* decode(ItemPatch, yield* jsonBody(context));
-        return yield* makeKevaEngine(principal).patch(id, body);
+        return redactItem(principal, yield* makeKevaEngine(principal).patch(id, body));
       }),
     ),
   );
@@ -446,7 +451,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "views");
         const body = yield* decode(CreateView, yield* jsonBody(context));
         const views = yield* ViewStore;
         return yield* views.create(principal.tenantId, body);
@@ -459,7 +464,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "views");
         const views = yield* ViewStore;
         return yield* views.list(principal.tenantId);
       }),
@@ -471,7 +476,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "views");
         const views = yield* ViewStore;
         const view = yield* views.get(principal.tenantId, context.req.param("id"));
         if (!view) return yield* new NotFound({ message: "View not found" });
@@ -485,7 +490,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "views");
         const body = yield* decode(UpdateView, yield* jsonBody(context));
         const shares = yield* ShareGrantStore;
         const view = yield* shares.updateView(principal.tenantId, context.req.param("id"), body);
@@ -500,7 +505,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "views");
         const views = yield* ViewStore;
         return {
           deleted: yield* views.delete(principal.tenantId, context.req.param("id")),
@@ -514,7 +519,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "shares");
         const body = yield* decode(CreateShareGrant, yield* jsonBody(context));
         if (body.expiresAt && !isFutureInstant(body.expiresAt)) {
           return yield* new ValidationError({ message: "Share expiration must be in the future" });
@@ -530,7 +535,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "shares");
         const shares = yield* ShareGrantStore;
         return yield* shares.list(principal.tenantId);
       }),
@@ -542,7 +547,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
       context,
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
-        yield* requireAdminSession(principal);
+        yield* requireStorageManagement(principal, "shares");
         const shares = yield* ShareGrantStore;
         return {
           revoked: yield* shares.revoke(principal.tenantId, context.req.param("id")),

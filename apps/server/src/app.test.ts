@@ -71,6 +71,10 @@ const seedItem = async (
     body: JSON.stringify({ set: properties }),
   });
   expect(patched.status).toBe(200);
+  const patchedItem = await patched.json();
+  expect(patchedItem).not.toHaveProperty("tenantId");
+  expect(patchedItem).not.toHaveProperty("storageKey");
+  expect(patchedItem).not.toHaveProperty("stagingKey");
   return initiated.item.id;
 };
 
