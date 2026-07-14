@@ -254,7 +254,7 @@ const columns = [
                 variant="secondary"
                 render={<button type="button" />}
                 title={`Filter by ${propertyChipLabel(key, value)}`}
-                className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
+                className="cursor-pointer hover:bg-primary hover:text-primary-foreground dark:hover:bg-primary! dark:hover:text-primary-foreground!"
                 onClick={(e) => {
                   e.stopPropagation();
                   onFilter?.(key, value);
