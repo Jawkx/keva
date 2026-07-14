@@ -210,7 +210,7 @@ const columns = [
     cell: ({ getValue, row, table }) => (
       <button
         type="button"
-        className="block max-w-full truncate text-left font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="block max-w-full truncate text-left text-muted-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={(event) => {
           event.stopPropagation();
           table.options.meta?.onOpenItem(row.original.id);
