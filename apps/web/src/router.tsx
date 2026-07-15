@@ -23,6 +23,14 @@ const OAuthConsentPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then(({ SettingsPage }) => ({ default: SettingsPage })),
 );
+const SharedViewPage = lazy(() =>
+  import("./pages/SharedViewPage").then(({ SharedViewPage }) => ({ default: SharedViewPage })),
+);
+const SharedWithMePage = lazy(() =>
+  import("./pages/SharedWithMePage").then(({ SharedWithMePage }) => ({
+    default: SharedWithMePage,
+  })),
+);
 const SharePage = lazy(() =>
   import("./pages/share/SharePage").then(({ SharePage }) => ({ default: SharePage })),
 );
@@ -59,6 +67,8 @@ export const router = createBrowserRouter([
       { path: "/v/:viewId", element: route(FilesPage) },
       { path: "/v/:viewId/items/:id", element: route(FilesPage) },
       { path: "/v/:viewId/shares", element: route(ViewSharesPage) },
+      { path: "/shared", element: route(SharedWithMePage) },
+      { path: "/shared/:grantId", element: route(SharedViewPage) },
       { path: "/query", element: <Navigate to="/" replace /> },
       { path: "/connection", element: route(ConnectionPage) },
       { path: "/tokens", element: <Navigate to="/connection" replace /> },

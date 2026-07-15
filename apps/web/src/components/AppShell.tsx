@@ -1,10 +1,20 @@
-import { ChevronsUpDown, Database, Files, LogOut, PanelLeft, Plug, Settings } from "lucide-react";
+import {
+  ChevronsUpDown,
+  Database,
+  Files,
+  Inbox,
+  LogOut,
+  PanelLeft,
+  Plug,
+  Settings,
+} from "lucide-react";
 import { type MouseEvent, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";
 import { formatBytes } from "../lib/format";
+import { listReceivedShares, receivedSharesQueryKey } from "../lib/account-shares";
 import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
 import { viewIcon } from "./view-icons";
@@ -38,6 +48,11 @@ function AppSidebar() {
   const { data } = authClient.useSession();
   const { data: usage } = useUsage();
   const { data: views } = useQuery({ queryKey: viewsQueryKey, queryFn: listViews });
+  const { data: receivedShares } = useQuery({
+    queryKey: receivedSharesQueryKey,
+    queryFn: listReceivedShares,
+    refetchInterval: 60_000,
+  });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,6 +71,10 @@ function AppSidebar() {
 
   const email = data?.user?.email ?? "";
   const name = data?.user?.name || email;
+  const acceptedShares = (receivedShares ?? []).filter((share) => share.status === "accepted");
+  const pendingShareCount = (receivedShares ?? []).filter(
+    (share) => share.status === "pending",
+  ).length;
   const isActive = (url: string, exact: boolean) =>
     exact ? location.pathname === url : location.pathname.startsWith(url);
 
@@ -124,6 +143,43 @@ function AppSidebar() {
                     >
                       <Icon />
                       <span>{view.name}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Shared</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location.pathname === "/shared"}
+                  tooltip="Shared with me"
+                  render={<Link to="/shared" />}
+                >
+                  <Inbox />
+                  <span>Shared with me</span>
+                  {pendingShareCount > 0 && (
+                    <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                      {pendingShareCount}
+                    </span>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {acceptedShares.map((share) => {
+                const Icon = viewIcon(share.icon);
+                return (
+                  <SidebarMenuItem key={share.id}>
+                    <SidebarMenuButton
+                      isActive={location.pathname.startsWith(`/shared/${share.id}`)}
+                      tooltip={`${share.name} · ${share.owner.name}`}
+                      render={<Link to={`/shared/${share.id}`} />}
+                    >
+                      <Icon />
+                      <span>{share.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -209,7 +265,8 @@ export function AppShell() {
   const fullBleed =
     location.pathname === "/" ||
     location.pathname.startsWith("/items/") ||
-    location.pathname.startsWith("/v/");
+    location.pathname.startsWith("/v/") ||
+    location.pathname.startsWith("/shared/");
 
   return (
     <SidebarProvider>

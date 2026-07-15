@@ -1,6 +1,8 @@
 import {
+  type AccountShareRecord,
   Conflict,
   NotFound,
+  type ReceivedShare,
   ValidationError,
   isPropertyKey,
   propertiesMatchCondition,
@@ -16,7 +18,7 @@ interface StoredGrant {
   tenantId: string;
   viewId: string;
   name: string;
-  token: string;
+  token: string | null;
   scopes: ShareGrantRecord["scopes"];
   writeStamp: ShareGrantRecord["writeStamp"];
   maxItemBytes: number | null;
@@ -27,10 +29,26 @@ interface StoredGrant {
   lastUsedAt: string | null;
 }
 
+interface TestUser {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+}
+
+interface StoredAccountGrant {
+  readonly owner: TestUser;
+  readonly recipient: TestUser;
+  status: "pending" | "accepted";
+  readonly createdAt: string;
+  acceptedAt: string | null;
+}
+
 export const makeInMemoryShareGrantStore = (
   views: Map<string, ViewRecord> = new Map(),
+  users: ReadonlyArray<TestUser> = [],
 ): ShareGrantStoreService => {
   const grants = new Map<string, { grant: StoredGrant; secret: string }>();
+  const accounts = new Map<string, StoredAccountGrant>();
   const conditionsFor = (viewId: string) => [...(views.get(viewId)?.conditions ?? [])];
 
   const toRecord = (grant: StoredGrant): ShareGrantRecord => ({
@@ -48,6 +66,39 @@ export const makeInMemoryShareGrantStore = (
     createdAt: grant.createdAt,
     expiresAt: grant.expiresAt,
     lastUsedAt: grant.lastUsedAt,
+  });
+
+  const toAccountRecord = (
+    grant: StoredGrant,
+    account: StoredAccountGrant,
+  ): AccountShareRecord => ({
+    id: grant.id,
+    tenantId: grant.tenantId,
+    viewId: grant.viewId,
+    name: grant.name,
+    scopes: [...grant.scopes],
+    conditions: conditionsFor(grant.viewId),
+    writeStamp: grant.writeStamp,
+    maxItemBytes: grant.maxItemBytes,
+    maxTotalBytes: grant.maxTotalBytes,
+    maxItems: grant.maxItems,
+    status: account.status,
+    recipient: account.recipient,
+    createdAt: account.createdAt,
+    acceptedAt: account.acceptedAt,
+    expiresAt: grant.expiresAt,
+  });
+
+  const toReceived = (grant: StoredGrant, account: StoredAccountGrant): ReceivedShare => ({
+    id: grant.id,
+    name: views.get(grant.viewId)?.name ?? grant.name,
+    icon: views.get(grant.viewId)?.icon ?? null,
+    scopes: [...grant.scopes],
+    status: account.status,
+    owner: account.owner,
+    createdAt: account.createdAt,
+    acceptedAt: account.acceptedAt,
+    expiresAt: grant.expiresAt,
   });
 
   return {
@@ -150,19 +201,211 @@ export const makeInMemoryShareGrantStore = (
       Effect.sync(() =>
         [...grants.values()]
           .map((entry) => entry.grant)
-          .filter((grant) => grant.tenantId === tenantId)
+          .filter((grant) => grant.tenantId === tenantId && !accounts.has(grant.id))
           .map(toRecord),
       ),
     get: (tenantId, id) =>
       Effect.sync(() => {
         const entry = grants.get(id);
-        return entry && entry.grant.tenantId === tenantId ? toRecord(entry.grant) : null;
+        return entry && entry.grant.tenantId === tenantId && !accounts.has(id)
+          ? toRecord(entry.grant)
+          : null;
       }),
     revoke: (tenantId, id) =>
       Effect.sync(() => {
         const entry = grants.get(id);
-        if (!entry || entry.grant.tenantId !== tenantId) return false;
+        if (!entry || entry.grant.tenantId !== tenantId || accounts.has(id)) return false;
         return grants.delete(id);
+      }),
+    createAccount: (tenantId, ownerUserId, input) =>
+      Effect.gen(function* () {
+        const result = yield* Effect.sync(() => {
+          const owner = users.find((user) => user.id === ownerUserId);
+          if (!owner) return { status: "owner_missing" as const };
+          const recipient = users.find(
+            (user) => user.email.toLowerCase() === input.recipientEmail.trim().toLowerCase(),
+          );
+          if (!recipient) return { status: "recipient_missing" as const };
+          if (recipient.id === owner.id) return { status: "self" as const };
+          const view = views.get(input.viewId);
+          if (!view || view.tenantId !== tenantId) return { status: "view_missing" as const };
+          if (
+            [...accounts.entries()].some(([grantId, account]) => {
+              const grant = grants.get(grantId)?.grant;
+              return (
+                account.recipient.id === recipient.id &&
+                grant?.tenantId === tenantId &&
+                grant.viewId === view.id &&
+                (!grant.expiresAt || new Date(grant.expiresAt) > new Date())
+              );
+            })
+          ) {
+            return { status: "duplicate" as const };
+          }
+          if (input.scopes.includes("write")) {
+            if (!view.conditions.every((condition) => isPropertyKey(condition.key))) {
+              return {
+                status: "invalid" as const,
+                message: "Write grants may only condition on plain property keys",
+              };
+            }
+            if (
+              !view.conditions.every((condition) =>
+                propertiesMatchCondition(input.writeStamp!, condition),
+              )
+            ) {
+              return {
+                status: "invalid" as const,
+                message: "writeStamp must satisfy every view condition",
+              };
+            }
+          }
+          const id = crypto.randomUUID().replaceAll("-", "");
+          const grant: StoredGrant = {
+            id,
+            tenantId,
+            viewId: view.id,
+            name: view.name,
+            token: null,
+            scopes: [...input.scopes],
+            writeStamp: input.writeStamp ?? null,
+            maxItemBytes: input.maxItemBytes ?? null,
+            maxTotalBytes: input.maxTotalBytes ?? null,
+            maxItems: input.maxItems ?? null,
+            createdAt: new Date().toISOString(),
+            expiresAt: input.expiresAt ?? null,
+            lastUsedAt: null,
+          };
+          const account: StoredAccountGrant = {
+            owner,
+            recipient,
+            status: "pending",
+            createdAt: grant.createdAt,
+            acceptedAt: null,
+          };
+          grants.set(id, { grant, secret: crypto.randomUUID() });
+          accounts.set(id, account);
+          return { status: "created" as const, record: toAccountRecord(grant, account) };
+        });
+        if (result.status === "recipient_missing") {
+          return yield* new NotFound({ message: "No Keva account exists for that email" });
+        }
+        if (result.status === "owner_missing") {
+          return yield* new NotFound({ message: "Owner account not found" });
+        }
+        if (result.status === "view_missing") {
+          return yield* new NotFound({ message: "View not found" });
+        }
+        if (result.status === "self") {
+          return yield* new ValidationError({ message: "You already own this view" });
+        }
+        if (result.status === "invalid") {
+          return yield* new ValidationError({ message: result.message });
+        }
+        if (result.status === "duplicate") {
+          return yield* new Conflict({ message: "This view is already shared with that account" });
+        }
+        return result.record;
+      }),
+    listAccountOwned: (tenantId) =>
+      Effect.sync(() =>
+        [...accounts.entries()]
+          .map(([id, account]) => ({ grant: grants.get(id)?.grant, account }))
+          .filter(
+            (entry): entry is { grant: StoredGrant; account: StoredAccountGrant } =>
+              entry.grant?.tenantId === tenantId,
+          )
+          .map(({ grant, account }) => toAccountRecord(grant, account)),
+      ),
+    listReceived: (recipientUserId) =>
+      Effect.sync(() =>
+        [...accounts.entries()]
+          .map(([id, account]) => ({ grant: grants.get(id)?.grant, account }))
+          .filter(
+            (entry): entry is { grant: StoredGrant; account: StoredAccountGrant } =>
+              entry.account.recipient.id === recipientUserId &&
+              entry.grant !== undefined &&
+              (!entry.grant.expiresAt || new Date(entry.grant.expiresAt) > new Date()),
+          )
+          .map(({ grant, account }) => toReceived(grant, account)),
+      ),
+    acceptAccount: (recipientUserId, id) =>
+      Effect.sync(() => {
+        const grant = grants.get(id)?.grant;
+        const account = accounts.get(id);
+        if (
+          !grant ||
+          !account ||
+          account.recipient.id !== recipientUserId ||
+          (grant.expiresAt && new Date(grant.expiresAt) <= new Date())
+        ) {
+          return null;
+        }
+        if (account.status === "pending") {
+          account.status = "accepted";
+          account.acceptedAt = new Date().toISOString();
+        }
+        return toReceived(grant, account);
+      }),
+    declineAccount: (recipientUserId, id) =>
+      Effect.sync(() => {
+        const account = accounts.get(id);
+        if (!account || account.recipient.id !== recipientUserId || account.status !== "pending") {
+          return false;
+        }
+        accounts.delete(id);
+        return grants.delete(id);
+      }),
+    leaveAccount: (recipientUserId, id) =>
+      Effect.sync(() => {
+        const account = accounts.get(id);
+        if (!account || account.recipient.id !== recipientUserId) return false;
+        accounts.delete(id);
+        return grants.delete(id);
+      }),
+    revokeAccount: (tenantId, id) =>
+      Effect.sync(() => {
+        const grant = grants.get(id)?.grant;
+        if (!grant || grant.tenantId !== tenantId || !accounts.has(id)) return false;
+        accounts.delete(id);
+        return grants.delete(id);
+      }),
+    accessAccount: (recipient, id) =>
+      Effect.sync(() => {
+        const grant = grants.get(id)?.grant;
+        const account = accounts.get(id);
+        if (
+          !grant ||
+          !account ||
+          account.recipient.id !== recipient.id ||
+          account.status !== "accepted" ||
+          (grant.expiresAt && new Date(grant.expiresAt) <= new Date())
+        ) {
+          return null;
+        }
+        return {
+          principal: {
+            tenantId: grant.tenantId,
+            scopes: [...grant.scopes],
+            via: "share",
+            actor: {
+              user: recipient,
+              share: { grantId: grant.id, name: grant.name },
+            },
+            share: {
+              grantId: grant.id,
+              conditions: conditionsFor(grant.viewId),
+              ...(grant.writeStamp ? { writeStamp: grant.writeStamp } : {}),
+              limits: {
+                maxItemBytes: grant.maxItemBytes,
+                maxTotalBytes: grant.maxTotalBytes,
+                maxItems: grant.maxItems,
+              },
+            },
+          },
+          received: toReceived(grant, account),
+          grant: toAccountRecord(grant, account),
+        };
       }),
     updateView: (tenantId, id, input) =>
       Effect.gen(function* () {

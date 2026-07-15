@@ -110,6 +110,8 @@ export function ShareCreateDialog({
     ...(canRead ? (["read"] as const) : []),
     ...(canWrite && !writeBlocked ? (["write"] as const) : []),
   ];
+  const purpose =
+    canRead && canWrite ? "Share and collect" : canWrite ? "Collect files" : "Share files";
 
   const buildWriteStamp = (): Record<string, PropertyValue> | { error: string } => {
     const result: Record<string, PropertyValue> = {};
@@ -165,10 +167,14 @@ export function ShareCreateDialog({
         {link ? (
           <>
             <DialogHeader>
-              <DialogTitle>Share link created</DialogTitle>
+              <DialogTitle>
+                {canWrite && !canRead ? "Upload link created" : "Share link created"}
+              </DialogTitle>
               <DialogDescription>
-                Anyone with this link can access the shared files. You can copy it again anytime
-                from the view's share links.
+                {canWrite && !canRead
+                  ? "Anyone with this link can deliver files, but cannot browse or retrieve them."
+                  : "Anyone with this link can use the access you selected."}{" "}
+                You can copy it again anytime from this view’s sharing page.
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-lg border bg-muted/40 py-1 pr-1 pl-3">
@@ -189,9 +195,11 @@ export function ShareCreateDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Share these files</DialogTitle>
+              <DialogTitle>{purpose}</DialogTitle>
               <DialogDescription>
-                Create a secret link that gives anyone who has it access to the files below.
+                {canWrite && !canRead
+                  ? "Create a secret link for delivering files into your Keva space."
+                  : "Create a secret link with filtered access to this view."}
               </DialogDescription>
             </DialogHeader>
             <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">
@@ -212,10 +220,12 @@ export function ShareCreateDialog({
               </Field>
 
               <Field>
-                <FieldLabel>Shared files</FieldLabel>
+                <FieldLabel>{canRead ? "Shared files" : "Upload destination"}</FieldLabel>
                 {summary.length === 0 ? (
                   <p className="text-xs text-amber-600 dark:text-amber-500">
-                    No filters applied — this link shares all of your files.
+                    {canRead
+                      ? "No filters applied — this link shares all of your files."
+                      : "No filters applied — uploads arrive in a view that also contains all of your files."}
                   </p>
                 ) : (
                   <ul className="flex flex-col gap-1 text-sm text-muted-foreground">

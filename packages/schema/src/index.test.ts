@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   BatchDelete,
+  CreateAccountShare,
   CreateShareGrant,
   CreateView,
   ItemId,
@@ -276,6 +277,32 @@ describe("CreateShareGrant", () => {
   it("rejects zero/negative quotas", () => {
     expect(() =>
       Schema.decodeUnknownSync(CreateShareGrant)({ ...base, scopes: ["read"], maxItems: 0 }),
+    ).toThrow();
+  });
+});
+
+describe("CreateAccountShare", () => {
+  const base = {
+    recipientEmail: "recipient@example.com",
+    viewId: "v1",
+  };
+
+  it("accepts independently scoped read and write invitations", () => {
+    expect(
+      Schema.decodeUnknownSync(CreateAccountShare)({ ...base, scopes: ["read"] }),
+    ).toMatchObject({ scopes: ["read"] });
+    expect(
+      Schema.decodeUnknownSync(CreateAccountShare)({
+        ...base,
+        scopes: ["write"],
+        writeStamp: { project: "alpha" },
+      }),
+    ).toMatchObject({ scopes: ["write"], writeStamp: { project: "alpha" } });
+  });
+
+  it("requires a fixed property stamp for upload access", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(CreateAccountShare)({ ...base, scopes: ["write"] }),
     ).toThrow();
   });
 });

@@ -1,7 +1,10 @@
 import {
+  AccountShareRecord,
+  AccountShareSelf,
   ItemPatch,
   BatchDelete,
   BatchDeleteResult,
+  CreateAccountShare,
   CreateShareGrant,
   CreateShareGrantResult,
   CreateView,
@@ -15,6 +18,7 @@ import {
   PropertySummaryResult,
   PropertyValuesResult,
   Query,
+  ReceivedShare,
   OwnerQueryResult,
   ShareGrantRecord,
   ShareSelf,
@@ -25,6 +29,10 @@ import {
   UsageResult,
   ViewRecord,
   type PropertyKind as PropertyKindType,
+  type AccountShareRecord as AccountShareRecordType,
+  type AccountShareSelf as AccountShareSelfType,
+  type CreateAccountShare as CreateAccountShareType,
+  type ReceivedShare as ReceivedShareType,
   type Properties as PropertiesType,
   type PropertyScalar as PropertyScalarType,
   type PropertyValue as PropertyValueType,
@@ -56,6 +64,10 @@ import {
 import { Schema } from "effect";
 
 export type {
+  AccountShareRecordType as AccountShareRecord,
+  AccountShareSelfType as AccountShareSelf,
+  CreateAccountShareType as CreateAccountShare,
+  ReceivedShareType as ReceivedShare,
   ItemPatchType as ItemPatch,
   BatchDeleteResultType as BatchDeleteResult,
   CreateShareGrantType as CreateShareGrant,
@@ -372,6 +384,62 @@ export class KevaClient {
     );
   }
 
+  createAccountShare(input: CreateAccountShareType): Promise<AccountShareRecordType> {
+    return this.#request(
+      "POST",
+      "/account-shares",
+      AccountShareRecord,
+      decode(CreateAccountShare, input),
+    );
+  }
+
+  async listAccountShares(): Promise<AccountShareRecordType[]> {
+    const records = await this.#request("GET", "/account-shares", Schema.Array(AccountShareRecord));
+    return [...records];
+  }
+
+  revokeAccountShare(id: string): Promise<{ revoked: boolean }> {
+    return this.#request(
+      "DELETE",
+      `/account-shares/${encodeURIComponent(id)}`,
+      Schema.Struct({ revoked: Schema.Boolean }),
+    );
+  }
+
+  async listReceivedShares(): Promise<ReceivedShareType[]> {
+    const records = await this.#request("GET", "/shared-views", Schema.Array(ReceivedShare));
+    return [...records];
+  }
+
+  acceptReceivedShare(id: string): Promise<ReceivedShareType> {
+    return this.#request("POST", `/shared-views/${encodeURIComponent(id)}/accept`, ReceivedShare);
+  }
+
+  declineReceivedShare(id: string): Promise<{ declined: boolean }> {
+    return this.#request(
+      "POST",
+      `/shared-views/${encodeURIComponent(id)}/decline`,
+      Schema.Struct({ declined: Schema.Boolean }),
+    );
+  }
+
+  leaveReceivedShare(id: string): Promise<{ left: boolean }> {
+    return this.#request(
+      "DELETE",
+      `/shared-views/${encodeURIComponent(id)}`,
+      Schema.Struct({ left: Schema.Boolean }),
+    );
+  }
+
+  sharedView(id: string): SharedViewClient {
+    return new SharedViewClient({
+      baseUrl: this.#baseUrl,
+      grantId: id,
+      credentials: this.#credentials,
+      fetch: this.#fetch,
+    });
+  }
+
   createView(input: CreateViewType): Promise<ViewRecordType> {
     return this.#request("POST", "/views", ViewRecord, decode(CreateView, input));
   }
@@ -407,6 +475,18 @@ export interface ShareClientOptions {
   readonly baseUrl: string;
   readonly shareToken: string;
   readonly fetch?: typeof globalThis.fetch;
+}
+
+export interface ShareAccessClient {
+  self(): Promise<ShareSelfType | AccountShareSelfType>;
+  query(query?: QueryType): Promise<SharedQueryResultType>;
+  get(id: string): Promise<SharedItemType>;
+  getDownloadUrl(id: string): Promise<DownloadResultType>;
+  downloadBytes(id: string): Promise<Uint8Array>;
+  startUpload(file: File): Promise<ShareUploadSession>;
+  putUpload(session: ShareUploadSession, body: UploadBody): Promise<void>;
+  completeUpload(session: ShareUploadSession): Promise<SharedItemType>;
+  uploadFile(file: File): Promise<SharedItemType>;
 }
 
 export class ShareClient {
@@ -499,6 +579,101 @@ export class ShareClient {
 
   // Upload into the share. Name/size/type only — the server force-applies the
   // grant's property stamp and rejects any caller-supplied properties/source.
+  async uploadFile(file: File): Promise<SharedItemType> {
+    const session = await this.startUpload(file);
+    await this.putUpload(session, file);
+    return this.completeUpload(session);
+  }
+}
+
+export interface SharedViewClientOptions {
+  readonly baseUrl: string;
+  readonly grantId: string;
+  readonly credentials?: RequestCredentials;
+  readonly fetch?: typeof globalThis.fetch;
+}
+
+export class SharedViewClient implements ShareAccessClient {
+  readonly #config: RequestConfig;
+  readonly #prefix: string;
+
+  constructor(options: SharedViewClientOptions) {
+    this.#config = {
+      baseUrl: options.baseUrl.replace(/\/$/, ""),
+      token: undefined,
+      credentials: options.credentials ?? "include",
+      fetch: options.fetch ?? globalThis.fetch.bind(globalThis),
+    };
+    this.#prefix = `/shared-views/${encodeURIComponent(options.grantId)}`;
+  }
+
+  #request<A, I>(
+    method: string,
+    path: string,
+    schema: Schema.Schema<A, I>,
+    body?: unknown,
+  ): Promise<A> {
+    return httpRequest(this.#config, method, `${this.#prefix}${path}`, schema, body);
+  }
+
+  self(): Promise<AccountShareSelfType> {
+    return this.#request("GET", "/self", AccountShareSelf);
+  }
+
+  query(
+    query: QueryType = { where: [], limit: 100, order: "created_at_desc" },
+  ): Promise<SharedQueryResultType> {
+    return this.#request("POST", "/query", SharedQueryResult, decode(Query, query));
+  }
+
+  get(id: string): Promise<SharedItemType> {
+    return this.#request("GET", `/items/${encodeURIComponent(id)}`, SharedItem);
+  }
+
+  getDownloadUrl(id: string): Promise<DownloadResultType> {
+    return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
+  async downloadBytes(id: string): Promise<Uint8Array> {
+    const target = await this.getDownloadUrl(id);
+    const response = await this.#config.fetch(target.url);
+    if (!response.ok) throw new KevaProtocolError(`Blob download failed with ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  confirm(id: string): Promise<SharedItemType> {
+    return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, SharedItem);
+  }
+
+  async startUpload(file: File): Promise<ShareUploadSession> {
+    return {
+      initiated: await this.#request(
+        "POST",
+        "/items",
+        SharedInitiateUploadResult,
+        decode(InitiateUpload, {
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+        }),
+      ),
+    };
+  }
+
+  async putUpload(session: ShareUploadSession, body: UploadBody): Promise<void> {
+    const response = await this.#config.fetch(session.initiated.uploadUrl, {
+      method: "PUT",
+      headers: session.initiated.headers,
+      credentials: "omit",
+      body,
+    });
+    if (!response.ok) throw new KevaProtocolError(`Blob upload failed with ${response.status}`);
+  }
+
+  completeUpload(session: ShareUploadSession): Promise<SharedItemType> {
+    return this.confirm(session.initiated.item.id);
+  }
+
   async uploadFile(file: File): Promise<SharedItemType> {
     const session = await this.startUpload(file);
     await this.putUpload(session, file);

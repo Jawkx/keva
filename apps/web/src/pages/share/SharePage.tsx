@@ -28,7 +28,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 
-function ShareReadView({ canWrite }: { canWrite: boolean }) {
+export function ShareReadView({ canWrite }: { canWrite: boolean }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const isWide = useMediaQuery("(min-width: 1024px)");
   const splitOpen = Boolean(selectedId) && isWide;
@@ -109,7 +109,7 @@ function ShareBody({ client, onGone }: { client: ShareClient; onGone: () => void
   const canWrite = self.scopes.includes("write");
 
   return (
-    <ShareContextProvider value={{ client, self, onGone }}>
+    <ShareContextProvider value={{ client, self, selfQueryKey: shareSelfQueryKey, onGone }}>
       <ShareShell name={self.name}>
         {canRead ? (
           <ShareReadView canWrite={canWrite} />

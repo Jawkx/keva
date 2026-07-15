@@ -705,7 +705,11 @@ function FilesPageContent({
               </Button>
             )}
             <ButtonGroup>
-              <Button variant="outline" size="sm" onClick={openShare}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => (viewId ? navigate(`/v/${viewId}/shares`) : openShare())}
+              >
                 <Share2 data-icon="inline-start" />
                 Share
               </Button>

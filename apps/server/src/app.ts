@@ -1,5 +1,6 @@
 import { BlobStore, DEFAULT_STORAGE_QUOTA_BYTES, makeKevaEngine, MetadataStore } from "@keva/core";
 import {
+  CreateAccountShare,
   ItemPatch,
   UpdateAdminQuota,
   BatchDelete,
@@ -80,6 +81,11 @@ const principalEffect = (headers: Headers) =>
     const authenticator = yield* Authenticator;
     return yield* authenticator.authenticate({ headers });
   });
+
+const sessionUser = (principal: Principal) =>
+  principal.via === "session" && principal.actor?.user
+    ? Effect.succeed(principal.actor.user)
+    : Effect.fail(new NotFound({ message: "Account session not found" }));
 
 // Share visitors never receive the tenant-internal storage fields. Redaction
 // happens here at the boundary (not in the engine) so internal callers keep the
@@ -552,6 +558,216 @@ export const createApp = (options: CreateAppOptions): Hono => {
         return {
           revoked: yield* shares.revoke(principal.tenantId, context.req.param("id")),
         };
+      }),
+    ),
+  );
+
+  app.post("/api/account-shares", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        const owner = yield* sessionUser(principal);
+        const body = yield* decode(CreateAccountShare, yield* jsonBody(context));
+        if (body.expiresAt && !isFutureInstant(body.expiresAt)) {
+          return yield* new ValidationError({ message: "Share expiration must be in the future" });
+        }
+        const shares = yield* ShareGrantStore;
+        return yield* shares.createAccount(principal.tenantId, owner.id, body);
+      }),
+    ),
+  );
+
+  app.get("/api/account-shares", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        yield* sessionUser(principal);
+        const shares = yield* ShareGrantStore;
+        return yield* shares.listAccountOwned(principal.tenantId);
+      }),
+    ),
+  );
+
+  app.delete("/api/account-shares/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        yield* requireAdminSession(principal);
+        yield* sessionUser(principal);
+        const shares = yield* ShareGrantStore;
+        return {
+          revoked: yield* shares.revokeAccount(principal.tenantId, context.req.param("id")),
+        };
+      }),
+    ),
+  );
+
+  app.get("/api/shared-views", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const user = yield* sessionUser(principal);
+        const shares = yield* ShareGrantStore;
+        return yield* shares.listReceived(user.id);
+      }),
+    ),
+  );
+
+  app.post("/api/shared-views/:grantId/accept", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const user = yield* sessionUser(principal);
+        const shares = yield* ShareGrantStore;
+        const accepted = yield* shares.acceptAccount(user.id, context.req.param("grantId"));
+        if (!accepted) return yield* new NotFound({ message: "Invitation not found" });
+        return accepted;
+      }),
+    ),
+  );
+
+  app.post("/api/shared-views/:grantId/decline", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const user = yield* sessionUser(principal);
+        const shares = yield* ShareGrantStore;
+        return { declined: yield* shares.declineAccount(user.id, context.req.param("grantId")) };
+      }),
+    ),
+  );
+
+  app.delete("/api/shared-views/:grantId", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const user = yield* sessionUser(principal);
+        const shares = yield* ShareGrantStore;
+        return { left: yield* shares.leaveAccount(user.id, context.req.param("grantId")) };
+      }),
+    ),
+  );
+
+  const sharedViewAccess = (headers: Headers, grantId: string) =>
+    Effect.gen(function* () {
+      const principal = yield* principalEffect(headers);
+      const user = yield* sessionUser(principal);
+      const shares = yield* ShareGrantStore;
+      const access = yield* shares.accessAccount(user, grantId);
+      if (!access) return yield* new NotFound({ message: "Shared view not found" });
+      return access;
+    });
+
+  app.get("/api/shared-views/:grantId/self", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const grant = access.grant;
+        const canWrite = grant.scopes.includes("write");
+        const metadata = yield* MetadataStore;
+        const used = canWrite
+          ? yield* metadata.sourceUsage(access.principal.tenantId, `share:${grant.id}`)
+          : { count: 0, bytes: 0 };
+        return {
+          name: access.received.name,
+          owner: access.received.owner,
+          scopes: grant.scopes,
+          expiresAt: grant.expiresAt,
+          upload: canWrite
+            ? {
+                maxItemBytes: grant.maxItemBytes,
+                maxTotalBytes: grant.maxTotalBytes,
+                maxItems: grant.maxItems,
+                usedBytes: used.bytes,
+                usedItems: used.count,
+              }
+            : null,
+        };
+      }),
+    ),
+  );
+
+  app.post("/api/shared-views/:grantId/items", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const body = yield* decode(InitiateUpload, yield* jsonBody(context));
+        const result = yield* makeKevaEngine(access.principal).initiate(body);
+        return { ...result, item: toSharedItem(result.item) };
+      }),
+    ),
+  );
+
+  app.post("/api/shared-views/:grantId/items/:id/confirm", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const id = yield* itemIdParam(context);
+        return toSharedItem(yield* makeKevaEngine(access.principal).confirm(id));
+      }),
+    ),
+  );
+
+  app.get("/api/shared-views/:grantId/items/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const id = yield* itemIdParam(context);
+        return toSharedItem(yield* makeKevaEngine(access.principal).get(id));
+      }),
+    ),
+  );
+
+  app.get("/api/shared-views/:grantId/items/:id/content", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(access.principal).download(id);
+      }),
+    ),
+  );
+
+  app.post("/api/shared-views/:grantId/query", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const body = yield* decode(Query, yield* jsonBody(context));
+        const result = yield* makeKevaEngine(access.principal).query(body);
+        return { ...result, items: result.items.map(toSharedItem) };
       }),
     ),
   );

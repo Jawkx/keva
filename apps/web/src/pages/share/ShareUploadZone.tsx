@@ -32,7 +32,7 @@ export interface ShareUpload {
 }
 
 export function useShareUpload(): ShareUpload {
-  const { client, self, onGone } = useShare();
+  const { client, self, selfQueryKey, onGone } = useShare();
   const queryClient = useQueryClient();
   const [uploads, setUploads] = useState<UploadState[]>([]);
 
@@ -56,7 +56,7 @@ export function useShareUpload(): ShareUpload {
       }
       await client.completeUpload(session);
       setUploads((prev) => prev.map((u) => (u.id === entry.id ? { ...u, status: "done" } : u)));
-      cacheConfirmedShareUpload(queryClient);
+      cacheConfirmedShareUpload(queryClient, selfQueryKey);
     } catch (err) {
       // A revoked/expired link mid-upload takes down the whole page.
       if (isShareGone(err)) {

@@ -18,6 +18,13 @@ import { ViewStore } from "./views.js";
 const STATIC = "static-token";
 const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
+const RECIPIENT_COOKIE = "keva_session=recipient";
+const OTHER_COOKIE = "keva_session=other";
+const USERS = [
+  { id: "owner-user", name: "Owner", email: "owner@example.com" },
+  { id: "recipient-user", name: "Recipient", email: "recipient@example.com" },
+  { id: "other-user", name: "Other", email: "other@example.com" },
+] as const;
 
 const sql = testSql();
 let mock: S3Mock;
@@ -38,13 +45,29 @@ const emptyTokenStore: ApiTokenStoreService = {
 
 const sessionResolver = async (headers: Headers) =>
   headers.get("cookie")?.includes(ADMIN_COOKIE)
-    ? { tenantId: TENANT, scopes: ["read", "write", "delete", "admin"] as const }
-    : null;
+    ? {
+        tenantId: TENANT,
+        scopes: ["read", "write", "delete", "admin"] as const,
+        user: { id: USERS[0].id, name: USERS[0].name },
+      }
+    : headers.get("cookie")?.includes(RECIPIENT_COOKIE)
+      ? {
+          tenantId: "recipient-tenant",
+          scopes: ["read", "write", "delete", "admin"] as const,
+          user: { id: USERS[1].id, name: USERS[1].name },
+        }
+      : headers.get("cookie")?.includes(OTHER_COOKIE)
+        ? {
+            tenantId: "other-tenant",
+            scopes: ["read", "write", "delete", "admin"] as const,
+            user: { id: USERS[2].id, name: USERS[2].name },
+          }
+        : null;
 
 const makeApp = () => {
   const views = new Map<string, ViewRecord>();
   const tokens = Layer.succeed(ApiTokenStore, emptyTokenStore);
-  const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore(views));
+  const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore(views, USERS));
   const viewsLayer = Layer.succeed(ViewStore, makeInMemoryViewStore(views));
   const auth = TokenAndStaticAuthFromStoreLive({
     staticToken: STATIC,
@@ -494,5 +517,138 @@ describe("server share subsystem", () => {
     });
     const response = await app.request("/api/shares/self", { headers: bearer(body.token) });
     expect(response.status).toBe(401);
+  });
+
+  it("binds an accepted shared view to the recipient account and owner tenant", async () => {
+    const app = makeApp();
+    const { view } = await createView(app, ALPHA, "Client drop");
+    const invited = await app.request("/api/account-shares", {
+      method: "POST",
+      headers: admin,
+      body: JSON.stringify({
+        recipientEmail: USERS[1].email,
+        viewId: view.id,
+        scopes: ["read", "write"],
+        writeStamp: { project: "alpha" },
+      }),
+    });
+    expect(invited.status).toBe(200);
+    const grant = (await invited.json()) as { id: string };
+
+    const legacyRevoke = await app.request(`/api/shares/${grant.id}`, {
+      method: "DELETE",
+      headers: { cookie: ADMIN_COOKIE },
+    });
+    expect(await legacyRevoke.json()).toEqual({ revoked: false });
+
+    const pending = await app.request("/api/shared-views", {
+      headers: { cookie: RECIPIENT_COOKIE },
+    });
+    expect(await pending.json()).toMatchObject([
+      { id: grant.id, status: "pending", name: "Client drop", owner: { name: "Owner" } },
+    ]);
+
+    const pendingAccess = await app.request(`/api/shared-views/${grant.id}/query`, {
+      method: "POST",
+      headers: { cookie: RECIPIENT_COOKIE, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(pendingAccess.status).toBe(404);
+
+    const wrongRecipient = await app.request(`/api/shared-views/${grant.id}/accept`, {
+      method: "POST",
+      headers: { cookie: OTHER_COOKIE },
+    });
+    expect(wrongRecipient.status).toBe(404);
+
+    const accepted = await app.request(`/api/shared-views/${grant.id}/accept`, {
+      method: "POST",
+      headers: { cookie: RECIPIENT_COOKIE },
+    });
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toMatchObject({ status: "accepted" });
+    const acceptedAgain = await app.request(`/api/shared-views/${grant.id}/accept`, {
+      method: "POST",
+      headers: { cookie: RECIPIENT_COOKIE },
+    });
+    expect(acceptedAgain.status).toBe(200);
+    expect(await acceptedAgain.json()).toMatchObject({ status: "accepted" });
+
+    const propertyOverride = await app.request(`/api/shared-views/${grant.id}/items`, {
+      method: "POST",
+      headers: { cookie: RECIPIENT_COOKIE, "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "override.txt",
+        contentType: "text/plain",
+        size: 1,
+        properties: { project: "beta" },
+      }),
+    });
+    expect(propertyOverride.status).toBe(400);
+
+    const initiatedResponse = await app.request(`/api/shared-views/${grant.id}/items`, {
+      method: "POST",
+      headers: { cookie: RECIPIENT_COOKIE, "content-type": "application/json" },
+      body: JSON.stringify({ name: "delivery.txt", contentType: "text/plain", size: 1 }),
+    });
+    expect(initiatedResponse.status).toBe(200);
+    const initiated = (await initiatedResponse.json()) as {
+      item: { id: string };
+      uploadUrl: string;
+      headers: Record<string, string>;
+    };
+    await putToStorage(initiated.uploadUrl, {
+      method: "PUT",
+      headers: initiated.headers,
+      body: "x",
+    });
+    const confirmed = await app.request(
+      `/api/shared-views/${grant.id}/items/${initiated.item.id}/confirm`,
+      { method: "POST", headers: { cookie: RECIPIENT_COOKIE } },
+    );
+    expect(confirmed.status).toBe(200);
+    expect(await confirmed.json()).toMatchObject({ properties: { project: "alpha" } });
+
+    const ownerItem = await app.request(`/api/items/${initiated.item.id}`, {
+      headers: bearer(STATIC),
+    });
+    expect(ownerItem.status).toBe(200);
+    expect(await ownerItem.json()).toMatchObject({
+      source: `share:${grant.id}`,
+      properties: { project: "alpha" },
+    });
+
+    const activity = await app.request(`/api/items/${initiated.item.id}/events`, {
+      headers: bearer(STATIC),
+    });
+    expect(await activity.json()).toMatchObject({
+      events: [
+        {
+          actor: {
+            user: { id: USERS[1].id, name: USERS[1].name },
+            share: { grantId: grant.id, name: "Client drop" },
+          },
+        },
+      ],
+    });
+
+    const queried = await app.request(`/api/shared-views/${grant.id}/query`, {
+      method: "POST",
+      headers: { cookie: RECIPIENT_COOKIE, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(await queried.json()).toMatchObject({ items: [{ id: initiated.item.id }] });
+
+    const revoked = await app.request(`/api/account-shares/${grant.id}`, {
+      method: "DELETE",
+      headers: { cookie: ADMIN_COOKIE },
+    });
+    expect(await revoked.json()).toEqual({ revoked: true });
+    const afterRevoke = await app.request(`/api/shared-views/${grant.id}/query`, {
+      method: "POST",
+      headers: { cookie: RECIPIENT_COOKIE, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(afterRevoke.status).toBe(404);
   });
 });

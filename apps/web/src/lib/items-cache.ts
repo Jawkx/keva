@@ -128,7 +128,10 @@ export function removeDeletedItemsFromCache(queryClient: QueryClient, ids: Itera
   invalidatePropertyDiscovery(queryClient);
 }
 
-export function cacheConfirmedShareUpload(queryClient: QueryClient) {
+export function cacheConfirmedShareUpload(
+  queryClient: QueryClient,
+  selfQueryKey: readonly unknown[] = shareSelfQueryKey,
+) {
   void queryClient.invalidateQueries({ queryKey: shareItemsQueryRoot });
-  void queryClient.invalidateQueries({ queryKey: shareSelfQueryKey });
+  void queryClient.invalidateQueries({ queryKey: selfQueryKey });
 }

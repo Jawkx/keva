@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isShareToken, KevaClient, KevaProtocolError, ShareClient, shareClient } from "./index.js";
+import {
+  isShareToken,
+  KevaClient,
+  KevaProtocolError,
+  ShareClient,
+  SharedViewClient,
+  shareClient,
+} from "./index.js";
 
 describe("KevaClient", () => {
   const item = {
@@ -269,6 +276,73 @@ describe("KevaClient", () => {
     await expect(client.revokeShare("grant1")).resolves.toEqual({ revoked: true });
   });
 
+  it("manages account-bound shares and received invitations", async () => {
+    const received = {
+      id: "grant-account",
+      name: "Client drop",
+      icon: null,
+      scopes: ["write"] as const,
+      status: "pending" as const,
+      owner: { id: "owner", name: "Owner", email: "owner@example.com" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      acceptedAt: null,
+      expiresAt: null,
+    };
+    const account = {
+      id: received.id,
+      tenantId: "tenant",
+      viewId: "view1",
+      name: received.name,
+      scopes: received.scopes,
+      conditions: [{ key: "project", op: "has_value" as const, value: "alpha" }],
+      writeStamp: { project: "alpha" },
+      maxItemBytes: null,
+      maxTotalBytes: null,
+      maxItems: null,
+      status: received.status,
+      recipient: { id: "recipient", name: "Recipient", email: "recipient@example.com" },
+      createdAt: received.createdAt,
+      acceptedAt: null,
+      expiresAt: null,
+    };
+    const calls: string[] = [];
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      fetch: async (input, init) => {
+        const url = String(input);
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (url.endsWith("/account-shares") && init?.method === "POST") {
+          return Response.json(account);
+        }
+        if (url.endsWith("/shared-views") && init?.method === "GET") {
+          return Response.json([received]);
+        }
+        if (url.endsWith(`/shared-views/${received.id}/accept`)) {
+          return Response.json({ ...received, status: "accepted", acceptedAt: received.createdAt });
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+
+    await expect(
+      client.createAccountShare({
+        recipientEmail: "recipient@example.com",
+        viewId: "view1",
+        scopes: ["write"],
+        writeStamp: { project: "alpha" },
+      }),
+    ).resolves.toMatchObject({ id: received.id });
+    await expect(client.listReceivedShares()).resolves.toEqual([received]);
+    await expect(client.acceptReceivedShare(received.id)).resolves.toMatchObject({
+      status: "accepted",
+    });
+    expect(calls).toEqual([
+      "POST https://keva.invalid/api/account-shares",
+      "GET https://keva.invalid/api/shared-views",
+      `POST https://keva.invalid/api/shared-views/${received.id}/accept`,
+    ]);
+  });
+
   it("recognizes share tokens by prefix", () => {
     expect(isShareToken("keva_sh_a_b")).toBe(true);
     expect(isShareToken("keva_sk_a_b")).toBe(false);
@@ -362,5 +436,41 @@ describe("ShareClient", () => {
       "PUT https://blob.invalid/upload",
       `POST https://keva.invalid/api/items/${sharedItem.id}/confirm`,
     ]);
+  });
+});
+
+describe("SharedViewClient", () => {
+  it("uses the authenticated grant route without a bearer credential", async () => {
+    const headers: unknown[] = [];
+    const credentials: unknown[] = [];
+    const client = new SharedViewClient({
+      baseUrl: "https://keva.invalid/api",
+      grantId: "grant-account",
+      fetch: async (input, init) => {
+        headers.push(init?.headers);
+        credentials.push(init?.credentials);
+        const url = String(input);
+        if (url.endsWith("/shared-views/grant-account/self")) {
+          return Response.json({
+            name: "Client drop",
+            owner: { id: "owner", name: "Owner", email: "owner@example.com" },
+            scopes: ["write"],
+            expiresAt: null,
+            upload: {
+              maxItemBytes: null,
+              maxTotalBytes: null,
+              maxItems: null,
+              usedBytes: 0,
+              usedItems: 0,
+            },
+          });
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+
+    await expect(client.self()).resolves.toMatchObject({ name: "Client drop" });
+    expect(headers).toEqual([{}]);
+    expect(credentials).toEqual(["include"]);
   });
 });

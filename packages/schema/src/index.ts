@@ -565,6 +565,63 @@ export const CreateShareGrantResult = Schema.Struct({
 });
 export type CreateShareGrantResult = typeof CreateShareGrantResult.Type;
 
+export const AccountShareStatus = Schema.Literal("pending", "accepted");
+export type AccountShareStatus = typeof AccountShareStatus.Type;
+
+export const CreateAccountShare = Schema.Struct({
+  recipientEmail: Schema.NonEmptyString.pipe(Schema.maxLength(320)),
+  viewId: Schema.NonEmptyString,
+  scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
+  writeStamp: Schema.optional(Properties),
+  maxItemBytes: Schema.optional(PositiveInt),
+  maxTotalBytes: Schema.optional(PositiveInt),
+  maxItems: Schema.optional(PositiveInt),
+  expiresAt: Schema.optional(IsoInstant),
+}).pipe(
+  Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
+    message: () => "Write grants require a writeStamp",
+  }),
+);
+export type CreateAccountShare = typeof CreateAccountShare.Type;
+
+const SharePerson = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+});
+
+export const AccountShareRecord = Schema.Struct({
+  id: Schema.String,
+  tenantId: Schema.String,
+  viewId: Schema.String,
+  name: Schema.NonEmptyString,
+  scopes: Schema.Array(ShareScope),
+  conditions: Schema.Array(QueryCondition),
+  writeStamp: Schema.NullOr(Properties),
+  maxItemBytes: Schema.NullOr(Schema.Number),
+  maxTotalBytes: Schema.NullOr(Schema.Number),
+  maxItems: Schema.NullOr(Schema.Number),
+  status: AccountShareStatus,
+  recipient: SharePerson,
+  createdAt: Schema.String,
+  acceptedAt: Schema.NullOr(Schema.String),
+  expiresAt: Schema.NullOr(Schema.String),
+});
+export type AccountShareRecord = typeof AccountShareRecord.Type;
+
+export const ReceivedShare = Schema.Struct({
+  id: Schema.String,
+  name: Schema.NonEmptyString,
+  icon: Schema.NullOr(Schema.String),
+  scopes: Schema.Array(ShareScope),
+  status: AccountShareStatus,
+  owner: SharePerson,
+  createdAt: Schema.String,
+  acceptedAt: Schema.NullOr(Schema.String),
+  expiresAt: Schema.NullOr(Schema.String),
+});
+export type ReceivedShare = typeof ReceivedShare.Type;
+
 // Public self-description a share visitor sees. Conditions and writeStamp are
 // deliberately withheld (they may encode private tenant taxonomy). `upload` is
 // null unless the grant carries write scope.
@@ -583,6 +640,12 @@ export const ShareSelf = Schema.Struct({
   ),
 });
 export type ShareSelf = typeof ShareSelf.Type;
+
+export const AccountShareSelf = Schema.Struct({
+  ...ShareSelf.fields,
+  owner: SharePerson,
+});
+export type AccountShareSelf = typeof AccountShareSelf.Type;
 
 // A KevaItem with the tenant-internal storage fields (tenantId, storageKey,
 // stagingKey) removed. Everything a share visitor receives is redacted to this

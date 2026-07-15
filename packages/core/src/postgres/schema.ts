@@ -144,6 +144,7 @@ export const shareGrants = pgTable(
     viewId: text("view_id")
       .notNull()
       .references(() => views.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"link" | "account">().notNull().default("link"),
     name: text("name").notNull(),
     secretHash: text("secret_hash").notNull(),
     token: text("token"),
