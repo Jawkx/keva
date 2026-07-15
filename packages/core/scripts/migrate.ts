@@ -5,8 +5,8 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 const url = process.env.DATABASE_URL;
 if (!url) {
   throw new Error(
-    "DATABASE_URL is required. Run via db:migrate:staging / db:migrate:prod, " +
-      "or pass it inline: DATABASE_URL=... pnpm --filter @keva/core db:migrate",
+    "DATABASE_URL is required in packages/core/.env, or pass it inline: " +
+      "DATABASE_URL=... pnpm --filter @keva/core db:migrate",
   );
 }
 
