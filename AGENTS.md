@@ -24,8 +24,10 @@ pnpm + Turborepo monorepo (Node 22+, pnpm 11+).
 - Format: `pnpm format` / check with `pnpm format:check` (oxfmt)
 - DB: `pnpm db:generate`, `pnpm db:migrate` (set `DATABASE_URL` first)
 
-Run the server locally with `KEVA_STATIC_TOKEN=dev-secret pnpm --filter @keva/server dev`.
-With no DB/S3 env vars it falls back to in-memory metadata + loopback blob adapters.
+Run the server locally with `pnpm --filter @keva/server dev` after configuring
+`KEVA_STATIC_TOKEN`, `DATABASE_URL`, and the required `S3_*` values. The server
+always uses Postgres metadata and S3-compatible blob storage and fails closed
+when their configuration is incomplete.
 
 ## Conventions
 

@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. Do not solve this with a
 > process-local mutex; Workers and Node processes are distributed.
 >
-> **Drift check**: `git diff --stat ade6455..HEAD -- packages/core/src/engine.ts packages/core/src/services.ts packages/core/src/memory.ts packages/core/src/postgres packages/core/drizzle`
+> **Drift check**: `git diff --stat ade6455..HEAD -- packages/core/src/engine.ts packages/core/src/services.ts packages/core/src/postgres packages/core/drizzle`
 
 ## Status
 
@@ -33,8 +33,8 @@ must share one transaction.
 
 ## Scope
 
-**In scope**: metadata-store reservation API, transaction-scoped per-share
-locking, and memory/Postgres equivalence.
+**In scope**: metadata-store reservation API and transaction-scoped per-share
+locking in Postgres.
 
 **Out of scope**: UI quota display (plan 013) and upload-body size enforcement
 (plan 011).
@@ -46,9 +46,8 @@ locking, and memory/Postgres equivalence.
 2. In Postgres, take a transaction-scoped advisory lock derived from tenant and
    grant identity, calculate current source usage inside that transaction, then
    validate and insert. Keep the existing tenant-usage row lock for tenant quota.
-3. Implement equivalent synchronous semantics in the memory store. Do not add a
-   new persistent per-grant counter table unless advisory locking is unavailable
-   or measured aggregation cost later justifies denormalization.
+3. Do not add a new per-grant counter table unless advisory locking is
+   unavailable or measured aggregation cost later justifies denormalization.
 
 ## Verification
 

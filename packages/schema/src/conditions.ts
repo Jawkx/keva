@@ -1,14 +1,6 @@
 import { FIELD_BY_KEY } from "./fields.js";
 import type { KevaItem, Properties, PropertyValue, QueryCondition } from "./index.js";
 
-// Shared, storage-agnostic evaluation of a single QueryCondition against an
-// item (or a bare property blob). This is the one source of truth for what a
-// condition MEANS: the in-memory metadata store, the engine's share point-checks
-// (get/download), and share-grant creation (does a writeStamp satisfy its own
-// conditions?) all evaluate through here, so they can never drift. The postgres
-// store compiles the same semantics into SQL (`compileCondition`); the
-// store-equivalence tests keep the two in lockstep.
-
 interface Candidate {
   readonly exists: boolean;
   readonly value: PropertyValue | string | number | null;

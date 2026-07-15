@@ -529,9 +529,6 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   usage: (tenantId) =>
     attempt(async () => {
-      // One grouped aggregate over the tenant's ready items. count/sum come back
-      // as strings from postgres.js (bigint), so cast like mapRow does. Ordering
-      // matches the memory store so store-equivalence stays exact.
       const rows = await sql<{ content_type: string; count: string; bytes: string }[]>`
         select content_type,
                count(*)::bigint as count,

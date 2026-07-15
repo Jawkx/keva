@@ -21,10 +21,9 @@ Authed routes are guarded by `authClient.useSession()`; no session redirects to
 
 ## Dev stack (two terminals)
 
-The SPA needs the API (which needs Postgres). Because the dev proxy makes
-everything same-origin, the API must emit **relative** loopback blob-upload URLs
-(`KEVA_LOOPBACK_BASE_URL=""`) so the upload `PUT` also flows through the Vite
-proxy.
+The SPA needs the API, Postgres, and an S3-compatible bucket. The API returns
+presigned S3 URLs for blob uploads and downloads, so the bucket must allow the
+web app's development origin through its CORS configuration.
 
 ### Terminal 1 — API (port 8787)
 
@@ -32,13 +31,16 @@ proxy.
 KEVA_STATIC_TOKEN=dev-token \
 BETTER_AUTH_SECRET=dev-secret-change-me \
 DATABASE_URL=postgres://localhost:5432/keva \
-KEVA_LOOPBACK_BASE_URL="" \
+S3_ENDPOINT=http://127.0.0.1:9000 \
+S3_REGION=us-east-1 \
+S3_ACCESS_KEY_ID=minioadmin \
+S3_SECRET_ACCESS_KEY=minioadmin \
+S3_BUCKET=keva \
+S3_FORCE_PATH_STYLE=true \
 pnpm --filter @keva/server dev
 ```
 
-(Adjust `DATABASE_URL` to your local Postgres. `KEVA_LOOPBACK_BASE_URL=""` is
-the important bit — it makes the API's blob upload/download URLs relative so
-they pass through the Vite proxy.)
+Adjust the database and S3 values for your local services.
 
 ### Terminal 2 — web (port 5173)
 

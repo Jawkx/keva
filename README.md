@@ -4,18 +4,19 @@ Metadata-rich, S3-backed object storage for people, applications, and agents.
 
 ## Local development
 
-Requirements: Node.js 22+, pnpm 11+, and optionally Postgres and an
-S3-compatible bucket.
+Requirements: Node.js 22+, pnpm 11+, Postgres, and an S3-compatible bucket.
 
 ```sh
 pnpm install
 pnpm build
-KEVA_RUNTIME_MODE=local-memory KEVA_STATIC_TOKEN=dev-secret pnpm --filter @keva/server dev
+cp apps/server/.env.example apps/server/.env
+# Configure DATABASE_URL and the S3_* values in apps/server/.env, then:
+pnpm --filter @keva/server dev
 ```
 
-`local-memory` opts into the development in-memory metadata and signed loopback
-blob adapters. Use `persistent` only with both `DATABASE_URL` and complete S3
-configuration. See [`apps/server/.env.example`](./apps/server/.env.example).
+The server always uses Postgres for metadata and S3-compatible storage for blobs.
+It fails to start when either configuration is incomplete. See
+[`apps/server/.env.example`](./apps/server/.env.example).
 
 ## Storage lifecycle
 
