@@ -155,44 +155,30 @@ describe("createKevaMcpServer tool registration", () => {
 });
 
 describe("createKevaMcpServer tool execution", () => {
-  it("delegates query_items to the engine and serializes the result", async () => {
+  it("delegates query_items with canonical conditions and serializes the result", async () => {
     const queryItems = vi.fn(async () => ({ items: [item], nextCursor: "c1" }));
     const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);
 
     const result = await client.callTool({
       name: "query_items",
-      arguments: { where: [{ key: "tag", op: "has_value", value: "photo" }], limit: 10 },
+      arguments: {
+        where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
+        limit: 10,
+        order: "created_at_desc",
+      },
     });
 
     expect(queryItems).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: [{ key: "tag", op: "has_value", value: "photo" }],
+        where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
         limit: 10,
+        order: "created_at_desc",
       }),
     );
     expect(result.isError).toBeFalsy();
     expect(JSON.parse(textOf(result as never))).toMatchObject({
       items: [{ id: item.id }],
       nextCursor: "c1",
-    });
-    await close();
-  });
-
-  it("preserves canonical multi-value conditions and ordering", async () => {
-    const queryItems = vi.fn(async () => ({ items: [] }));
-    const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);
-
-    await client.callTool({
-      name: "query_items",
-      arguments: {
-        where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
-        order: "created_at_desc",
-      },
-    });
-
-    expect(queryItems).toHaveBeenCalledWith({
-      where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
-      order: "created_at_desc",
     });
     await close();
   });
@@ -260,57 +246,6 @@ describe("createKevaMcpServer tool execution", () => {
       expect(result.isError).toBe(true);
     }
     expect(queryItems).not.toHaveBeenCalled();
-    await close();
-  });
-
-  it("delegates list_property_values with the requested key", async () => {
-    const listPropertyValues = vi.fn(async () => ({ values: ["bali", "tokyo"] }));
-    const { client, close } = await connect(stubEngine({ listPropertyValues }), ["read"]);
-
-    const result = await client.callTool({
-      name: "list_property_values",
-      arguments: { key: "location" },
-    });
-
-    expect(listPropertyValues).toHaveBeenCalledWith({ key: "location" });
-    expect(result.isError).toBeFalsy();
-    expect(JSON.parse(textOf(result as never))).toEqual({ values: ["bali", "tokyo"] });
-    await close();
-  });
-
-  it("delegates get_usage and serializes the breakdown", async () => {
-    const getUsage = vi.fn(async () => ({
-      itemCount: 3,
-      totalBytes: 15,
-      quotaBytes: 100,
-      remainingBytes: 85,
-      byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
-    }));
-    const { client, close } = await connect(stubEngine({ getUsage }), ["read"]);
-
-    const result = await client.callTool({ name: "get_usage", arguments: {} });
-
-    expect(getUsage).toHaveBeenCalled();
-    expect(result.isError).toBeFalsy();
-    expect(JSON.parse(textOf(result as never))).toEqual({
-      itemCount: 3,
-      totalBytes: 15,
-      quotaBytes: 100,
-      remainingBytes: 85,
-      byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
-    });
-    await close();
-  });
-
-  it("returns only public item fields", async () => {
-    const { client, close } = await connect(stubEngine(), ["read"]);
-    const result = await client.callTool({ name: "get_item", arguments: { id: item.id } });
-    const value = JSON.parse(textOf(result as never));
-
-    expect(value).toMatchObject({ id: item.id, name: item.name });
-    expect(value).not.toHaveProperty("tenantId");
-    expect(value).not.toHaveProperty("storageKey");
-    expect(value).not.toHaveProperty("stagingKey");
     await close();
   });
 

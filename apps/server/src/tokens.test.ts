@@ -6,7 +6,6 @@ import { createApp } from "./app.js";
 import {
   ApiTokenStore,
   type ApiTokenStoreService,
-  shouldRefreshLastUsed,
   TokenAndStaticAuthFromStoreLive,
   type SessionResolver,
 } from "./auth.js";
@@ -111,13 +110,6 @@ const adminSession = {
 };
 
 describe("server token subsystem", () => {
-  it("throttles token last-used refresh decisions", () => {
-    const now = new Date("2026-01-01T00:10:00.000Z");
-    expect(shouldRefreshLastUsed(null, now)).toBe(true);
-    expect(shouldRefreshLastUsed("2026-01-01T00:06:00.000Z", now)).toBe(false);
-    expect(shouldRefreshLastUsed("2026-01-01T00:04:59.000Z", now)).toBe(true);
-  });
-
   it("keeps missing-cookie requests unauthorized without hitting session storage", async () => {
     const app = makeApp(async () => {
       throw new Error("session storage should not be called");

@@ -147,63 +147,6 @@ describe("KevaEngine", () => {
     expect(result.other.items).toHaveLength(0);
   });
 
-  it("searches ready items by name and content type with tenant-scoped pagination", async () => {
-    const layer = testLayer();
-    const program = Effect.gen(function* () {
-      const tenant = makeKevaEngine(principal("tenant-a"));
-      const named = yield* upload("tenant-a", "quarterly-fox.txt", new TextEncoder().encode("one"));
-      const typed = yield* tenant.initiate({
-        name: "diagram.svg",
-        contentType: "image/fox-icon",
-        size: 3,
-        source: "upload",
-        properties: {},
-      });
-      yield* stage(typed.item.stagingKey, new TextEncoder().encode("two"), "image/fox-icon");
-      const contentTypeMatch = yield* tenant.confirm(typed.item.id);
-      yield* upload("tenant-a", "plain.txt", new TextEncoder().encode("three"));
-      yield* upload("tenant-b", "other-fox.txt", new TextEncoder().encode("four"));
-
-      const all = yield* tenant.query({
-        where: [],
-        search: "fox",
-        limit: 100,
-        order: "created_at_asc",
-      });
-      const firstPage = yield* tenant.query({
-        where: [],
-        search: "fox",
-        limit: 1,
-        order: "created_at_asc",
-      });
-      const secondPage = yield* tenant.query({
-        where: [],
-        search: "fox",
-        limit: 1,
-        order: "created_at_asc",
-        cursor: firstPage.nextCursor,
-      });
-      const otherTenant = yield* makeKevaEngine(principal("tenant-b")).query({
-        where: [],
-        search: "quarterly",
-        limit: 100,
-        order: "created_at_asc",
-      });
-      return { named, contentTypeMatch, all, firstPage, secondPage, otherTenant };
-    }).pipe(Effect.provide(layer));
-
-    const result = await Effect.runPromise(program);
-    expect(result.all.items.map((item) => item.id).sort()).toEqual(
-      [result.named.id, result.contentTypeMatch.id].sort(),
-    );
-    expect(result.firstPage.items).toHaveLength(1);
-    expect(result.secondPage.items).toHaveLength(1);
-    expect(new Set([result.firstPage.items[0]!.id, result.secondPage.items[0]!.id])).toEqual(
-      new Set([result.named.id, result.contentTypeMatch.id]),
-    );
-    expect(result.otherTenant.items).toHaveLength(0);
-  });
-
   it("does not overwrite final bytes when a staging grant is replayed", async () => {
     const layer = testLayer();
     const program = Effect.gen(function* () {

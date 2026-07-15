@@ -169,12 +169,6 @@ const tokenRecord = (row: TokenRow): TokenRecord => ({
 const storageError = (): StorageUnavailable =>
   new StorageUnavailable({ message: "Token storage unavailable" });
 
-export const LAST_USED_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
-
-export const shouldRefreshLastUsed = (lastUsedAt: Date | string | null, now: Date): boolean =>
-  lastUsedAt === null ||
-  now.getTime() - new Date(lastUsedAt).getTime() >= LAST_USED_UPDATE_INTERVAL_MS;
-
 export const makePostgresApiTokenStore = (sql: Sql): ApiTokenStoreService => ({
   resolve: (token) =>
     Effect.tryPromise({

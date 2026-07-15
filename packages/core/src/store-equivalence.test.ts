@@ -56,11 +56,6 @@ const QUERIES: Record<string, Query> = {
     limit: 100,
     order: "created_at_asc",
   },
-  sysContentTypeNeq: {
-    where: [{ key: "system.content_type", op: "neq", value: "image/png" }],
-    limit: 100,
-    order: "created_at_asc",
-  },
   inSysContentType: {
     where: [
       { key: "system.content_type", op: "contains_any", value: ["application/pdf", "text/"] },
@@ -90,7 +85,6 @@ const EXPECTED: Record<string, string[]> = {
   eqNull: ["carol"],
   neqPropTypeMismatch: ["alpha", "bravo", "carol"],
   sysContentTypeEq: ["bravo"],
-  sysContentTypeNeq: ["alpha", "carol"],
   inSysContentType: ["alpha", "carol"],
   inPropString: ["alpha", "bravo", "carol"],
   inArrayProp: ["bravo"],

@@ -1,7 +1,7 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import type { CreateShareGrantResult, QueryCondition, ViewRecord } from "@keva/schema";
 import { Effect, Layer } from "effect";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
 import {
   ApiTokenStore,
@@ -511,12 +511,22 @@ describe("server share subsystem", () => {
   });
 
   it("rejects an expired share token", async () => {
-    const app = makeApp();
-    const { body } = await shareAlpha(app, {
-      expiresAt: new Date(Date.now() - 1000).toISOString(),
-    });
-    const response = await app.request("/api/shares/self", { headers: bearer(body.token) });
-    expect(response.status).toBe(401);
+    vi.useFakeTimers();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    vi.setSystemTime(now);
+    try {
+      const app = makeApp();
+      const { status, body } = await shareAlpha(app, {
+        expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+      });
+      expect(status).toBe(200);
+
+      vi.setSystemTime(new Date(now.getTime() + 120_000));
+      const response = await app.request("/api/shares/self", { headers: bearer(body.token) });
+      expect(response.status).toBe(401);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("binds an accepted shared view to the recipient account and owner tenant", async () => {

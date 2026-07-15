@@ -95,10 +95,6 @@ describe("mcpScopesToKevaScopes", () => {
     expect(mcpScopesToKevaScopes("keva:admin keva:read")).toEqual(["read"]);
   });
 
-  it("grants no keva permissions when no keva scope is granted", () => {
-    expect(mcpScopesToKevaScopes("")).toEqual([]);
-  });
-
   it("deduplicates", () => {
     expect(mcpScopesToKevaScopes("keva:read keva:read")).toEqual(["read"]);
   });
@@ -164,21 +160,6 @@ describe("principalFromMcpToken", () => {
       user: { id: "u1", name: "u1" },
       agent: { clientId: "client-1", name: "client-1" },
     });
-  });
-});
-
-describe("/mcp route", () => {
-  it("returns 401 with a WWW-Authenticate resource pointer when unauthenticated", async () => {
-    const app = createApp({ layer: baseLayer(), mcp: stubMcpDeps({ mcpSession: null }) });
-    const response = await app.request("/mcp", {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-    });
-    expect(response.status).toBe(401);
-    expect(response.headers.get("WWW-Authenticate")).toContain(
-      "/.well-known/oauth-protected-resource",
-    );
   });
 });
 

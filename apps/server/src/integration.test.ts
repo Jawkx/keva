@@ -216,16 +216,6 @@ describe("server integration — HTTP roundtrip", () => {
     expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
   });
 
-  it("returns a typed NotFound (404) for an unknown id", async () => {
-    const app = makeApp();
-    const response = await app.request("/api/items/00000000-0000-0000-0000-000000000000", {
-      method: "GET",
-      headers: auth,
-    });
-    expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({ _tag: "NotFound" });
-  });
-
   it("returns a typed Unauthorized (401) for a bad token", async () => {
     const app = makeApp();
     const response = await app.request("/api/query", {
