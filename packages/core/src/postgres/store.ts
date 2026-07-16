@@ -16,6 +16,7 @@ import {
   type PropertyScalar,
   type QueryCondition,
   type QueryOrder,
+  type Cursor,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
@@ -121,17 +122,37 @@ const dbFailure = (): Internal => new Internal({ message: "Metadata store unavai
 const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, KevaError> =>
   Effect.tryPromise({ try: operation, catch: dbFailure });
 
-const decodeCursor = (
-  cursor: string,
-): Effect.Effect<readonly [string, string], ValidationError> => {
+const decodeCursor = (cursor: string): Effect.Effect<Cursor, ValidationError> => {
   const decoded = decodeSharedCursor(cursor);
   return decoded
     ? Effect.succeed(decoded)
     : Effect.fail(new ValidationError({ message: "Invalid query cursor" }));
 };
 
+const invalidCursor = () => new ValidationError({ message: "Cursor does not match query order" });
+
+const decodeQueryCursor = (
+  cursor: string,
+  order: QueryOrder,
+): Effect.Effect<Cursor, ValidationError> =>
+  Effect.flatMap(decodeCursor(cursor), (decoded) =>
+    (order.startsWith("size_") ? typeof decoded[0] === "number" : typeof decoded[0] === "string") &&
+    (decoded[2] === order || (decoded[2] === undefined && order.startsWith("created_at_")))
+      ? Effect.succeed(decoded)
+      : Effect.fail(invalidCursor()),
+  );
+
+const decodeEventCursor = (
+  cursor: string,
+): Effect.Effect<readonly [string, string], ValidationError> =>
+  Effect.flatMap(decodeCursor(cursor), (decoded) =>
+    typeof decoded[0] === "string" && decoded[2] === undefined
+      ? Effect.succeed([decoded[0], decoded[1]] as const)
+      : Effect.fail(invalidCursor()),
+  );
+
 type Fragment = ReturnType<Sql["unsafe"]>;
-type CursorPredicate = (cursor: readonly [string, string]) => Fragment;
+type CursorPredicate = (cursor: Cursor) => Fragment;
 
 const systemColumn = (
   sql: Sql,
@@ -228,18 +249,41 @@ const escapeLikePattern = (value: string): string =>
 const queryOrder = (
   sql: Sql,
   order: QueryOrder,
-): { readonly by: Fragment; readonly afterCursor: CursorPredicate } =>
-  order === "created_at_desc"
-    ? {
-        by: sql`created_at desc, id desc`,
-        afterCursor: (cursor) =>
-          sql`(created_at, id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
-      }
-    : {
-        by: sql`created_at asc, id asc`,
-        afterCursor: (cursor) =>
-          sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
-      };
+): {
+  readonly by: Fragment;
+  readonly afterCursor: CursorPredicate;
+  readonly cursorFor: (item: KevaItem) => Cursor;
+} => {
+  if (order === "created_at_desc") {
+    return {
+      by: sql`created_at desc, id desc`,
+      afterCursor: (cursor) =>
+        sql`(created_at, id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
+      cursorFor: (item) => [item.createdAt, item.id],
+    };
+  }
+  if (order === "created_at_asc") {
+    return {
+      by: sql`created_at asc, id asc`,
+      afterCursor: (cursor) =>
+        sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
+      cursorFor: (item) => [item.createdAt, item.id],
+    };
+  }
+  const size = sql`coalesce(size, declared_size)`;
+  if (order === "size_desc") {
+    return {
+      by: sql`${size} desc, id desc`,
+      afterCursor: (cursor) => sql`(${size}, id) < (${cursor[0]}::bigint, ${cursor[1]}::uuid)`,
+      cursorFor: (item) => [item.size ?? item.declaredSize, item.id],
+    };
+  }
+  return {
+    by: sql`${size} asc, id asc`,
+    afterCursor: (cursor) => sql`(${size}, id) > (${cursor[0]}::bigint, ${cursor[1]}::uuid)`,
+    cursorFor: (item) => [item.size ?? item.declaredSize, item.id],
+  };
+};
 
 // Reserve tenant storage inside an open transaction: locks the tenant_usage
 // row, checks the quota, and adds the declared size. Returns false (leaving the
@@ -505,7 +549,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         );
       }
       if (query.cursor) {
-        const cursor = yield* decodeCursor(query.cursor);
+        const cursor = yield* decodeQueryCursor(query.cursor, order);
         predicates.push(queryOrder(sql, order).afterCursor(cursor));
       }
       const orderSql = queryOrder(sql, order);
@@ -520,10 +564,14 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         `,
       );
       const items = rows.slice(0, query.limit).map(mapRow);
+      const lastItem = rows.length > query.limit ? items.at(-1) : undefined;
+      const nextCursor = lastItem ? orderSql.cursorFor(lastItem) : undefined;
       return {
         items,
-        ...(rows.length > query.limit && items.at(-1)
-          ? { nextCursor: encodeCursor([items.at(-1)!.createdAt, items.at(-1)!.id]) }
+        ...(nextCursor
+          ? {
+              nextCursor: encodeCursor([nextCursor[0], nextCursor[1], order]),
+            }
           : {}),
       };
     }),
@@ -714,7 +762,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     Effect.gen(function* () {
       const predicates: Fragment[] = [sql`tenant_id = ${tenantId}`, sql`item_id = ${itemId}`];
       if (options.cursor) {
-        const cursor = yield* decodeCursor(options.cursor);
+        const cursor = yield* decodeEventCursor(options.cursor);
         predicates.push(sql`(created_at, id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`);
       }
       const where = predicates.reduce((left, right) => sql`${left} and ${right}`);

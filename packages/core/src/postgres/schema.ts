@@ -52,6 +52,12 @@ export const items = pgTable(
     index("items_tenant_content_type_idx").on(table.tenantId, table.contentType),
     index("items_tenant_size_idx").on(table.tenantId, table.size),
     index("items_tenant_created_id_idx").on(table.tenantId, table.createdAt, table.id),
+    index("items_tenant_status_size_id_idx").on(
+      table.tenantId,
+      table.status,
+      sql`coalesce(${table.size}, ${table.declaredSize})`,
+      table.id,
+    ),
     index("items_properties_gin_idx").using("gin", table.properties),
     index("items_tenant_source_idx").on(table.tenantId, table.source),
     index("items_staging_uncleaned_idx")

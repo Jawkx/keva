@@ -1,5 +1,8 @@
 import {
   ArrowDown,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   CloudUpload,
   EllipsisVertical,
   Files,
@@ -26,7 +29,7 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { toast } from "sonner";
-import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
+import type { PropertyValue, QueryCondition, QueryOrder, UpdateView } from "@keva/schema";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
 import { FilterBar, FilterMenuButton } from "../components/FilterBar";
@@ -34,6 +37,14 @@ import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
 import { useAppHeaderSlot } from "../lib/app-header-slot";
 import { errorMessage } from "../lib/errors";
+import {
+  DEFAULT_FILE_ORDER,
+  fileOrderFromParam,
+  fileSortColumn,
+  fileSortDirection,
+  nextFileOrder,
+  type FileSortColumn,
+} from "../lib/file-order";
 import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
 import { decodeFilterParam, draftFromConditions } from "../lib/item-filters";
 import { removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
@@ -111,6 +122,8 @@ declare module "@tanstack/react-table" {
     onRetryUpload: (row: FileRow) => void;
     onFilterByProperty: (key: string, value: PropertyValue) => void;
     onOpenItem: (itemId: string) => void;
+    order: QueryOrder;
+    onSort: (column: FileSortColumn) => void;
   }
 }
 
@@ -134,8 +147,6 @@ const uploadStampDescription = (
 };
 
 const PAGE_SIZE = 50;
-const DEFAULT_ORDER = "created_at_desc" as const;
-
 const plural = (n: number) => (n === 1 ? "item" : "items");
 
 const canonCondition = (c: QueryCondition) => JSON.stringify([c.key, c.op, c.value ?? null]);
@@ -144,6 +155,8 @@ const sameConditions = (a: readonly QueryCondition[], b: readonly QueryCondition
   a.map(canonCondition).sort().join("|") === b.map(canonCondition).sort().join("|");
 
 type FileRow = UploadQueueRow;
+
+const EMPTY_FILE_ROWS: FileRow[] = [];
 
 const columnHelper = createColumnHelper<FileRow>();
 
@@ -220,7 +233,14 @@ const columns = [
   }),
   columnHelper.accessor((o) => o.size ?? 0, {
     id: "size",
-    header: "Size",
+    header: ({ table }) => (
+      <SortButton
+        label="Size"
+        column="size"
+        order={table.options.meta!.order}
+        onSort={table.options.meta!.onSort}
+      />
+    ),
     cell: (ctx) => (
       <span className="text-muted-foreground tabular-nums">
         {formatBytes(ctx.row.original.size)}
@@ -229,7 +249,14 @@ const columns = [
   }),
   columnHelper.accessor((o) => new Date(o.createdAt).getTime(), {
     id: "createdAt",
-    header: () => <SortButton label="Created" />,
+    header: ({ table }) => (
+      <SortButton
+        label="Created"
+        column="createdAt"
+        order={table.options.meta!.order}
+        onSort={table.options.meta!.onSort}
+      />
+    ),
     cell: (ctx) => (
       <span className="text-muted-foreground">{formatRelative(ctx.row.original.createdAt)}</span>
     ),
@@ -313,12 +340,17 @@ function FilesPageContent({
 }) {
   const navigate = useNavigate();
   const { id: selectedId, viewId } = useParams<{ id: string; viewId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const isWide = useMediaQuery("(min-width: 1024px)");
   const headerSlot = useAppHeaderSlot();
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const clearSelection = useCallback(() => setRowSelection({}), []);
+  const [pagination, setPagination] = useState({ identity: "", pageIndex: 0 });
+  const resetQueryState = useCallback(() => {
+    setRowSelection({});
+    setPagination({ identity: "", pageIndex: 0 });
+  }, []);
   const {
     search,
     activeSearch,
@@ -330,7 +362,10 @@ function FilesPageContent({
     filterByProperty,
     onSearchChange,
     clearFilters,
-  } = useFileFilters({ viewId, initialWhere, onQueryChange: clearSelection });
+  } = useFileFilters({ viewId, initialWhere, onQueryChange: resetQueryState });
+  const order = fileOrderFromParam(searchParams.get("sort"));
+  const queryIdentity = JSON.stringify([activeSearch, activeWhere, order]);
+  const pageIndex = pagination.identity === queryIdentity ? pagination.pageIndex : 0;
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -363,9 +398,15 @@ function FilesPageContent({
     [sharesQuery.data, viewId],
   );
 
-  const listPath = viewId ? `/v/${viewId}` : "/";
+  const withSearchParams = (path: string, includePanel: boolean) => {
+    const params = new URLSearchParams(searchParams);
+    if (!includePanel) params.delete("panel");
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+  };
+  const listPath = withSearchParams(viewId ? `/v/${viewId}` : "/", false);
   const itemPath = (itemId: string) =>
-    viewId ? `/v/${viewId}/items/${itemId}` : `/items/${itemId}`;
+    withSearchParams(viewId ? `/v/${viewId}/items/${itemId}` : `/items/${itemId}`, true);
 
   const updateViewMutation = useMutation({
     mutationFn: (input: UpdateView) => updateView(viewId!, input),
@@ -402,13 +443,13 @@ function FilesPageContent({
   });
 
   const itemsQuery = useInfiniteQuery({
-    queryKey: itemsQueryKey(activeSearch, activeWhere, DEFAULT_ORDER),
+    queryKey: itemsQueryKey(activeSearch, activeWhere, order),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       keva.query({
         where: activeWhere,
         ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
-        order: DEFAULT_ORDER,
+        order,
         limit: PAGE_SIZE,
         ...(pageParam ? { cursor: pageParam } : {}),
       }),
@@ -417,10 +458,8 @@ function FilesPageContent({
 
   const loading = itemsQuery.isLoading;
   const error = itemsQuery.error ? errorMessage(itemsQuery.error) : null;
-  const serverItems = useMemo(
-    () => itemsQuery.data?.pages.flatMap((p) => p.items) ?? [],
-    [itemsQuery.data],
-  );
+  const pages = itemsQuery.data?.pages;
+  const serverItems = pages?.[pageIndex]?.items ?? EMPTY_FILE_ROWS;
 
   const splitOpen = Boolean(selectedId) && isWide;
   const columnVisibility: VisibilityState = {
@@ -440,9 +479,13 @@ function FilesPageContent({
     queryClient,
     activeSearch,
     activeWhere,
+    order,
     uploadStamp,
   });
-  const tableData = useMemo<FileRow[]>(() => [...uploads, ...serverItems], [uploads, serverItems]);
+  const tableData = useMemo<FileRow[]>(
+    () => [...(pageIndex === 0 ? uploads : []), ...serverItems],
+    [pageIndex, serverItems, uploads],
+  );
 
   const table = useReactTable({
     data: tableData,
@@ -457,6 +500,20 @@ function FilesPageContent({
       onRetryUpload: retryUpload,
       onFilterByProperty: filterByProperty,
       onOpenItem: (itemId) => navigate(itemId === selectedId ? listPath : itemPath(itemId)),
+      order,
+      onSort: (column) => {
+        const nextOrder = nextFileOrder(order, column);
+        resetQueryState();
+        setSearchParams(
+          (previous) => {
+            const params = new URLSearchParams(previous);
+            if (nextOrder === DEFAULT_FILE_ORDER) params.delete("sort");
+            else params.set("sort", nextOrder);
+            return params;
+          },
+          { replace: true },
+        );
+      },
     },
   });
 
@@ -505,7 +562,7 @@ function FilesPageContent({
 
   const discardViewEdits = () => {
     if (!view) return;
-    setRowSelection({});
+    resetQueryState();
     setActiveWhere([...view.conditions]);
     setFilterDraft(draftFromConditions(view.conditions));
   };
@@ -528,6 +585,24 @@ function FilesPageContent({
     updateViewMutation.mutate({ icon: key });
   };
 
+  const loadedNextPage = Boolean(pages?.[pageIndex + 1]);
+  const canGoNext =
+    loadedNextPage || (pageIndex === (pages?.length ?? 0) - 1 && itemsQuery.hasNextPage);
+  const goToPreviousPage = () => {
+    if (pageIndex === 0) return;
+    setRowSelection({});
+    setPagination({ identity: queryIdentity, pageIndex: pageIndex - 1 });
+  };
+  const goToNextPage = async () => {
+    if (!canGoNext) return;
+    if (!loadedNextPage) {
+      const result = await itemsQuery.fetchNextPage();
+      if (!result.data?.pages[pageIndex + 1]) return;
+    }
+    setRowSelection({});
+    setPagination({ identity: queryIdentity, pageIndex: pageIndex + 1 });
+  };
+
   const tableInner = (
     <Table className="[&_td]:px-3 [&_td]:py-3.5 [&_th]:px-3 [&_tr]:border-0">
       <TableHeader>
@@ -537,6 +612,9 @@ function FilesPageContent({
               <TableHead
                 key={header.id}
                 className={header.column.id === "select" ? "w-10" : undefined}
+                aria-sort={
+                  fileSortColumn(order) === header.column.id ? fileSortDirection(order) : undefined
+                }
               >
                 {header.isPlaceholder
                   ? null
@@ -584,19 +662,29 @@ function FilesPageContent({
     </Table>
   );
 
-  const loadMore = itemsQuery.hasNextPage && (
-    <div className="mt-4 flex justify-center">
-      <Button
-        variant="outline"
-        disabled={itemsQuery.isFetchingNextPage}
-        onClick={() => void itemsQuery.fetchNextPage()}
-      >
-        {itemsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-      </Button>
+  const pageControls = (pageIndex > 0 || canGoNext) && (
+    <div className="flex items-center justify-between border-t px-3 py-3">
+      <span className="text-sm text-muted-foreground tabular-nums">Page {pageIndex + 1}</span>
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={goToPreviousPage}>
+          <ChevronLeft data-icon="inline-start" />
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!canGoNext || itemsQuery.isFetchingNextPage}
+          onClick={() => void goToNextPage()}
+        >
+          {itemsQuery.isFetchingNextPage ? "Loading…" : "Next"}
+          {!itemsQuery.isFetchingNextPage && <ChevronRight data-icon="inline-end" />}
+        </Button>
+      </div>
     </div>
   );
 
-  const hasItems = tableData.length > 0;
+  const hasItems = uploads.length > 0 || Boolean(pages?.some((page) => page.items.length > 0));
+  const emptyPage = pageIndex > 0 || canGoNext;
 
   const leftPane = (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
@@ -738,19 +826,26 @@ function FilesPageContent({
       )}
       <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto">
         {!loading && rows.length === 0 ? (
-          <Empty className="py-16">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Search />
-              </EmptyMedia>
-              <EmptyTitle>No matches</EmptyTitle>
-              <EmptyDescription>No items match your search and filters.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <>
+            <Empty className="py-16">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Search />
+                </EmptyMedia>
+                <EmptyTitle>{emptyPage ? "No items on this page" : "No matches"}</EmptyTitle>
+                <EmptyDescription>
+                  {emptyPage
+                    ? "Items on this page may have been deleted. Use the pagination controls to continue browsing."
+                    : "No items match your search and filters."}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+            {pageControls}
+          </>
         ) : (
           <>
             {tableInner}
-            {loadMore}
+            {pageControls}
           </>
         )}
       </div>
@@ -1013,11 +1108,38 @@ function FilesPageContent({
   );
 }
 
-function SortButton({ label }: { label: string }) {
+function SortButton({
+  label,
+  column,
+  order,
+  onSort,
+}: {
+  label: string;
+  column: FileSortColumn;
+  order: QueryOrder;
+  onSort: (column: FileSortColumn) => void;
+}) {
+  const active = fileSortColumn(order) === column;
+  const direction = active ? fileSortDirection(order) : null;
   return (
-    <span className="-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-foreground">
+    <button
+      type="button"
+      className="-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={
+        active
+          ? `${label}, sorted ${direction}. Sort ${direction === "ascending" ? "descending" : "ascending"}`
+          : `Sort by ${label.toLowerCase()}`
+      }
+      onClick={() => onSort(column)}
+    >
       {label}
-      <ArrowDown className="size-3.5" />
-    </span>
+      {active ? (
+        <ArrowDown
+          className={cn("size-3.5 transition-transform", direction === "ascending" && "rotate-180")}
+        />
+      ) : (
+        <ArrowUpDown className="size-3.5 text-muted-foreground/70" />
+      )}
+    </button>
   );
 }

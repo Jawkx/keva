@@ -81,7 +81,8 @@ export const IsoInstant = Schema.String.pipe(
 );
 export type IsoInstant = typeof IsoInstant.Type;
 
-export type Cursor = readonly [createdAt: string, id: string];
+type CursorOrder = "created_at_asc" | "created_at_desc" | "size_asc" | "size_desc";
+export type Cursor = readonly [sortValue: string | number, id: string, order?: CursorOrder];
 
 export const encodeCursor = (cursor: Cursor): string => btoa(JSON.stringify(cursor));
 
@@ -90,14 +91,20 @@ export const decodeCursor = (cursor: string): Cursor | null => {
     const value = JSON.parse(atob(cursor)) as unknown;
     if (
       !Array.isArray(value) ||
-      value.length !== 2 ||
-      typeof value[0] !== "string" ||
+      (value.length !== 2 && value.length !== 3) ||
+      !(
+        (typeof value[0] === "string" && Number.isFinite(Date.parse(value[0]))) ||
+        (typeof value[0] === "number" && Number.isSafeInteger(value[0]) && value[0] >= 0)
+      ) ||
       typeof value[1] !== "string" ||
-      !Number.isFinite(Date.parse(value[0])) ||
-      !ITEM_ID_PATTERN.test(value[1])
+      !ITEM_ID_PATTERN.test(value[1]) ||
+      (value.length === 3 &&
+        !["created_at_asc", "created_at_desc", "size_asc", "size_desc"].includes(value[2]))
     )
       return null;
-    return [value[0], value[1]];
+    return value.length === 3
+      ? [value[0], value[1], value[2] as CursorOrder]
+      : [value[0], value[1]];
   } catch {
     return null;
   }
@@ -264,7 +271,12 @@ export type SharePrincipal = typeof SharePrincipal.Type;
 export const Principal = Schema.Union(SessionPrincipal, TokenPrincipal, SharePrincipal);
 export type Principal = typeof Principal.Type;
 
-export const QueryOrder = Schema.Literal("created_at_asc", "created_at_desc");
+export const QueryOrder = Schema.Literal(
+  "created_at_asc",
+  "created_at_desc",
+  "size_asc",
+  "size_desc",
+);
 export type QueryOrder = typeof QueryOrder.Type;
 
 export const Query = Schema.Struct({

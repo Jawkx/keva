@@ -5,6 +5,8 @@ import {
   CreateAccountShare,
   CreateShareGrant,
   CreateView,
+  decodeCursor,
+  encodeCursor,
   ItemId,
   itemMatchesCondition,
   type KevaItem,
@@ -124,7 +126,25 @@ describe("schema", () => {
     expect(Schema.decodeUnknownSync(Query)({ order: "created_at_desc" })).toMatchObject({
       order: "created_at_desc",
     });
+    expect(Schema.decodeUnknownSync(Query)({ order: "size_asc" })).toMatchObject({
+      order: "size_asc",
+    });
+    expect(Schema.decodeUnknownSync(Query)({ order: "size_desc" })).toMatchObject({
+      order: "size_desc",
+    });
     expect(() => Schema.decodeUnknownSync(Query)({ order: "name_desc" })).toThrow();
+  });
+
+  it("round-trips timestamp and numeric cursors", () => {
+    const id = "00000000-0000-0000-0000-000000000000";
+    expect(decodeCursor(encodeCursor(["2026-01-01T00:00:00.000Z", id]))).toEqual([
+      "2026-01-01T00:00:00.000Z",
+      id,
+    ]);
+    expect(decodeCursor(encodeCursor([4096, id]))).toEqual([4096, id]);
+    expect(decodeCursor(encodeCursor([4096, id, "size_desc"]))).toEqual([4096, id, "size_desc"]);
+    expect(decodeCursor(btoa(JSON.stringify([-1, id])))).toBeNull();
+    expect(decodeCursor(btoa(JSON.stringify([4096, id, "name_asc"])))).toBeNull();
   });
 
   it("validates item ids at API boundaries", () => {

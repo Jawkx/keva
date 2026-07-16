@@ -152,9 +152,9 @@ const queryArgs = z.object({
     .describe("Max items to return (default 100)."),
   cursor: z.string().optional().describe("Pagination cursor from a previous result."),
   order: z
-    .enum(["created_at_asc", "created_at_desc"])
+    .enum(["created_at_asc", "created_at_desc", "size_asc", "size_desc"])
     .optional()
-    .describe("Creation-time ordering (default ascending)."),
+    .describe("Creation-time or size ordering (default creation time ascending)."),
 });
 
 const itemIdArgs = z.object({

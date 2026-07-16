@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
-import type { PropertyValue, QueryCondition } from "@keva/schema";
+import type { PropertyValue, QueryCondition, QueryOrder } from "@keva/schema";
 import {
   isUploadSessionExpired,
   type InitiateUpload,
@@ -47,11 +47,13 @@ export function useUploadQueue({
   queryClient,
   activeSearch,
   activeWhere,
+  order,
   uploadStamp,
 }: {
   readonly queryClient: QueryClient;
   readonly activeSearch: string;
   readonly activeWhere: readonly QueryCondition[];
+  readonly order: QueryOrder;
   readonly uploadStamp: Record<string, PropertyValue>;
 }) {
   const [uploads, setUploads] = useState<UploadQueueRow[]>([]);
@@ -84,8 +86,10 @@ export function useUploadQueue({
         }
         const item = await keva.completeUpload(session);
         cacheConfirmedItemUpload(queryClient, item, {
-          listQueryKey: itemsQueryKey(activeSearch, activeWhere, "created_at_desc"),
-          refetchLists: Boolean(activeSearch.trim() || activeWhere.length > 0),
+          listQueryKey: itemsQueryKey(activeSearch, activeWhere, order),
+          refetchLists: Boolean(
+            order !== "created_at_desc" || activeSearch.trim() || activeWhere.length > 0,
+          ),
         });
         setUploads((prev) => prev.filter((row) => row.id !== id));
       } catch (error) {
@@ -107,7 +111,7 @@ export function useUploadQueue({
         );
       }
     },
-    [activeSearch, activeWhere, queryClient],
+    [activeSearch, activeWhere, order, queryClient],
   );
 
   const startUploads = useCallback(

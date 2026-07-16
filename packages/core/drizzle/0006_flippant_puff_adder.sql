@@ -1,0 +1,1 @@
+CREATE INDEX "items_tenant_status_size_id_idx" ON "items" USING btree ("tenant_id","status",coalesce("size", "declared_size"),"id");

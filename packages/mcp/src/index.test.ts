@@ -164,7 +164,7 @@ describe("createKevaMcpServer tool execution", () => {
       arguments: {
         where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
         limit: 10,
-        order: "created_at_desc",
+        order: "size_desc",
       },
     });
 
@@ -172,7 +172,7 @@ describe("createKevaMcpServer tool execution", () => {
       expect.objectContaining({
         where: [{ key: "tag", op: "has_any", value: ["photo", "video"] }],
         limit: 10,
-        order: "created_at_desc",
+        order: "size_desc",
       }),
     );
     expect(result.isError).toBeFalsy();

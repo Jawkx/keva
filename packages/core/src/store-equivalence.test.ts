@@ -290,6 +290,43 @@ const collectPaginatedOrder = async (order: QueryOrder) => {
   return { names, pageCursors };
 };
 
+const collectPaginatedSizeOrder = async (order: "size_asc" | "size_desc") => {
+  const tenant = crypto.randomUUID();
+  const createdAt = "2026-01-01T00:00:00.000Z";
+  const rows = [
+    readyItem(tenant, "00000000-0000-0000-0000-000000000001", "alpha", createdAt, {
+      declaredSize: 10,
+      size: 10,
+    }),
+    readyItem(tenant, "00000000-0000-0000-0000-000000000002", "bravo", createdAt, {
+      declaredSize: 2,
+      size: 2,
+    }),
+    readyItem(tenant, "00000000-0000-0000-0000-000000000003", "carol", createdAt, {
+      declaredSize: 10,
+      size: 10,
+    }),
+    readyItem(tenant, "00000000-0000-0000-0000-000000000004", "delta", createdAt, {
+      declaredSize: 5,
+      size: null,
+    }),
+  ];
+  for (const row of rows) await Effect.runPromise(store.insert(row));
+
+  const names: string[] = [];
+  const pageCursors: boolean[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await Effect.runPromise(
+      store.query(tenant, { where: [], limit: 2, order, cursor }),
+    );
+    names.push(...page.items.map((item) => item.name));
+    pageCursors.push(Boolean(page.nextCursor));
+    cursor = page.nextCursor;
+  } while (cursor);
+  return { names, pageCursors };
+};
+
 describe("postgres store semantics", () => {
   it("serves the specified query operator matrix", async () => {
     expect(await seedAndRun()).toEqual(EXPECTED);
@@ -330,5 +367,34 @@ describe("postgres store semantics", () => {
       names: ["bravo", "carol", "alpha"],
       pageCursors: [true, true, false],
     });
+  });
+
+  it("paginates size orders with stable ties and declared-size fallback", async () => {
+    await expect(collectPaginatedSizeOrder("size_asc")).resolves.toEqual({
+      names: ["bravo", "delta", "alpha", "carol"],
+      pageCursors: [true, false],
+    });
+    await expect(collectPaginatedSizeOrder("size_desc")).resolves.toEqual({
+      names: ["carol", "alpha", "delta", "bravo"],
+      pageCursors: [true, false],
+    });
+  });
+
+  it("rejects a cursor when the query order changes", async () => {
+    const tenant = await seed();
+    const firstPage = await Effect.runPromise(
+      store.query(tenant, { where: [], limit: 1, order: "size_asc" }),
+    );
+
+    await expect(
+      Effect.runPromise(
+        store.query(tenant, {
+          where: [],
+          limit: 1,
+          order: "size_desc",
+          cursor: firstPage.nextCursor,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "ValidationError" });
   });
 });
