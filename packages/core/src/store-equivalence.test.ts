@@ -293,20 +293,21 @@ const collectPaginatedOrder = async (order: QueryOrder) => {
 const collectPaginatedSizeOrder = async (order: "size_asc" | "size_desc") => {
   const tenant = crypto.randomUUID();
   const createdAt = "2026-01-01T00:00:00.000Z";
+  const idPrefix = order === "size_asc" ? "00000000" : "10000000";
   const rows = [
-    readyItem(tenant, "00000000-0000-0000-0000-000000000001", "alpha", createdAt, {
+    readyItem(tenant, `${idPrefix}-0000-0000-0000-000000000001`, "alpha", createdAt, {
       declaredSize: 10,
       size: 10,
     }),
-    readyItem(tenant, "00000000-0000-0000-0000-000000000002", "bravo", createdAt, {
+    readyItem(tenant, `${idPrefix}-0000-0000-0000-000000000002`, "bravo", createdAt, {
       declaredSize: 2,
       size: 2,
     }),
-    readyItem(tenant, "00000000-0000-0000-0000-000000000003", "carol", createdAt, {
+    readyItem(tenant, `${idPrefix}-0000-0000-0000-000000000003`, "carol", createdAt, {
       declaredSize: 10,
       size: 10,
     }),
-    readyItem(tenant, "00000000-0000-0000-0000-000000000004", "delta", createdAt, {
+    readyItem(tenant, `${idPrefix}-0000-0000-0000-000000000004`, "delta", createdAt, {
       declaredSize: 5,
       size: null,
     }),
@@ -386,8 +387,8 @@ describe("postgres store semantics", () => {
       store.query(tenant, { where: [], limit: 1, order: "size_asc" }),
     );
 
-    await expect(
-      Effect.runPromise(
+    const result = await Effect.runPromise(
+      Effect.either(
         store.query(tenant, {
           where: [],
           limit: 1,
@@ -395,6 +396,7 @@ describe("postgres store semantics", () => {
           cursor: firstPage.nextCursor,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "ValidationError" });
+    );
+    expect(result).toMatchObject({ _tag: "Left", left: { _tag: "ValidationError" } });
   });
 });
