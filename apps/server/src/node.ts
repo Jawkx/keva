@@ -50,9 +50,10 @@ const appOptions = createServerOptions({
   s3,
 });
 
-serve(
+const app = createApp(appOptions);
+const server = serve(
   {
-    fetch: createApp(appOptions).fetch,
+    fetch: app.fetch,
     port,
     hostname: host,
   },
@@ -60,3 +61,41 @@ serve(
     console.log(`keva listening on http://127.0.0.1:${info.port}`);
   },
 );
+
+let shuttingDown = false;
+const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(JSON.stringify({ event: "server.shutdown.started", signal }));
+  const failures: unknown[] = [];
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await app.dispose();
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "Server shutdown failed");
+  console.log(JSON.stringify({ event: "server.shutdown.completed", signal }));
+};
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void shutdown(signal).catch((error: unknown) => {
+      console.error(
+        JSON.stringify({
+          event: "server.shutdown.failed",
+          signal,
+          errorType: error instanceof Error ? error.name : typeof error,
+        }),
+      );
+      process.exitCode = 1;
+    });
+  });
+}

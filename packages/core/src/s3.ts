@@ -12,7 +12,10 @@ export interface S3BlobStoreConfig {
   readonly forcePathStyle?: boolean;
   readonly uploadTtlSeconds?: number;
   readonly downloadTtlSeconds?: number;
+  readonly requestTimeoutMs?: number;
 }
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 const trimSlashes = (value: string): string => value.replace(/^\/+|\/+$/g, "");
 
@@ -33,15 +36,6 @@ const objectUrl = (config: S3BlobStoreConfig, key: string): string => {
 const storageError = (): StorageUnavailable =>
   new StorageUnavailable({ message: "Blob storage unavailable" });
 
-const requestEffect = (
-  operation: () => Promise<Response>,
-): Effect.Effect<Response, StorageUnavailable> =>
-  Effect.tryPromise({ try: operation, catch: storageError }).pipe(
-    Effect.flatMap((response) =>
-      response.ok ? Effect.succeed(response) : Effect.fail(storageError()),
-    ),
-  );
-
 export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => {
   const client = new AwsClient({
     accessKeyId: config.accessKeyId,
@@ -49,6 +43,25 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
     region: config.region,
     service: "s3",
   });
+  const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+
+  const request = (
+    key: string,
+    init: RequestInit,
+    accepts: (response: Response) => boolean = (response) => response.ok,
+  ): Effect.Effect<Response, StorageUnavailable> =>
+    Effect.tryPromise({
+      try: async (signal) => {
+        const signed = await client.sign(objectUrl(config, key), init);
+        return fetch(signed, { signal });
+      },
+      catch: storageError,
+    }).pipe(
+      Effect.timeoutFail({ duration: requestTimeoutMs, onTimeout: storageError }),
+      Effect.flatMap((response) =>
+        accepts(response) ? Effect.succeed(response) : Effect.fail(storageError()),
+      ),
+    );
 
   const presign = (
     key: string,
@@ -81,46 +94,33 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
       }),
     presignDownload: (key) => presign(key, "GET", config.downloadTtlSeconds ?? 300),
     head: (key) =>
-      Effect.tryPromise({
-        try: async () => {
-          const signed = await client.sign(objectUrl(config, key), {
-            method: "HEAD",
-          });
-          const response = await fetch(signed);
-          if (response.status === 404) return null;
-          if (!response.ok) throw new Error(`HEAD failed: ${response.status}`);
-          const size = Number(response.headers.get("content-length"));
-          if (!Number.isFinite(size)) throw new Error("Missing content length");
-          return {
+      request(key, { method: "HEAD" }, (response) => response.ok || response.status === 404).pipe(
+        Effect.flatMap((response) => {
+          if (response.status === 404) return Effect.succeed(null);
+          const contentLength = response.headers.get("content-length");
+          if (contentLength === null || !/^\d+$/.test(contentLength)) {
+            return Effect.fail(storageError());
+          }
+          const size = Number(contentLength);
+          if (!Number.isSafeInteger(size)) return Effect.fail(storageError());
+          return Effect.succeed({
             size,
             etag: response.headers.get("etag")?.replace(/^"|"$/g, "") ?? null,
             contentType: response.headers.get("content-type"),
-          };
-        },
-        catch: storageError,
-      }),
+          });
+        }),
+      ),
     copy: (sourceKey, destinationKey) =>
-      requestEffect(async () => {
-        const copySource = `/${trimSlashes(config.bucket)}/${encodeKey(sourceKey)}`;
-        const request = await client.sign(objectUrl(config, destinationKey), {
-          method: "PUT",
-          headers: { "x-amz-copy-source": copySource },
-        });
-        return fetch(request);
+      request(destinationKey, {
+        method: "PUT",
+        headers: {
+          "x-amz-copy-source": `/${trimSlashes(config.bucket)}/${encodeKey(sourceKey)}`,
+        },
       }).pipe(Effect.asVoid),
     delete: (key) =>
-      Effect.tryPromise({
-        try: async () => {
-          const request = await client.sign(objectUrl(config, key), {
-            method: "DELETE",
-          });
-          const response = await fetch(request);
-          if (!response.ok && response.status !== 404) {
-            throw new Error(`DELETE failed: ${response.status}`);
-          }
-        },
-        catch: storageError,
-      }),
+      request(key, { method: "DELETE" }, (response) => response.ok || response.status === 404).pipe(
+        Effect.asVoid,
+      ),
   };
 };
 

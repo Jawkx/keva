@@ -1,10 +1,11 @@
-import type { Principal, SharePrincipal } from "@keva/schema";
+import { testEffect } from "@keva/effect-test";
+import { StorageUnavailable, type Principal, type SharePrincipal } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeKevaEngine, reapPending, sweepDeleting } from "./engine.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
 import { S3BlobStoreLive } from "./s3.js";
-import { BlobStore, MetadataStore } from "./services.js";
+import { BlobStore, MetadataStore, type BlobStoreService } from "./services.js";
 import { testSql } from "./test/db.js";
 import { putObject, s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
 
@@ -23,6 +24,24 @@ const testLayer = () =>
     Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
     S3BlobStoreLive(s3MockConfig(mock)),
   );
+
+const lifecycleBlobs: BlobStoreService = {
+  presignUpload: () => Effect.die("not used"),
+  presignDownload: () => Effect.die("not used"),
+  head: () => Effect.die("not used"),
+  copy: () => Effect.die("not used"),
+  delete: (key) =>
+    key.includes("poison")
+      ? Effect.fail(new StorageUnavailable({ message: "Blob storage unavailable" }))
+      : Effect.void,
+};
+
+const lifecycleIt = testEffect(
+  Layer.merge(
+    Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+    Layer.succeed(BlobStore, lifecycleBlobs),
+  ),
+);
 
 const stage = (key: string, bytes: Uint8Array, contentType: string) =>
   Effect.promise(() => putObject(mock, key, bytes, contentType));
@@ -201,8 +220,8 @@ describe("KevaEngine", () => {
     }).pipe(Effect.provide(layer));
 
     await expect(Effect.runPromise(program)).resolves.toEqual({
-      reaped: 1,
-      swept: 1,
+      reaped: { completed: 1, failed: 0 },
+      swept: { completed: 1, failed: 0 },
     });
   });
 
@@ -356,6 +375,41 @@ describe("KevaEngine", () => {
       ],
     });
   });
+});
+
+describe("lifecycle batches", () => {
+  lifecycleIt.effect(
+    "continues after a poisoned item and reports the partial failure",
+    Effect.gen(function* () {
+      const metadata = yield* MetadataStore;
+      const timestamp = new Date(0).toISOString();
+      for (const name of ["poison", "healthy"]) {
+        yield* metadata.insert({
+          id: crypto.randomUUID(),
+          tenantId: "tenant-lifecycle",
+          name,
+          contentType: "text/plain",
+          declaredSize: 1,
+          size: 1,
+          etag: null,
+          checksum: null,
+          source: "upload",
+          status: "deleting",
+          storageKey: `items/tenant-lifecycle/${name}`,
+          stagingKey: `staging/tenant-lifecycle/${name}`,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          properties: {},
+        });
+      }
+
+      const result = yield* sweepDeleting({ concurrency: 2 });
+      const remaining = yield* metadata.listByStatus("deleting", 10);
+
+      expect(result).toEqual({ completed: 1, failed: 1 });
+      expect(remaining.map((item) => item.name)).toEqual(["poison"]);
+    }),
+  );
 });
 
 describe("KevaEngine item history", () => {

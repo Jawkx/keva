@@ -1,6 +1,6 @@
 import { MailCheck, TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { oauthContinuation } from "../lib/oauth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 
 export function SignupPage() {
-  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,11 +39,7 @@ export function SignupPage() {
         setVerificationSent(true);
         return;
       }
-      if (continuation) {
-        window.location.href = continuation;
-        return;
-      }
-      navigate("/", { replace: true });
+      window.location.replace(continuation ?? "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed.");
     } finally {

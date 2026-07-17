@@ -13,12 +13,16 @@ export interface LifecycleConfig {
   readonly s3: S3BlobStoreConfig;
   readonly batchSize?: number;
   readonly pendingTtlMs?: number;
+  readonly concurrency?: number;
 }
 
 export interface LifecycleResult {
   readonly reaped: number;
+  readonly reapFailed: number;
   readonly deleted: number;
+  readonly deleteFailed: number;
   readonly staging: number;
+  readonly stagingFailed: number;
 }
 
 export const runLifecycle = (config: LifecycleConfig): Promise<LifecycleResult> => {
@@ -31,7 +35,14 @@ export const runLifecycle = (config: LifecycleConfig): Promise<LifecycleResult> 
       const reaped = yield* reapPending(config);
       const deleted = yield* sweepDeleting(config);
       const staging = yield* sweepStaging(config);
-      return { reaped, deleted, staging };
+      return {
+        reaped: reaped.completed,
+        reapFailed: reaped.failed,
+        deleted: deleted.completed,
+        deleteFailed: deleted.failed,
+        staging: staging.completed,
+        stagingFailed: staging.failed,
+      };
     }).pipe(Effect.provide(layer)),
   );
 };

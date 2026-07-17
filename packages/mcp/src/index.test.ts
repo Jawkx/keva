@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
 import type { OwnerItem } from "@keva/schema";
-import { createKevaMcpServer, type McpEngine } from "./index.js";
+import { ClientSafeToolError, createKevaMcpServer, type McpEngine } from "./index.js";
 
 const item: OwnerItem = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -78,17 +78,23 @@ const connect = async (engine: McpEngine, scopes: string[]) => {
   return {
     client,
     close: async () => {
-      await client.close();
-      await server.close();
+      try {
+        await client.close();
+      } finally {
+        await server.close();
+      }
     },
   };
 };
 
 const toolNames = async (scopes: string[]): Promise<string[]> => {
   const { client, close } = await connect(stubEngine(), scopes);
-  const { tools } = await client.listTools();
-  await close();
-  return tools.map((tool) => tool.name).sort();
+  try {
+    const { tools } = await client.listTools();
+    return tools.map((tool) => tool.name).sort();
+  } finally {
+    await close();
+  }
 };
 
 const textOf = (result: { content: Array<{ type: string; text?: string }> }): string =>
@@ -277,16 +283,36 @@ describe("createKevaMcpServer tool execution", () => {
     await close();
   });
 
-  it("surfaces an engine failure as a tool error with the safe message", async () => {
+  it("surfaces an explicit client-safe tool error message", async () => {
     const getItem = vi.fn(async () => {
-      throw new Error("Item not found");
+      throw new ClientSafeToolError("Item not found");
     });
     const { client, close } = await connect(stubEngine({ getItem }), ["read"]);
 
-    const result = await client.callTool({ name: "get_item", arguments: { id: item.id } });
+    try {
+      const result = await client.callTool({ name: "get_item", arguments: { id: item.id } });
 
-    expect(result.isError).toBe(true);
-    expect(textOf(result as never)).toBe("Item not found");
-    await close();
+      expect(result.isError).toBe(true);
+      expect(textOf(result as never)).toBe("Item not found");
+    } finally {
+      await close();
+    }
+  });
+
+  it("does not surface an arbitrary error message", async () => {
+    const getItem = vi.fn(async () => {
+      throw new Error("database password is secret-123");
+    });
+    const { client, close } = await connect(stubEngine({ getItem }), ["read"]);
+
+    try {
+      const result = await client.callTool({ name: "get_item", arguments: { id: item.id } });
+
+      expect(result.isError).toBe(true);
+      expect(textOf(result as never)).toBe("Tool execution failed");
+      expect(textOf(result as never)).not.toContain("secret-123");
+    } finally {
+      await close();
+    }
   });
 });

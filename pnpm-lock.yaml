@@ -109,6 +109,9 @@ importers:
         specifier: 6.17.2
         version: 6.17.2
     devDependencies:
+      '@keva/effect-test':
+        specifier: workspace:*
+        version: link:../../tooling/effect-test
       '@keva/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/tsconfig
@@ -294,6 +297,9 @@ importers:
         specifier: 3.4.9
         version: 3.4.9
     devDependencies:
+      '@keva/effect-test':
+        specifier: workspace:*
+        version: link:../../tooling/effect-test
       '@keva/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/tsconfig
@@ -357,6 +363,19 @@ importers:
       vitest:
         specifier: 4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  tooling/effect-test:
+    dependencies:
+      effect:
+        specifier: 3.21.4
+        version: 3.21.4
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+    devDependencies:
+      '@keva/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
 
   tooling/tsconfig: {}
 

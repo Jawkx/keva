@@ -205,11 +205,11 @@ describe("Postgres metadata store", () => {
 
     if (outcome.confirmExit._tag === "Right") {
       expect(outcome.status).toBe("ready");
-      expect(outcome.reaped).toBe(0);
+      expect(outcome.reaped).toEqual({ completed: 0, failed: 0 });
     } else {
       expect(outcome.confirmExit.left._tag).toBe("Conflict");
       expect(outcome.status).toBe("deleting");
-      expect(outcome.reaped).toBe(1);
+      expect(outcome.reaped).toEqual({ completed: 1, failed: 0 });
     }
   });
 });

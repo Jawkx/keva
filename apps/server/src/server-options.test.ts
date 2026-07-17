@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { createApp } from "./app.js";
 import { databaseUnitMetrics, resetDatabaseUnitMetrics } from "./database.js";
 import { createServerOptions } from "./server-options.js";
 
@@ -21,13 +22,14 @@ const persistentOptions = () =>
 describe("server database unit", () => {
   afterEach(resetDatabaseUnitMetrics);
 
-  it("constructs and disposes exactly one client for database-backed services", async () => {
+  it("lets the app own and idempotently dispose its database-backed services", async () => {
     resetDatabaseUnitMetrics();
     const options = persistentOptions();
+    const app = createApp(options);
 
     expect(databaseUnitMetrics()).toEqual({ created: 1, disposed: 0, active: 1 });
-    await options.dispose?.();
-    await options.dispose?.();
+    await app.dispose();
+    await app.dispose();
     expect(databaseUnitMetrics()).toEqual({ created: 1, disposed: 1, active: 0 });
   });
 });

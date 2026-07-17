@@ -1,6 +1,6 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import { Effect, Layer } from "effect";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
 import { createApp, type AppServices } from "./app.js";
 import { ShareGrantStore } from "./shares.js";
@@ -14,10 +14,9 @@ const sql = testSql();
 let mock: S3Mock;
 let layer: Layer.Layer<AppServices>;
 
-beforeAll(async () => {
-  mock = await startS3Mock();
-  layer = Layer.mergeAll(
-    Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+const makeLayer = (metadata = makePostgresMetadataStore(sql)): Layer.Layer<AppServices> =>
+  Layer.mergeAll(
+    Layer.succeed(MetadataStore, metadata),
     S3BlobStoreLive(s3MockConfig(mock)),
     StaticTokenAuthLive({ token: "test-secret", tenantId: "test-tenant" }),
     Layer.succeed(ApiTokenStore, {
@@ -29,6 +28,10 @@ beforeAll(async () => {
     Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore()),
     Layer.succeed(ViewStore, makeInMemoryViewStore()),
   );
+
+beforeAll(async () => {
+  mock = await startS3Mock();
+  layer = makeLayer();
 });
 
 afterAll(async () => {
@@ -91,6 +94,26 @@ describe("server API", () => {
 
     expect((await app.request("/health")).status).toBe(200);
     expect((await app.request("/ready")).status).toBe(200);
+  });
+
+  it("releases request-scoped runtimes and external resources on every path", async () => {
+    let disposed = 0;
+    const app = createApp({
+      getRequestServices: () => ({
+        layer,
+        authHandler: () => {
+          throw new Error("handler failed");
+        },
+        dispose: async () => {
+          disposed++;
+        },
+      }),
+    });
+
+    expect((await app.request("/ready")).status).toBe(200);
+    expect((await app.request("/api/query", { method: "POST" })).status).toBe(401);
+    expect((await app.request("/api/auth/session")).status).toBe(500);
+    expect(disposed).toBe(3);
   });
 
   it("protects admin usage routes with the separate admin token", async () => {
@@ -157,6 +180,35 @@ describe("server API", () => {
     });
     expect(unauthorized.status).toBe(401);
     expect(await unauthorized.json()).toMatchObject({ _tag: "Unauthorized" });
+  });
+
+  it("sanitizes defects while recording their type without their message", async () => {
+    const metadata = makePostgresMetadataStore(sql);
+    const app = createApp({
+      layer: makeLayer({
+        ...metadata,
+        query: () => Effect.die(new Error("database password secret-123")),
+      }),
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const response = await app.request("/api/query", {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      const output = log.mock.calls.flat().join(" ");
+
+      expect(response.status).toBe(500);
+      expect(payload).toEqual({ _tag: "Internal", message: "Internal server error" });
+      expect(output).toContain('"defectTypes":["Error"]');
+      expect(output).not.toContain("secret-123");
+    } finally {
+      log.mockRestore();
+      await app.dispose();
+    }
   });
 
   it("serves distinct property key and value suggestions", async () => {

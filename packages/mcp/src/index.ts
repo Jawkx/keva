@@ -314,6 +314,8 @@ export interface KevaMcpServerOptions {
   readonly serverVersion?: string;
 }
 
+export class ClientSafeToolError extends Error {}
+
 const ok = (data: unknown): CallToolResult => ({
   content: [
     { type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) },
@@ -329,9 +331,7 @@ const run = async (fn: () => Promise<unknown>): Promise<CallToolResult> => {
   try {
     return ok(await fn());
   } catch (error) {
-    // The engine surfaces only client-safe messages; anything else is a defect
-    // and is reported generically rather than leaked.
-    return fail(error instanceof Error ? error.message : "Tool execution failed");
+    return fail(error instanceof ClientSafeToolError ? error.message : "Tool execution failed");
   }
 };
 

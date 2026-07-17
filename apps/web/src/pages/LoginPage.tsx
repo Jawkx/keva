@@ -1,6 +1,6 @@
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { oauthContinuation } from "../lib/oauth";
 import { Alert, AlertTitle } from "@/components/ui/alert";
@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 
 export function LoginPage() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -29,11 +28,7 @@ export function LoginPage() {
         return;
       }
       const continuation = oauthContinuation(window.location.search);
-      if (continuation) {
-        window.location.href = continuation;
-        return;
-      }
-      navigate("/", { replace: true });
+      window.location.replace(continuation ?? "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed.");
     } finally {

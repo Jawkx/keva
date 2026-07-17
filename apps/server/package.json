@@ -29,6 +29,7 @@
     "resend": "6.17.2"
   },
   "devDependencies": {
+    "@keva/effect-test": "workspace:*",
     "@keva/tsconfig": "workspace:*",
     "@types/node": "22.15.30",
     "auth": "1.6.20",

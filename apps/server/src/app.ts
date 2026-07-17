@@ -31,6 +31,7 @@ import {
   requireStorageManagement,
 } from "./auth.js";
 import type { AdminStore } from "./admin.js";
+import { defectTypes, failureOrElse } from "./effect-failure.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
 import { ViewStore } from "./views.js";
@@ -60,10 +61,31 @@ const itemIdParam = (context: Context) => decode(ItemId, context.req.param("id")
 // straight to its tagged error. Only an untracked defect (Effect.die, a thrown
 // bug) falls through to a generic 500 — internals are never serialized.
 const failureFrom = (cause: Cause.Cause<KevaError>): KevaError =>
-  Option.getOrElse(
-    Cause.failureOption(cause),
-    () => new Internal({ message: "Internal server error" }),
+  failureOrElse(cause, () => new Internal({ message: "Internal server error" }));
+
+const reportDefect = (context: Context, cause: Cause.Cause<unknown>): void => {
+  if (Option.isSome(Cause.failureOption(cause))) return;
+  console.error(
+    JSON.stringify({
+      event: "http.request.defect",
+      method: context.req.method,
+      path: context.req.path,
+      defectTypes: defectTypes(cause),
+    }),
   );
+};
+
+const reportServiceFailure = (context: Context, error: KevaError): void => {
+  if (statusFor(error) < 500) return;
+  console.error(
+    JSON.stringify({
+      event: "http.request.failed",
+      method: context.req.method,
+      path: context.req.path,
+      errorTag: error._tag,
+    }),
+  );
+};
 
 const execute = async <A>(
   context: Context,
@@ -72,7 +94,9 @@ const execute = async <A>(
 ): Promise<Response> => {
   const exit = await runtime.runPromiseExit(effect);
   if (Exit.isSuccess(exit)) return context.json(exit.value as never);
+  reportDefect(context, exit.cause);
   const error = failureFrom(exit.cause);
+  if (Option.isSome(Cause.failureOption(exit.cause))) reportServiceFailure(context, error);
   return context.json(error, statusFor(error) as never);
 };
 
@@ -117,6 +141,8 @@ interface ResolvedServices {
   readonly dispose?: () => Promise<void>;
 }
 
+export type KevaApp = Hono & { readonly dispose: () => Promise<void> };
+
 const isRequestScoped = (
   options: CreateAppOptions,
 ): options is { readonly getRequestServices: (context: Context) => AppServiceOptions } =>
@@ -130,10 +156,33 @@ const makeServices = (options: AppServiceOptions): ResolvedServices => ({
   ...(options.dispose ? { dispose: options.dispose } : {}),
 });
 
-export const createApp = (options: CreateAppOptions): Hono => {
-  const app = new Hono();
+const disposeServices = async (services: ResolvedServices): Promise<void> => {
+  const failures: unknown[] = [];
+  try {
+    await services.runtime.dispose();
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await services.dispose?.();
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "Failed to dispose server services");
+  }
+};
+
+export const createApp = (options: CreateAppOptions): KevaApp => {
+  const app = new Hono() as KevaApp;
   const getRequestServices = isRequestScoped(options) ? options.getRequestServices : undefined;
   const fixedServices = getRequestServices ? undefined : makeServices(options as AppServiceOptions);
+  let disposePromise: Promise<void> | undefined;
+  Object.defineProperty(app, "dispose", {
+    value: () =>
+      (disposePromise ??= fixedServices ? disposeServices(fixedServices) : Promise.resolve()),
+  });
   const resolveServices = (context: Context): ResolvedServices =>
     fixedServices ?? makeServices(getRequestServices!(context));
 
@@ -145,10 +194,7 @@ export const createApp = (options: CreateAppOptions): Hono => {
     try {
       return await handler(services);
     } finally {
-      if (!fixedServices) {
-        await services.runtime.dispose();
-        await services.dispose?.();
-      }
+      if (!fixedServices) await disposeServices(services);
     }
   };
 
@@ -178,9 +224,12 @@ export const createApp = (options: CreateAppOptions): Hono => {
           yield* blobs.head("__keva_readiness__");
         }),
       );
-      return Exit.isSuccess(ready)
-        ? context.json({ ok: true, service: "keva" })
-        : context.json({ ok: false, service: "keva" }, 503);
+      if (Exit.isSuccess(ready)) return context.json({ ok: true, service: "keva" });
+      reportDefect(context, ready.cause);
+      if (Option.isSome(Cause.failureOption(ready.cause))) {
+        reportServiceFailure(context, failureFrom(ready.cause));
+      }
+      return context.json({ ok: false, service: "keva" }, 503);
     }),
   );
 

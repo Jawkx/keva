@@ -2,8 +2,7 @@ import { createApp } from "./app.js";
 import { runLifecycle } from "./lifecycle.js";
 import { trustedOriginsFor } from "./origins.js";
 import { s3ConfigFor } from "./s3-config.js";
-import { createServerOptions } from "./server-options.js";
-import type { AppServiceOptions } from "./app.js";
+import { createServerOptions, type ServerOptionsConfig } from "./server-options.js";
 import { emailVerificationConfigFor } from "./email-verification.js";
 
 interface AssetsBinding {
@@ -51,13 +50,13 @@ const persistentConfigFor = (env: Env) => ({
   s3: s3ConfigFor(env),
 });
 
-const makeServerOptions = (env: Env): AppServiceOptions => {
+const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
   const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
   const { databaseUrl, s3 } = persistentConfigFor(env);
   const emailVerification = emailVerificationConfigFor(env);
 
-  return createServerOptions({
+  return {
     staticToken,
     tenantId: env.KEVA_TENANT_ID ?? "local",
     baseUrl,
@@ -67,17 +66,8 @@ const makeServerOptions = (env: Env): AppServiceOptions => {
     ...(emailVerification ? { emailVerification } : {}),
     trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
     s3,
-  });
+  };
 };
-
-const serverConfigFor = (env: Env) => ({
-  staticToken: required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN"),
-  baseUrl: required(env.KEVA_BASE_URL, "KEVA_BASE_URL"),
-  ...persistentConfigFor(env),
-});
-
-const makeApp = (): ReturnType<typeof createApp> =>
-  createApp({ getRequestServices: (context) => makeServerOptions(context.env as Env) });
 
 const withBrowserSecurityHeaders = (response: Response, share = false): Response => {
   const headers = new Headers(response.headers);
@@ -103,8 +93,8 @@ export default {
       return withBrowserSecurityHeaders(response, url.pathname.startsWith("/s/"));
     }
 
-    serverConfigFor(env);
-    if (!app) app = makeApp();
+    const config = serverOptionsConfigFor(env);
+    if (!app) app = createApp(createServerOptions(config));
     return app.fetch(request, env);
   },
 

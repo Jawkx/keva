@@ -1,5 +1,5 @@
 import { makeKevaEngine } from "@keva/core";
-import { createKevaMcpServer, type McpEngine } from "@keva/mcp";
+import { ClientSafeToolError, createKevaMcpServer, type McpEngine } from "@keva/mcp";
 import {
   ItemId,
   ItemPatch,
@@ -37,6 +37,7 @@ import type { Context } from "hono";
 import type { AppServices } from "./app.js";
 import { mcpScopesToKevaScopes } from "./auth.js";
 import type { ConnectionStore, McpActorNames, McpAuthorizationServer } from "./better-auth.js";
+import { defectTypes, failureOrElse } from "./effect-failure.js";
 import { ShareGrantStore } from "./shares.js";
 import { ViewStore } from "./views.js";
 
@@ -74,18 +75,19 @@ const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
     Effect.mapError(() => new ValidationError({ message: "Tool input validation failed" })),
   );
 
-// @keva/mcp turns thrown messages into tool errors, so keep failures client-safe.
 const runEngine = async <A>(
   runtime: AppRuntime,
   effect: Effect.Effect<A, KevaError, AppServices>,
 ): Promise<A> => {
   const exit = await runtime.runPromiseExit(effect);
   if (Exit.isSuccess(exit)) return exit.value;
-  const error = Option.getOrElse(
-    Cause.failureOption(exit.cause),
-    () => new Internal({ message: "Internal server error" }),
-  );
-  throw new Error(error.message);
+  if (Option.isNone(Cause.failureOption(exit.cause))) {
+    console.error(
+      JSON.stringify({ event: "mcp.engine.defect", defectTypes: defectTypes(exit.cause) }),
+    );
+  }
+  const error = failureOrElse(exit.cause, () => new Internal({ message: "Internal server error" }));
+  throw new ClientSafeToolError(error.message);
 };
 
 const runValidated = <A, I>(
@@ -196,16 +198,22 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
             properties: input.properties,
           });
           yield* Effect.tryPromise({
-            try: async () => {
+            try: async (signal) => {
               const response = await fetch(result.uploadUrl, {
                 method: "PUT",
                 headers: result.headers,
                 body: bytes,
+                signal,
               });
               if (!response.ok) throw new Error(`Blob upload failed with ${response.status}`);
             },
             catch: () => new StorageUnavailable({ message: "Blob upload failed" }),
-          });
+          }).pipe(
+            Effect.timeoutFail({
+              duration: 30_000,
+              onTimeout: () => new StorageUnavailable({ message: "Blob upload failed" }),
+            }),
+          );
           return toOwnerItem(yield* engine.confirm(result.item.id));
         }),
         OwnerItem,
@@ -378,10 +386,12 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
         const transport = new WebStandardStreamableHTTPServerTransport({
           enableJsonResponse: true,
         });
-        await server.connect(transport);
-        const response = await transport.handleRequest(request);
-        void server.close();
-        return response;
+        try {
+          await server.connect(transport);
+          return await transport.handleRequest(request);
+        } finally {
+          await server.close();
+        }
       });
       return handle(context.req.raw);
     }),

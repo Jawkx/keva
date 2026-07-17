@@ -12,6 +12,7 @@ import {
   type ItemEventPayload,
   type ItemPatch,
   type InitiateUpload,
+  type KevaError,
   type KevaItem,
   type Principal,
   type PropertyValue,
@@ -210,7 +211,16 @@ export const makeKevaEngine = (principal: Principal) => ({
       // marked uncleaned and `sweepStaging` retries it.
       yield* blobs.delete(item.stagingKey).pipe(
         Effect.flatMap(() => metadata.markStagingCleaned(principal.tenantId, id)),
-        Effect.ignore,
+        Effect.catchAll((error) =>
+          Effect.logWarning(
+            JSON.stringify({
+              event: "lifecycle.staging_cleanup.failed",
+              tenantId: principal.tenantId,
+              itemId: id,
+              errorTag: error._tag,
+            }),
+          ),
+        ),
       );
       return confirmed;
     }),
@@ -368,25 +378,70 @@ export const makeKevaEngine = (principal: Principal) => ({
 export interface LifecycleJobOptions {
   readonly batchSize?: number;
   readonly pendingTtlMs?: number;
+  readonly concurrency?: number;
 }
+
+export interface LifecycleBatchResult {
+  readonly completed: number;
+  readonly failed: number;
+}
+
+type LifecyclePhase = "reap_pending" | "sweep_deleting" | "sweep_staging";
+
+const lifecycleConcurrency = (options: LifecycleJobOptions): number => {
+  const concurrency = options.concurrency ?? 8;
+  return Number.isFinite(concurrency) ? Math.max(1, Math.floor(concurrency)) : 8;
+};
+
+const runLifecycleBatch = <R>(
+  phase: LifecyclePhase,
+  items: ReadonlyArray<KevaItem>,
+  concurrency: number,
+  operation: (item: KevaItem) => Effect.Effect<boolean, KevaError, R>,
+): Effect.Effect<LifecycleBatchResult, never, R> =>
+  Effect.forEach(
+    items,
+    (item) =>
+      operation(item).pipe(
+        Effect.map((completed) => ({ completed, failed: false })),
+        Effect.catchAll((error) =>
+          Effect.logWarning(
+            JSON.stringify({
+              event: "lifecycle.item.failed",
+              phase,
+              tenantId: item.tenantId,
+              itemId: item.id,
+              errorTag: error._tag,
+            }),
+          ).pipe(Effect.as({ completed: false, failed: true })),
+        ),
+      ),
+    { concurrency },
+  ).pipe(
+    Effect.map((results) => ({
+      completed: results.filter((result) => result.completed).length,
+      failed: results.filter((result) => result.failed).length,
+    })),
+  );
 
 export const reapPending = (options: LifecycleJobOptions = {}) =>
   Effect.gen(function* () {
     const metadata = yield* MetadataStore;
     const cutoff = new Date(Date.now() - (options.pendingTtlMs ?? 60 * 60 * 1000)).toISOString();
     const pending = yield* metadata.listByStatus("pending", options.batchSize ?? 100, cutoff);
-    let reaped = 0;
-    for (const item of pending) {
-      const claimed = yield* metadata.transition(
-        item.tenantId,
-        item.id,
-        ["pending"],
-        { status: "deleting", updatedAt: now() },
-        cutoff,
-      );
-      if (claimed) reaped++;
-    }
-    return reaped;
+    return yield* runLifecycleBatch(
+      "reap_pending",
+      pending,
+      lifecycleConcurrency(options),
+      (item) =>
+        metadata.transition(
+          item.tenantId,
+          item.id,
+          ["pending"],
+          { status: "deleting", updatedAt: now() },
+          cutoff,
+        ),
+    );
   });
 
 export const sweepDeleting = (options: LifecycleJobOptions = {}) =>
@@ -394,14 +449,17 @@ export const sweepDeleting = (options: LifecycleJobOptions = {}) =>
     const metadata = yield* MetadataStore;
     const blobs = yield* BlobStore;
     const deleting = yield* metadata.listByStatus("deleting", options.batchSize ?? 100);
-    let swept = 0;
-    for (const item of deleting) {
-      yield* blobs.delete(item.storageKey);
-      yield* blobs.delete(item.stagingKey);
-      const removed = yield* metadata.remove(item.tenantId, item.id, "deleting");
-      if (removed) swept++;
-    }
-    return swept;
+    return yield* runLifecycleBatch(
+      "sweep_deleting",
+      deleting,
+      lifecycleConcurrency(options),
+      (item) =>
+        Effect.gen(function* () {
+          yield* blobs.delete(item.storageKey);
+          yield* blobs.delete(item.stagingKey);
+          return yield* metadata.remove(item.tenantId, item.id, "deleting");
+        }),
+    );
   });
 
 export const sweepStaging = (options: LifecycleJobOptions = {}) =>
@@ -412,15 +470,14 @@ export const sweepStaging = (options: LifecycleJobOptions = {}) =>
     // cleaned drops it from the next scan, so the job makes progress instead of
     // re-deleting the same oldest rows forever.
     const uncleaned = yield* metadata.listStagingUncleaned(options.batchSize ?? 100);
-    let swept = 0;
-    for (const item of uncleaned) {
-      const deleted = yield* blobs.delete(item.stagingKey).pipe(
-        Effect.as(true),
-        Effect.catchAll(() => Effect.succeed(false)),
-      );
-      if (!deleted) continue;
-      yield* metadata.markStagingCleaned(item.tenantId, item.id);
-      swept++;
-    }
-    return swept;
+    return yield* runLifecycleBatch(
+      "sweep_staging",
+      uncleaned,
+      lifecycleConcurrency(options),
+      (item) =>
+        blobs.delete(item.stagingKey).pipe(
+          Effect.flatMap(() => metadata.markStagingCleaned(item.tenantId, item.id)),
+          Effect.as(true),
+        ),
+    );
   });
