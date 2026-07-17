@@ -38,9 +38,10 @@ id = "6458d8de93be4e7090f5bfc0872798a8"
 name = "keva-production"
 
 [env.production.vars]
-KEVA_BASE_URL = "https://usekeva.com"
-BETTER_AUTH_URL = "https://usekeva.com"
-KEVA_TRUSTED_ORIGINS = "https://usekeva.com"
+KEVA_BASE_URL = "https://app.usekeva.com"
+BETTER_AUTH_URL = "https://app.usekeva.com"
+KEVA_TRUSTED_ORIGINS = "https://app.usekeva.com"
+KEVA_PUBLIC_API_HOST = "api.usekeva.com"
 KEVA_TENANT_ID = "production"
 KEVA_ENVIRONMENT = "production"
 RESEND_FROM = "Keva <accounts@usekeva.com>"
@@ -50,7 +51,11 @@ S3_BUCKET = "keva-production"
 S3_FORCE_PATH_STYLE = "true"
 
 [[env.production.routes]]
-pattern = "usekeva.com"
+pattern = "app.usekeva.com"
+custom_domain = true
+
+[[env.production.routes]]
+pattern = "api.usekeva.com"
 custom_domain = true
 
 [[env.production.hyperdrive]]

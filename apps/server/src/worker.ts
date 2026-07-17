@@ -17,6 +17,7 @@ interface Env {
   readonly BETTER_AUTH_SECRET?: string;
   readonly BETTER_AUTH_URL?: string;
   readonly KEVA_TRUSTED_ORIGINS?: string;
+  readonly KEVA_PUBLIC_API_HOST?: string;
   readonly KEVA_ENVIRONMENT?: string;
   readonly RESEND_API_KEY?: string;
   readonly RESEND_FROM?: string;
@@ -39,6 +40,18 @@ const serverPaths = ["/api", "/mcp", "/.well-known", "/health", "/ready", "/__de
 
 const isServerPath = (pathname: string): boolean =>
   serverPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+
+const publicApiRequestFor = (request: Request, publicApiHost?: string): Request | Response => {
+  if (!publicApiHost) return request;
+  const url = new URL(request.url);
+  if (url.hostname !== publicApiHost) return request;
+  if (url.pathname === "/health" || url.pathname === "/ready") return request;
+  if (url.pathname !== "/v1" && !url.pathname.startsWith("/v1/")) {
+    return Response.json({ message: "Not found" }, { status: 404 });
+  }
+  url.pathname = `/api${url.pathname.slice(3)}`;
+  return new Request(url, request);
+};
 
 const required = (value: string | undefined, name: string): string => {
   if (!value) throw new Error(`${name} is required`);
@@ -69,11 +82,17 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
   };
 };
 
-const withBrowserSecurityHeaders = (response: Response, share = false): Response => {
+const withBrowserSecurityHeaders = (
+  response: Response,
+  storageEndpoint?: string,
+  share = false,
+): Response => {
   const headers = new Headers(response.headers);
+  const storageOrigin = storageEndpoint ? new URL(storageEndpoint).origin : undefined;
+  const connectSource = storageOrigin ? `'self' ${storageOrigin}` : "'self'";
   headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:",
+    `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src ${connectSource}; worker-src 'self' blob:`,
   );
   headers.set("Referrer-Policy", share ? "no-referrer" : "strict-origin-when-cross-origin");
   headers.set("X-Content-Type-Options", "nosniff");
@@ -87,15 +106,17 @@ const withBrowserSecurityHeaders = (response: Response, share = false): Response
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
+    const publicApiRequest = publicApiRequestFor(request, env.KEVA_PUBLIC_API_HOST);
+    if (publicApiRequest instanceof Response) return publicApiRequest;
+    const url = new URL(publicApiRequest.url);
     if (!isServerPath(url.pathname) && env.ASSETS) {
-      const response = await env.ASSETS.fetch(request);
-      return withBrowserSecurityHeaders(response, url.pathname.startsWith("/s/"));
+      const response = await env.ASSETS.fetch(publicApiRequest);
+      return withBrowserSecurityHeaders(response, env.S3_ENDPOINT, url.pathname.startsWith("/s/"));
     }
 
     const config = serverOptionsConfigFor(env);
     if (!app) app = createApp(createServerOptions(config));
-    return app.fetch(request, env);
+    return app.fetch(publicApiRequest, env);
   },
 
   scheduled(_controller: unknown, env: Env, context: ExecutionContext): void {

@@ -1,10 +1,11 @@
 import { CodeXml } from "lucide-react";
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import type { QueryCondition } from "@keva/schema";
 import { CodeBlock } from "./CodeBlock";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+const PUBLIC_API_URL = "https://api.usekeva.com/v1";
 
 const buildSnippets = (baseUrl: string, search: string, where: readonly QueryCondition[]) => {
   const trimmed = search.trim();
@@ -25,10 +26,7 @@ const { items } = await keva.query(${JSON.stringify(query, null, 2)});`;
 };
 
 export function ApiSnippetsPopover({ search, where }: { search: string; where: QueryCondition[] }) {
-  const snippets = useMemo(
-    () => buildSnippets(`${window.location.origin}/api`, search, where),
-    [search, where],
-  );
+  const snippets = buildSnippets(PUBLIC_API_URL, search, where);
 
   return (
     <Popover>

@@ -2,7 +2,7 @@
   "rules": [
     {
       "allowed": {
-        "origins": ["https://usekeva.com"],
+        "origins": ["https://app.usekeva.com"],
         "methods": ["GET", "PUT", "HEAD"],
         "headers": ["content-type"]
       },

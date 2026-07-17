@@ -70,6 +70,22 @@ importers:
         specifier: 8.0.16
         version: 8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
 
+  apps/landing:
+    dependencies:
+      '@fontsource-variable/dm-sans':
+        specifier: ^5.2.8
+        version: 5.2.8
+    devDependencies:
+      '@keva/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/tsconfig
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.0.16
+        version: 8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
+
   apps/server:
     dependencies:
       '@better-auth/drizzle-adapter':

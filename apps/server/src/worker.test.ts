@@ -21,8 +21,29 @@ describe("worker entry", () => {
   it("sets no-referrer for public share documents", async () => {
     const response = await worker.fetch(new Request("http://worker.test/s/keva_sh_secret"), {
       ASSETS: { fetch: async () => new Response("share") },
+      S3_ENDPOINT: "https://storage.worker.test/path",
     });
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(response.headers.get("Content-Security-Policy")).toContain(
+      "connect-src 'self' https://storage.worker.test",
+    );
+  });
+
+  it("maps versioned public API requests onto data routes", async () => {
+    const response = await worker.fetch(new Request("https://api.worker.test/v1/items/missing"), {
+      ...env,
+      KEVA_PUBLIC_API_HOST: "api.worker.test",
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("does not serve app assets from the public API host", async () => {
+    const response = await worker.fetch(new Request("https://api.worker.test/login"), {
+      ASSETS: { fetch: async () => new Response("app") },
+      KEVA_PUBLIC_API_HOST: "api.worker.test",
+    });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ message: "Not found" });
   });
 
   it("fails closed when a persistent Worker binding is missing", async () => {

@@ -1,0 +1,13 @@
+name = "keva-landing"
+compatibility_date = "2026-06-20"
+
+[assets]
+directory = "./dist"
+not_found_handling = "404-page"
+
+[env.production]
+name = "keva-landing-production"
+
+[[env.production.routes]]
+pattern = "usekeva.com"
+custom_domain = true
