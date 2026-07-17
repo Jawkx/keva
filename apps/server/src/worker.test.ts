@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { databaseUnitMetrics, resetDatabaseUnitMetrics } from "./database.js";
 import worker from "./worker.js";
 
 describe("worker entry", () => {
@@ -16,6 +17,16 @@ describe("worker entry", () => {
   it("serves liveness only after persistent Worker configuration is complete", async () => {
     const health = await worker.fetch(new Request("http://worker.test/health"), env);
     expect(health.status).toBe(200);
+  });
+
+  it("disposes request-scoped database units", async () => {
+    resetDatabaseUnitMetrics();
+    const response = await worker.fetch(
+      new Request("http://worker.test/api/auth/get-session"),
+      env,
+    );
+    expect(response.status).toBe(404);
+    expect(databaseUnitMetrics()).toEqual({ created: 1, disposed: 1, active: 0 });
   });
 
   it("sets no-referrer for public share documents", async () => {

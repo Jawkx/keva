@@ -82,6 +82,12 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
   };
 };
 
+const makeApp = (): ReturnType<typeof createApp> =>
+  createApp({
+    getRequestServices: (context) =>
+      createServerOptions(serverOptionsConfigFor(context.env as Env)),
+  });
+
 const withBrowserSecurityHeaders = (
   response: Response,
   storageEndpoint?: string,
@@ -114,8 +120,8 @@ export default {
       return withBrowserSecurityHeaders(response, env.S3_ENDPOINT, url.pathname.startsWith("/s/"));
     }
 
-    const config = serverOptionsConfigFor(env);
-    if (!app) app = createApp(createServerOptions(config));
+    serverOptionsConfigFor(env);
+    if (!app) app = makeApp();
     return app.fetch(publicApiRequest, env);
   },
 
