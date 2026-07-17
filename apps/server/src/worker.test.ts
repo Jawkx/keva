@@ -36,7 +36,7 @@ describe("worker entry", () => {
     });
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(response.headers.get("Content-Security-Policy")).toContain(
-      "connect-src 'self' https://storage.worker.test https://cdn.jsdelivr.net",
+      "connect-src 'self' https://storage.worker.test https://cdn.jsdelivr.net blob:",
     );
   });
 

@@ -98,7 +98,7 @@ const withBrowserSecurityHeaders = (
   const connectSource = storageOrigin ? `'self' ${storageOrigin}` : "'self'";
   headers.set(
     "Content-Security-Policy",
-    `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src ${connectSource} https://cdn.jsdelivr.net; worker-src 'self' blob:`,
+    `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src ${connectSource} https://cdn.jsdelivr.net blob:; worker-src 'self' blob:`,
   );
   headers.set("Referrer-Policy", share ? "no-referrer" : "strict-origin-when-cross-origin");
   headers.set("X-Content-Type-Options", "nosniff");
