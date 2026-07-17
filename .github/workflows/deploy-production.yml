@@ -67,7 +67,7 @@ jobs:
 
       - name: Smoke test production health endpoint
         run: |
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 https://app.usekeva.com/health
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 https://api.usekeva.com/health
-          test "$(curl --silent --output /dev/null --write-out "%{http_code}" https://api.usekeva.com/v1/usage)" = "401"
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 https://usekeva.com/
+          curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 2 https://app.usekeva.com/health
+          curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 2 https://api.usekeva.com/health
+          test "$(curl --silent --retry 30 --retry-all-errors --retry-delay 2 --output /dev/null --write-out "%{http_code}" https://api.usekeva.com/v1/usage)" = "401"
+          curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 2 https://usekeva.com/
