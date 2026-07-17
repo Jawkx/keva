@@ -10,6 +10,10 @@ import {
 } from "./better-auth.js";
 import { makeRuntimeLayer, type RuntimeConfig } from "./runtime.js";
 import { makeDatabaseUnit, type DatabaseUnit } from "./database.js";
+import {
+  createVerificationEmailSender,
+  type EmailVerificationConfig,
+} from "./email-verification.js";
 
 export interface ServerOptionsConfig {
   readonly staticToken: string;
@@ -19,6 +23,7 @@ export interface ServerOptionsConfig {
   readonly betterAuthSecret?: string;
   readonly betterAuthUrl?: string;
   readonly trustedOrigins?: ReadonlyArray<string>;
+  readonly emailVerification?: EmailVerificationConfig;
   readonly adminToken?: string;
   readonly s3: RuntimeConfig["s3"];
 }
@@ -31,6 +36,9 @@ const databaseAuth = (config: ServerOptionsConfig, database: DatabaseUnit) => {
     secret: config.betterAuthSecret,
     baseURL: config.betterAuthUrl ?? config.baseUrl,
     ...(config.trustedOrigins ? { trustedOrigins: config.trustedOrigins } : {}),
+    ...(config.emailVerification
+      ? { sendVerificationEmail: createVerificationEmailSender(config.emailVerification) }
+      : {}),
   });
 
   return { auth };

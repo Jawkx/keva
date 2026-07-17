@@ -4,6 +4,7 @@ import { trustedOriginsFor } from "./origins.js";
 import { s3ConfigFor } from "./s3-config.js";
 import { createServerOptions } from "./server-options.js";
 import type { AppServiceOptions } from "./app.js";
+import { emailVerificationConfigFor } from "./email-verification.js";
 
 interface AssetsBinding {
   readonly fetch: (request: Request) => Promise<Response>;
@@ -17,6 +18,9 @@ interface Env {
   readonly BETTER_AUTH_SECRET?: string;
   readonly BETTER_AUTH_URL?: string;
   readonly KEVA_TRUSTED_ORIGINS?: string;
+  readonly KEVA_ENVIRONMENT?: string;
+  readonly RESEND_API_KEY?: string;
+  readonly RESEND_FROM?: string;
   readonly HYPERDRIVE?: { readonly connectionString: string };
   readonly S3_ENDPOINT?: string;
   readonly S3_REGION?: string;
@@ -51,6 +55,7 @@ const makeServerOptions = (env: Env): AppServiceOptions => {
   const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
   const { databaseUrl, s3 } = persistentConfigFor(env);
+  const emailVerification = emailVerificationConfigFor(env);
 
   return createServerOptions({
     staticToken,
@@ -59,6 +64,7 @@ const makeServerOptions = (env: Env): AppServiceOptions => {
     databaseUrl,
     ...(env.BETTER_AUTH_SECRET ? { betterAuthSecret: env.BETTER_AUTH_SECRET } : {}),
     ...(env.BETTER_AUTH_URL ? { betterAuthUrl: env.BETTER_AUTH_URL } : {}),
+    ...(emailVerification ? { emailVerification } : {}),
     trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
     s3,
   });

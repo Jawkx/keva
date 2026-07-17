@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://usekeva.com"],
+        "methods": ["GET", "PUT", "HEAD"],
+        "headers": ["content-type"]
+      },
+      "exposeHeaders": ["etag", "content-length", "content-type"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

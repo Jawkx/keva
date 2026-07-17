@@ -20,6 +20,7 @@ KEVA_BASE_URL = "https://staging.usekeva.com"
 BETTER_AUTH_URL = "https://staging.usekeva.com"
 KEVA_TRUSTED_ORIGINS = "https://staging.usekeva.com"
 KEVA_TENANT_ID = "staging"
+KEVA_ENVIRONMENT = "staging"
 S3_ENDPOINT = "https://90203c49970ccbafedc99866c91c1b9f.r2.cloudflarestorage.com"
 S3_REGION = "auto"
 S3_BUCKET = "keva-staging"
@@ -32,3 +33,26 @@ custom_domain = true
 [[env.staging.hyperdrive]]
 binding = "HYPERDRIVE"
 id = "6458d8de93be4e7090f5bfc0872798a8"
+
+[env.production]
+name = "keva-production"
+
+[env.production.vars]
+KEVA_BASE_URL = "https://usekeva.com"
+BETTER_AUTH_URL = "https://usekeva.com"
+KEVA_TRUSTED_ORIGINS = "https://usekeva.com"
+KEVA_TENANT_ID = "production"
+KEVA_ENVIRONMENT = "production"
+RESEND_FROM = "Keva <accounts@usekeva.com>"
+S3_ENDPOINT = "https://90203c49970ccbafedc99866c91c1b9f.r2.cloudflarestorage.com"
+S3_REGION = "auto"
+S3_BUCKET = "keva-production"
+S3_FORCE_PATH_STYLE = "true"
+
+[[env.production.routes]]
+pattern = "usekeva.com"
+custom_domain = true
+
+[[env.production.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "c0416888aeca4502b102d03467b26237"

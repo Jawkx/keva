@@ -17,6 +17,10 @@ export interface BetterAuthConfig {
   readonly secret: string;
   readonly baseURL: string;
   readonly trustedOrigins?: ReadonlyArray<string>;
+  readonly sendVerificationEmail?: (input: {
+    readonly email: string;
+    readonly url: string;
+  }) => Promise<void>;
 }
 
 export type KevaAuth = ReturnType<typeof betterAuth>;
@@ -100,8 +104,9 @@ export const KEVA_MCP_SCOPES = [
   "keva:shares",
 ] as const;
 
-export const createBetterAuth = (config: BetterAuthConfig): KevaAuth =>
-  betterAuth({
+export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
+  const sendVerificationEmail = config.sendVerificationEmail;
+  return betterAuth({
     database: drizzleAdapter(config.database, {
       provider: "pg",
       schema: authSchema,
@@ -109,7 +114,21 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth =>
     secret: config.secret,
     baseURL: config.baseURL,
     trustedOrigins: config.trustedOrigins ? [...config.trustedOrigins] : [],
-    emailAndPassword: { enabled: true },
+    emailAndPassword: {
+      enabled: true,
+      requireEmailVerification: Boolean(config.sendVerificationEmail),
+    },
+    ...(sendVerificationEmail
+      ? {
+          emailVerification: {
+            sendOnSignUp: true,
+            sendOnSignIn: false,
+            autoSignInAfterVerification: true,
+            sendVerificationEmail: ({ user, url }: { user: { email: string }; url: string }) =>
+              sendVerificationEmail({ email: user.email, url }),
+          },
+        }
+      : {}),
     experimental: { joins: true },
     plugins: [
       organization(),
@@ -134,6 +153,7 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth =>
       }),
     ],
   }) as unknown as KevaAuth;
+};
 
 interface OrganizationApi {
   readonly listOrganizations: (input: {

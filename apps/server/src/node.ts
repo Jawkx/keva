@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { trustedOriginsFor } from "./origins.js";
 import { s3ConfigFor } from "./s3-config.js";
 import { createServerOptions } from "./server-options.js";
+import { emailVerificationConfigFor } from "./email-verification.js";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -31,6 +32,11 @@ const s3 = s3ConfigFor({
   S3_BUCKET: process.env.S3_BUCKET,
   S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE,
 });
+const emailVerification = emailVerificationConfigFor({
+  KEVA_ENVIRONMENT: process.env.KEVA_ENVIRONMENT,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  RESEND_FROM: process.env.RESEND_FROM,
+});
 const appOptions = createServerOptions({
   staticToken: required("KEVA_STATIC_TOKEN"),
   tenantId: process.env.KEVA_TENANT_ID ?? "local",
@@ -39,6 +45,7 @@ const appOptions = createServerOptions({
   ...(process.env.BETTER_AUTH_SECRET ? { betterAuthSecret: process.env.BETTER_AUTH_SECRET } : {}),
   ...(process.env.BETTER_AUTH_URL ? { betterAuthUrl: process.env.BETTER_AUTH_URL } : {}),
   ...(process.env.KEVA_ADMIN_TOKEN ? { adminToken: process.env.KEVA_ADMIN_TOKEN } : {}),
+  ...(emailVerification ? { emailVerification } : {}),
   trustedOrigins,
   s3,
 });

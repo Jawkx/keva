@@ -1,9 +1,9 @@
-import { TriangleAlert } from "lucide-react";
+import { MailCheck, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { oauthContinuation } from "../lib/oauth";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AuthLayout } from "../components/AuthLayout";
 import { PasswordInput } from "../components/PasswordInput";
@@ -18,18 +18,28 @@ export function SignupPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      const result = await authClient.signUp.email({ email, password, name });
+      const continuation = oauthContinuation(window.location.search);
+      const result = await authClient.signUp.email({
+        email,
+        password,
+        name,
+        callbackURL: continuation ?? "/",
+      });
       if (result.error) {
         setError(result.error.message ?? "Sign up failed.");
         return;
       }
-      const continuation = oauthContinuation(window.location.search);
+      if (!result.data.token) {
+        setVerificationSent(true);
+        return;
+      }
       if (continuation) {
         window.location.href = continuation;
         return;
@@ -41,6 +51,34 @@ export function SignupPage() {
       setBusy(false);
     }
   };
+
+  if (verificationSent) {
+    return (
+      <AuthLayout>
+        <div className="flex flex-col gap-1.5">
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">Check your email</h1>
+          <p className="text-sm text-muted-foreground">
+            We sent a verification link to{" "}
+            <span className="font-medium text-foreground">{email}</span>.
+          </p>
+        </div>
+        <Alert>
+          <MailCheck />
+          <AlertTitle>Open the link to finish signing up</AlertTitle>
+          <AlertDescription>The link expires in one hour.</AlertDescription>
+        </Alert>
+        <p className="text-center text-sm text-muted-foreground">
+          Already verified?{" "}
+          <Link
+            to={{ pathname: "/login", search: window.location.search }}
+            className="font-medium text-primary hover:underline"
+          >
+            Sign in
+          </Link>
+        </p>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout>
