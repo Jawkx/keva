@@ -173,10 +173,10 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     await putToPresigned(`${mock.endpoint}/${mock.bucket}/staging/t1/${id}`, bytes, "text/plain");
     expect(mock.store.has(`staging/t1/${id}`)).toBe(true);
 
-    expect(await runtime.runPromise(sweepStaging())).toBe(1);
+    expect(await runtime.runPromise(sweepStaging())).toEqual({ completed: 1, failed: 0 });
     expect(mock.store.has(`staging/t1/${id}`)).toBe(false);
     // The obligation is now recorded as discharged, so a repeat run does no work.
-    expect(await runtime.runPromise(sweepStaging())).toBe(0);
+    expect(await runtime.runPromise(sweepStaging())).toEqual({ completed: 0, failed: 0 });
   });
 
   it("reaps an abandoned pending upload and sweeps it to completion", async () => {
@@ -208,10 +208,10 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     expect(mock.store.has(`staging/t1/${id}`)).toBe(true);
 
     const reaped = await runtime.runPromise(reapPending({ pendingTtlMs: 1 }));
-    expect(reaped).toBe(1);
+    expect(reaped).toEqual({ completed: 1, failed: 0 });
 
     const swept = await runtime.runPromise(sweepDeleting());
-    expect(swept).toBe(1);
+    expect(swept).toEqual({ completed: 1, failed: 0 });
 
     const found = await runtime.runPromise(Effect.flatMap(MetadataStore, (m) => m.get("t1", id)));
     expect(found).toBeNull();
@@ -245,7 +245,7 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
       ),
     );
     const swept = await runtime.runPromise(sweepDeleting());
-    expect(swept).toBe(1);
+    expect(swept).toEqual({ completed: 1, failed: 0 });
 
     expect(mock.store.has(`items/t1/${id}`)).toBe(false);
     const found = await runtime.runPromise(Effect.flatMap(MetadataStore, (m) => m.get("t1", id)));
