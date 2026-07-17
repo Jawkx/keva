@@ -110,9 +110,12 @@ function BrandPanel() {
       />
 
       <div className="relative flex h-full flex-col">
-        <span className="font-heading text-[42px] leading-none font-semibold text-primary">
-          Keva
-        </span>
+        <div className="flex items-center gap-3">
+          <img src="/keva-mark.svg" alt="" className="size-10 rounded-md" />
+          <span className="font-heading text-[42px] leading-none font-semibold text-primary">
+            Keva
+          </span>
+        </div>
 
         <div className="flex flex-1 flex-col justify-center gap-12">
           <div>
@@ -146,9 +149,12 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <main className="flex flex-col items-center justify-center px-6 py-12 lg:border-l lg:border-border">
         <div className="flex w-full max-w-sm flex-col gap-8">
           <div className="flex justify-center lg:hidden">
-            <span className="font-heading text-[42px] leading-none font-semibold text-primary">
-              Keva
-            </span>
+            <div className="flex items-center gap-3">
+              <img src="/keva-mark.svg" alt="" className="size-10 rounded-md" />
+              <span className="font-heading text-[42px] leading-none font-semibold text-primary">
+                Keva
+              </span>
+            </div>
           </div>
           {children}
         </div>

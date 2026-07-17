@@ -32,7 +32,7 @@ export function OAuthConsentPage() {
     <div className="flex min-h-svh items-center justify-center bg-muted/30 p-6">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex items-center justify-center gap-2 font-heading text-lg font-semibold">
-          <img src="/android-chrome-192x192.png" alt="" className="size-8 object-contain" />
+          <img src="/keva-mark.svg" alt="" className="size-8 rounded-sm object-contain" />
           keva
         </div>
         <Card>

@@ -1,0 +1,9 @@
+{
+  "date": "2026-07-18",
+  "fontStack": "DM Sans Variable",
+  "palette": "Warm paper, graphite ink, Keva yellow",
+  "motion": "CSS-only",
+  "spacing": "4-point scale",
+  "framework": "Vite static landing page; React application",
+  "preserved": ["brand palette", "DM Sans body typography", "CSS-only motion"]
+}
