@@ -1,11 +1,20 @@
-import type { MintToken, MintTokenResult, TokenRecord } from "@keva/schema";
+import { Schema } from "effect";
+import {
+  MintTokenResult,
+  TokenRecord,
+  type MintToken,
+  type MintTokenResult as MintTokenResultType,
+  type TokenRecord as TokenRecordType,
+} from "@keva/schema";
 import { sessionApiRequest } from "./session-api";
 
-export const listTokens = (): Promise<readonly TokenRecord[]> =>
-  sessionApiRequest<readonly TokenRecord[]>("GET", "/api/tokens");
+const Revoked = Schema.Struct({ revoked: Schema.Boolean });
 
-export const mintToken = (input: MintToken): Promise<MintTokenResult> =>
-  sessionApiRequest<MintTokenResult>("POST", "/api/tokens", input);
+export const listTokens = (): Promise<readonly TokenRecordType[]> =>
+  sessionApiRequest("GET", "/api/tokens", Schema.Array(TokenRecord));
+
+export const mintToken = (input: MintToken): Promise<MintTokenResultType> =>
+  sessionApiRequest("POST", "/api/tokens", MintTokenResult, input);
 
 export const revokeToken = (id: string): Promise<{ revoked: boolean }> =>
-  sessionApiRequest<{ revoked: boolean }>("DELETE", `/api/tokens/${encodeURIComponent(id)}`);
+  sessionApiRequest("DELETE", `/api/tokens/${encodeURIComponent(id)}`, Revoked);

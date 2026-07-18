@@ -21,6 +21,8 @@ import {
 import { isCsv, isImage, isPdf, isPreviewable } from "../lib/preview";
 import { keva } from "../lib/keva";
 import { objectUrlFor } from "../lib/object-url-cache";
+import { runEffectPromise } from "../lib/effect-runtime";
+import { loadPreviewContent } from "../lib/preview-content";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,8 +46,6 @@ type Preview =
   | { kind: "pdf"; url: string }
   | { kind: "csv"; text: string }
   | { kind: "text"; text: string };
-
-type PreviewContent = { kind: "blob"; blob: Blob } | { kind: "text"; text: string };
 
 type Panel = "preview" | "properties" | "activity";
 
@@ -90,19 +90,15 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     enabled: Boolean(item) && isPreviewable(item!),
     staleTime: Infinity,
     gcTime: 0,
-    queryFn: async () => {
-      const bytes = await keva.downloadBytes(itemId);
-      if (isImage(item!) || isPdf(item!)) {
-        return {
-          kind: "blob",
-          blob: new Blob([bytes.slice().buffer as ArrayBuffer], { type: item!.contentType }),
-        } satisfies PreviewContent;
-      }
-      return {
-        kind: "text",
-        text: new TextDecoder().decode(bytes).slice(0, 5000),
-      } satisfies PreviewContent;
-    },
+    queryFn: ({ signal }) =>
+      runEffectPromise(
+        loadPreviewContent(
+          keva.downloadBytesEffect(itemId),
+          item!.contentType,
+          isImage(item!) || isPdf(item!),
+        ),
+        signal,
+      ),
   });
   const previewLoading = contentQuery.isLoading;
 

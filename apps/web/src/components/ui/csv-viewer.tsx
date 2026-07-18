@@ -15,6 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import * as React from "react";
+import { Effect } from "effect";
 import type * as GlideDataGrid from "@glideapps/glide-data-grid";
 import type {
   DataEditorRef,
@@ -51,6 +52,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { runEffectPromise } from "@/lib/effect-runtime";
+import { useMountEffect } from "@/lib/useMountEffect";
 
 const ZOOM_OPTIONS = [0.75, 1, 1.25, 1.5, 2] as const;
 const CSV_SEARCH_BATCH_ROW_COUNT = 500;
@@ -114,47 +117,45 @@ function createSingleCellSelection(cell: Item): GridSelection {
   };
 }
 
-async function findCsvSearchResults(headers: string[], rows: string[][], rawQuery: string) {
-  const query = rawQuery.trim().toLowerCase();
-  if (!query) return [];
+function findCsvSearchResults(headers: string[], rows: string[][], rawQuery: string) {
+  return Effect.gen(function* () {
+    const query = rawQuery.trim().toLowerCase();
+    if (!query) return [];
 
-  const results: CsvSearchResult[] = [];
-  const columnCount = Math.max(
-    headers.length,
-    rows.reduce((maxCount, row) => Math.max(maxCount, row.length), 0),
-  );
+    const results: CsvSearchResult[] = [];
+    const columnCount = Math.max(
+      headers.length,
+      rows.reduce((maxCount, row) => Math.max(maxCount, row.length), 0),
+    );
 
-  for (
-    let batchStartRow = 0;
-    batchStartRow < rows.length;
-    batchStartRow += CSV_SEARCH_BATCH_ROW_COUNT
-  ) {
-    const batchEndRow = Math.min(batchStartRow + CSV_SEARCH_BATCH_ROW_COUNT, rows.length);
+    for (
+      let batchStartRow = 0;
+      batchStartRow < rows.length;
+      batchStartRow += CSV_SEARCH_BATCH_ROW_COUNT
+    ) {
+      const batchEndRow = Math.min(batchStartRow + CSV_SEARCH_BATCH_ROW_COUNT, rows.length);
 
-    for (let row = batchStartRow; row < batchEndRow; row += 1) {
-      const rowValues = rows[row] ?? [];
+      for (let row = batchStartRow; row < batchEndRow; row += 1) {
+        const rowValues = rows[row] ?? [];
 
-      for (let col = 0; col < columnCount; col += 1) {
-        const displayValue = rowValues[col] ?? "";
-        if (!cellMatchesQuery(displayValue, query)) continue;
+        for (let col = 0; col < columnCount; col += 1) {
+          const displayValue = rowValues[col] ?? "";
+          if (!cellMatchesQuery(displayValue, query)) continue;
 
-        results.push({
-          col,
-          row,
-          displayValue,
-          columnTitle: headers[col] ?? `Column ${col + 1}`,
-        });
+          results.push({
+            col,
+            row,
+            displayValue,
+            columnTitle: headers[col] ?? `Column ${col + 1}`,
+          });
+        }
       }
+
+      if (batchEndRow < rows.length) yield* Effect.yieldNow();
     }
 
-    if (batchEndRow < rows.length) {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 0);
-      });
-    }
-  }
-
-  return results;
+    return results;
+  });
 }
 
 function parseDelimitedText(text: string): {
@@ -288,14 +289,12 @@ function CsvSearchPopover({
   headers,
   rows,
   gridRef,
-  dataIdentity,
   controlsDisabled,
   onGridSelectionChange,
 }: {
   headers: string[];
   rows: string[][];
   gridRef: React.RefObject<DataEditorRef | null>;
-  dataIdentity: string;
   controlsDisabled: boolean;
   onGridSelectionChange: (selection: GridSelection) => void;
 }) {
@@ -304,10 +303,10 @@ function CsvSearchPopover({
   const [searchResults, setSearchResults] = React.useState<CsvSearchResult[]>([]);
   const [activeResultIndex, setActiveResultIndex] = React.useState(0);
   const [isSearching, setIsSearching] = React.useState(false);
-  const searchRequestIdRef = React.useRef(0);
-  const appliedResultKeyRef = React.useRef("");
+  const searchControllerRef = React.useRef<AbortController | null>(null);
+  const debounceRef = React.useRef<number | null>(null);
+  const scrollFrameRef = React.useRef<number | null>(null);
   const activeResult = searchResults[activeResultIndex] ?? null;
-  const activeResultKey = activeResult ? `${activeResult.row}:${activeResult.col}` : "";
   const hasActiveQuery = Boolean(searchQuery.trim());
   const resultLabel = isSearching
     ? "Searching"
@@ -317,12 +316,31 @@ function CsvSearchPopover({
         ? `${activeResultIndex + 1} / ${searchResults.length}`
         : "No results";
 
+  useMountEffect(() => () => {
+    searchControllerRef.current?.abort();
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  });
+
+  const selectResult = React.useCallback(
+    (result: CsvSearchResult | null) => {
+      if (!result) return;
+      onGridSelectionChange(createSingleCellSelection([result.col, result.row]));
+      if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        gridRef.current?.scrollTo(result.col, result.row, "both", 48, 48, {
+          vAlign: "center",
+          hAlign: "center",
+        });
+      });
+    },
+    [gridRef, onGridSelectionChange],
+  );
+
   const runSearch = React.useCallback(
     (rawQuery: string) => {
       const nextQuery = rawQuery.trim();
-      const requestId = searchRequestIdRef.current + 1;
-      searchRequestIdRef.current = requestId;
-      appliedResultKeyRef.current = "";
+      searchControllerRef.current?.abort();
       setSearchQuery(nextQuery);
       setActiveResultIndex(0);
 
@@ -333,90 +351,59 @@ function CsvSearchPopover({
       }
 
       setIsSearching(true);
-      void findCsvSearchResults(headers, rows, nextQuery)
+      const controller = new AbortController();
+      searchControllerRef.current = controller;
+      void runEffectPromise(findCsvSearchResults(headers, rows, nextQuery), controller.signal)
         .then((nextResults) => {
-          if (searchRequestIdRef.current !== requestId) return;
+          if (searchControllerRef.current !== controller) return;
           setSearchResults(nextResults);
+          selectResult(nextResults[0] ?? null);
         })
         .catch(() => {
-          if (searchRequestIdRef.current !== requestId) return;
+          if (controller.signal.aborted || searchControllerRef.current !== controller) return;
           setSearchResults([]);
         })
         .finally(() => {
-          if (searchRequestIdRef.current !== requestId) return;
+          if (searchControllerRef.current !== controller) return;
+          searchControllerRef.current = null;
           setIsSearching(false);
         });
     },
-    [headers, rows],
+    [headers, rows, selectResult],
   );
 
-  React.useEffect(() => {
-    const trimmedDraft = searchDraft.trim();
-
-    if (!trimmedDraft) {
+  const updateSearchDraft = (value: string) => {
+    setSearchDraft(value);
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    if (!value.trim()) {
       runSearch("");
       return;
     }
-
     setIsSearching(true);
-    const timeoutId = window.setTimeout(() => {
-      runSearch(searchDraft);
-    }, CSV_SEARCH_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [runSearch, searchDraft]);
+    debounceRef.current = window.setTimeout(() => runSearch(value), CSV_SEARCH_DEBOUNCE_MS);
+  };
 
   const clearSearch = React.useCallback(() => {
-    searchRequestIdRef.current += 1;
+    searchControllerRef.current?.abort();
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     setSearchDraft("");
     setSearchQuery("");
     setSearchResults([]);
     setActiveResultIndex(0);
     setIsSearching(false);
-    appliedResultKeyRef.current = "";
     onGridSelectionChange(emptyGridSelection);
   }, [onGridSelectionChange]);
 
   const goToRelativeResult = React.useCallback(
     (direction: 1 | -1) => {
       if (!searchResults.length) return;
-
-      setActiveResultIndex((currentIndex) => {
-        return (currentIndex + direction + searchResults.length) % searchResults.length;
-      });
+      const nextIndex =
+        (activeResultIndex + direction + searchResults.length) % searchResults.length;
+      setActiveResultIndex(nextIndex);
+      selectResult(searchResults[nextIndex] ?? null);
     },
-    [searchResults.length],
+    [activeResultIndex, searchResults, selectResult],
   );
-
-  React.useEffect(() => {
-    searchRequestIdRef.current += 1;
-    setSearchDraft("");
-    setSearchQuery("");
-    setSearchResults([]);
-    setActiveResultIndex(0);
-    setIsSearching(false);
-    appliedResultKeyRef.current = "";
-    onGridSelectionChange(emptyGridSelection);
-  }, [dataIdentity, onGridSelectionChange]);
-
-  React.useEffect(() => {
-    if (!activeResult) return;
-
-    if (appliedResultKeyRef.current === activeResultKey) return;
-    appliedResultKeyRef.current = activeResultKey;
-
-    const cell: Item = [activeResult.col, activeResult.row];
-    onGridSelectionChange(createSingleCellSelection(cell));
-
-    const frame = window.requestAnimationFrame(() => {
-      gridRef.current?.scrollTo(activeResult.col, activeResult.row, "both", 48, 48, {
-        vAlign: "center",
-        hAlign: "center",
-      });
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [activeResult, activeResultKey, gridRef, onGridSelectionChange]);
 
   return (
     <Popover>
@@ -440,7 +427,7 @@ function CsvSearchPopover({
           <Input
             placeholder="Search CSV"
             value={searchDraft}
-            onChange={(event) => setSearchDraft(event.target.value)}
+            onChange={(event) => updateSearchDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== "Enter") return;
 
@@ -450,6 +437,7 @@ function CsvSearchPopover({
               } else if (searchResults.length) {
                 goToRelativeResult(1);
               } else if (searchDraft.trim()) {
+                if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
                 runSearch(searchDraft);
               }
             }}
@@ -737,10 +725,10 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
               <>
                 <Separator orientation="vertical" className="mx-1 h-4 self-center" />
                 <CsvSearchPopover
+                  key={dataIdentity}
                   headers={parsed.headers}
                   rows={parsed.rows}
                   gridRef={gridRef}
-                  dataIdentity={dataIdentity}
                   controlsDisabled={searchDisabled}
                   onGridSelectionChange={handleGridSelectionChange}
                 />

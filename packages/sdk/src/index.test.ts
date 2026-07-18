@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Cause, Effect, Exit } from "effect";
 import {
   isShareToken,
   KevaClient,
@@ -59,6 +60,101 @@ describe("KevaClient", () => {
     });
 
     await expect(client.get("bad")).rejects.toBeInstanceOf(KevaProtocolError);
+  });
+
+  it("exposes typed failures through Effect methods", async () => {
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid",
+      fetch: async () =>
+        Response.json({ _tag: "NotFound", message: "Item not found" }, { status: 404 }),
+    });
+
+    const result = await Effect.runPromise(client.getEffect("missing").pipe(Effect.either));
+
+    expect(result).toMatchObject({
+      _tag: "Left",
+      left: { _tag: "NotFound", message: "Item not found" },
+    });
+  });
+
+  it("interrupts in-flight Effect requests", async () => {
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid",
+      fetch: async (_input, init) => {
+        markStarted();
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        });
+      },
+    });
+    const controller = new AbortController();
+    const running = Effect.runPromiseExit(client.getEffect("slow"), {
+      signal: controller.signal,
+    });
+
+    await started;
+    controller.abort();
+    const exit = await running;
+
+    expect(Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)).toBe(true);
+  });
+
+  it("preserves Promise transport rejection compatibility", async () => {
+    const transportFailure = new TypeError("offline");
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid",
+      fetch: async () => Promise.reject(transportFailure),
+    });
+
+    await expect(client.get("missing")).rejects.toBe(transportFailure);
+  });
+
+  it("interrupts downloads while buffering the response body", async () => {
+    let markBodyStarted!: () => void;
+    const bodyStarted = new Promise<void>((resolve) => {
+      markBodyStarted = resolve;
+    });
+    let bodyAborted = false;
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      fetch: async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/content")) {
+          return Response.json({
+            url: "https://blob.invalid/download",
+            expiresAt: "2099-01-01T00:15:00.000Z",
+          });
+        }
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              markBodyStarted();
+              init?.signal?.addEventListener("abort", () => {
+                bodyAborted = true;
+                controller.error(new DOMException("Aborted", "AbortError"));
+              });
+            },
+          }),
+        );
+      },
+    });
+    const controller = new AbortController();
+    const running = Effect.runPromiseExit(client.downloadBytesEffect(item.id), {
+      signal: controller.signal,
+    });
+
+    await bodyStarted;
+    controller.abort();
+    const exit = await running;
+
+    expect(bodyAborted).toBe(true);
+    expect(Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)).toBe(true);
   });
 
   it("passes upload bodies directly to fetch", async () => {

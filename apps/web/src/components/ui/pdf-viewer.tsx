@@ -16,6 +16,7 @@ import {
   Upload,
 } from "lucide-react";
 import * as React from "react";
+import { Effect } from "effect";
 import { createPluginRegistration, refreshPages } from "@embedpdf/core";
 import { EmbedPDF, useRegistry } from "@embedpdf/core/react";
 import type { PdfDocumentObject, PdfEngine, Rect, Rotation } from "@embedpdf/models";
@@ -68,6 +69,8 @@ import { ZoomMode } from "@embedpdf/plugin-zoom";
 import { flushSync } from "react-dom";
 
 import { cn } from "@/lib/utils";
+import { runEffectPromise } from "@/lib/effect-runtime";
+import { useMountEffect } from "@/lib/useMountEffect";
 import { Button } from "@/components/ui/button";
 import {
   DocumentViewerSidebarSkeleton,
@@ -235,20 +238,31 @@ function getRotatedPdfDownloadFileName(fileName: string) {
   return fileName.replace(/\.pdf$/i, "-rotated.pdf");
 }
 
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = "noopener";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+export class PdfExportError extends Error {
+  readonly _tag = "PdfExportError";
 }
 
-async function downloadPdfWithPageRotations({
+function downloadBlobEffect(blob: Blob, fileName: string) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      anchor.rel = "noopener";
+      document.body.append(anchor);
+      return { anchor, url };
+    }),
+    ({ anchor }) => Effect.sync(() => anchor.click()),
+    ({ anchor, url }) =>
+      Effect.sync(() => {
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      }),
+  );
+}
+
+function downloadPdfWithPageRotationsEffect({
   fileName,
   pageRotationDeltas,
   src,
@@ -257,41 +271,53 @@ async function downloadPdfWithPageRotations({
   pageRotationDeltas: PageRotationDeltas;
   src: string;
 }) {
-  const response = await fetch(src);
+  const attempt = <A,>(tryPromise: (signal: AbortSignal) => Promise<A>) =>
+    Effect.tryPromise({
+      try: tryPromise,
+      catch: (cause) =>
+        cause instanceof PdfExportError
+          ? cause
+          : new PdfExportError("Could not prepare the PDF download", { cause }),
+    });
+  const fetchBody = <A,>(read: (response: Response) => Promise<A>) =>
+    attempt(async (signal) => {
+      const response = await fetch(src, { signal });
+      if (!response.ok) {
+        throw new PdfExportError(`Failed to download PDF (${response.status})`);
+      }
+      return read(response);
+    });
 
-  if (!response.ok) {
-    throw new Error(`Failed to download PDF (${response.status})`);
-  }
+  return Effect.gen(function* () {
+    if (pageRotationDeltas.size === 0) {
+      const blob = yield* fetchBody((response) => response.blob());
+      return yield* downloadBlobEffect(blob, fileName);
+    }
 
-  if (pageRotationDeltas.size === 0) {
-    downloadBlob(await response.blob(), fileName);
-    return;
-  }
+    const [{ PDFDocument, degrees }, pdfBytes] = yield* Effect.all(
+      [attempt(() => import("pdf-lib")), fetchBody((response) => response.arrayBuffer())] as const,
+      { concurrency: "unbounded" },
+    );
+    const pdfDocument = yield* attempt(() => PDFDocument.load(pdfBytes));
 
-  const [{ PDFDocument, degrees }, pdfBytes] = await Promise.all([
-    import("pdf-lib"),
-    response.arrayBuffer(),
-  ]);
-  const pdfDocument = await PDFDocument.load(pdfBytes);
+    yield* Effect.sync(() => {
+      pdfDocument.getPages().forEach((page, pageIndex) => {
+        const rotationDelta = pageRotationDeltas.get(pageIndex);
+        if (!rotationDelta) return;
+        page.setRotation(
+          degrees(normalizeDegrees(page.getRotation().angle + rotationToDegrees(rotationDelta))),
+        );
+      });
+    });
 
-  pdfDocument.getPages().forEach((page, pageIndex) => {
-    const rotationDelta = pageRotationDeltas.get(pageIndex);
-
-    if (!rotationDelta) return;
-
-    page.setRotation(
-      degrees(normalizeDegrees(page.getRotation().angle + rotationToDegrees(rotationDelta))),
+    const nextPdfBytes = yield* attempt(() => pdfDocument.save());
+    const nextPdfBuffer = new ArrayBuffer(nextPdfBytes.byteLength);
+    new Uint8Array(nextPdfBuffer).set(nextPdfBytes);
+    return yield* downloadBlobEffect(
+      new Blob([nextPdfBuffer], { type: "application/pdf" }),
+      getRotatedPdfDownloadFileName(fileName),
     );
   });
-
-  const nextPdfBytes = await pdfDocument.save();
-  const nextPdfBuffer = new ArrayBuffer(nextPdfBytes.byteLength);
-  new Uint8Array(nextPdfBuffer).set(nextPdfBytes);
-
-  downloadBlob(
-    new Blob([nextPdfBuffer], { type: "application/pdf" }),
-    getRotatedPdfDownloadFileName(fileName),
-  );
 }
 
 function getThumbnailMetaForPage({
@@ -1904,21 +1930,33 @@ function PDFViewerInner({
     [pdfDocument, scroll, scrollToPage],
   );
 
+  const downloadControllerRef = React.useRef<AbortController | null>(null);
+
+  useMountEffect(() => () => downloadControllerRef.current?.abort());
+
   const handleDownload = React.useCallback(async () => {
     if (!pdfFile || isPreparingDownload) return;
 
     setIsPreparingDownload(true);
+    const controller = new AbortController();
+    downloadControllerRef.current = controller;
 
     try {
-      await downloadPdfWithPageRotations({
-        fileName: getPdfDownloadFileName(fileName, pdfFile),
-        pageRotationDeltas,
-        src: pdfFile,
-      });
+      await runEffectPromise(
+        downloadPdfWithPageRotationsEffect({
+          fileName: getPdfDownloadFileName(fileName, pdfFile),
+          pageRotationDeltas,
+          src: pdfFile,
+        }),
+        controller.signal,
+      );
     } catch (error) {
-      console.error(error);
+      if (!controller.signal.aborted) console.error(error);
     } finally {
-      setIsPreparingDownload(false);
+      if (downloadControllerRef.current === controller) {
+        downloadControllerRef.current = null;
+        setIsPreparingDownload(false);
+      }
     }
   }, [fileName, isPreparingDownload, pageRotationDeltas, pdfFile]);
 
