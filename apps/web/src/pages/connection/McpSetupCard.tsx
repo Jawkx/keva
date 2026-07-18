@@ -1,4 +1,4 @@
-import { ArrowUpRight, Check, Plug } from "lucide-react";
+import { ArrowUpRight, Plug } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { CodeBlock } from "../../components/CodeBlock";
@@ -7,11 +7,9 @@ import { getMcpConfig } from "../../lib/connections";
 import { getMcpClientSetup, MCP_CLIENTS, type McpClientId } from "../../lib/mcp-clients";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
-const SETUP_STEPS = ["Add the server", "Authorize access", "Verify below"] as const;
 
 export function McpSetupCard() {
   const [clientId, setClientId] = useState<McpClientId>("cursor");
@@ -26,10 +24,6 @@ export function McpSetupCard() {
           <Plug className="size-5 text-muted-foreground" />
           Model Context Protocol
         </CardTitle>
-        <CardDescription>
-          Add the Keva server to your agent, authorize it in the browser, and return here to verify
-          the connection.
-        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         {configQuery.isError ? (
@@ -43,17 +37,6 @@ export function McpSetupCard() {
           </Alert>
         ) : (
           <>
-            <ol className="grid gap-3 sm:grid-cols-3">
-              {SETUP_STEPS.map((step, index) => (
-                <li key={step} className="flex items-center gap-2 text-sm">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-xs">
-                    {index + 1}
-                  </span>
-                  {step}
-                </li>
-              ))}
-            </ol>
-
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">Keva MCP server</span>
               {mcpUrl ? (
@@ -111,10 +94,6 @@ export function McpSetupCard() {
                 </div>
               ) : null}
             </div>
-
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Check /> Native remote MCP keeps OAuth and credentials inside your chosen client.
-            </p>
           </>
         )}
       </CardContent>
