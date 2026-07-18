@@ -358,6 +358,113 @@ h1 {
   letter-spacing: -0.035em;
 }
 
+.pricing {
+  padding: clamp(6rem, 10vw, 10rem) 0 clamp(5rem, 8vw, 8rem);
+}
+
+.pricing-heading {
+  display: grid;
+  max-width: 70rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.65fr);
+  align-items: end;
+  gap: 2rem;
+}
+
+.pricing-heading .eyebrow {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.pricing-heading h2 {
+  margin: 0;
+  font-size: clamp(3.1rem, 6vw, 7rem);
+  font-weight: 580;
+  letter-spacing: -0.07em;
+  line-height: 0.9;
+}
+
+.pricing-heading > p:last-child {
+  margin: 0 0 0.5rem;
+  color: rgb(29 33 31 / 68%);
+  line-height: 1.65;
+}
+
+.price-grid {
+  display: grid;
+  margin-top: clamp(3rem, 6vw, 5rem);
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--ink);
+  border-left: 1px solid var(--ink);
+}
+
+.price-card {
+  position: relative;
+  display: flex;
+  min-height: 29rem;
+  padding: 1.4rem;
+  flex-direction: column;
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  background: rgb(255 253 246 / 72%);
+}
+
+.price-card.featured {
+  background: var(--yellow);
+  transform: translateY(-1rem);
+  box-shadow: 0 1rem 0 var(--ink);
+}
+
+.price-index {
+  margin: 0;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.price-card h3 {
+  margin: 4rem 0 0;
+  font-size: clamp(2rem, 3vw, 3.5rem);
+  font-weight: 580;
+  letter-spacing: -0.06em;
+}
+
+.price {
+  display: flex;
+  margin: 0.5rem 0 2rem;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.price strong {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.price span,
+.price-card > p:nth-of-type(3) {
+  color: rgb(29 33 31 / 62%);
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.price-card a {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.pricing-note {
+  margin: 2rem 0 0;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
 .principles p:nth-child(2) {
   text-align: center;
 }
@@ -402,6 +509,14 @@ footer p {
 
   .orbit-one {
     width: min(90vw, 540px);
+  }
+
+  .pricing-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .price-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -465,6 +580,24 @@ footer p {
 
   .principles p {
     font-size: 0.85rem;
+  }
+
+  .price-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .price-card {
+    min-height: 23rem;
+  }
+
+  .price-card.featured {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .pricing-note {
+    text-align: left;
+    line-height: 1.6;
   }
 
   footer {

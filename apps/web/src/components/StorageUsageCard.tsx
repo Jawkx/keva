@@ -99,6 +99,7 @@ function UsageBreakdown({ usage }: { readonly usage: UsageResult }) {
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {usage.itemCount.toLocaleString()} {plural(usage.itemCount)}
+            {usage.quotaItems !== null && ` of ${usage.quotaItems.toLocaleString()}`}
           </p>
         </div>
         <div className="text-right text-sm">
@@ -145,6 +146,27 @@ function UsageBreakdown({ usage }: { readonly usage: UsageResult }) {
             ? "Storage limit reached. Delete files before uploading more."
             : "Storage is above 80%. Consider deleting files you no longer need."}
         </p>
+      )}
+
+      {usage.period && (
+        <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Monthly uploads
+            </p>
+            <p className="mt-1 font-medium tabular-nums">
+              {(usage.period.uploadsUsed + usage.period.uploadsReserved).toLocaleString()} /{" "}
+              {usage.period.uploadsLimit.toLocaleString()}
+            </p>
+          </div>
+          <details className="text-sm">
+            <summary className="cursor-pointer font-medium">API and MCP usage</summary>
+            <p className="mt-2 text-muted-foreground tabular-nums">
+              {usage.period.apiRequestsUsed.toLocaleString()} /{" "}
+              {usage.period.apiRequestsLimit.toLocaleString()} programmatic requests
+            </p>
+          </details>
+        </div>
       )}
 
       {hasBytes ? (

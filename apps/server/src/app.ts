@@ -1,6 +1,10 @@
 import { BlobStore, DEFAULT_STORAGE_QUOTA_BYTES, makeKevaEngine, MetadataStore } from "@keva/core";
 import {
   CreateAccountShare,
+  BillingOverview,
+  BILLING_PLANS,
+  ChangeBillingPlan,
+  Conflict,
   ItemPatch,
   UpdateAdminQuota,
   BatchDelete,
@@ -18,6 +22,7 @@ import {
   toOwnerItem,
   UpdateView,
   ValidationError,
+  StorageUnavailable,
   statusFor,
   type KevaItem,
   type Principal,
@@ -35,6 +40,13 @@ import { defectTypes, failureOrElse } from "./effect-failure.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
 import { ViewStore } from "./views.js";
+import {
+  BillingMeter,
+  BillingMeterLive,
+  isProgrammaticPrincipal,
+  type BillingStore,
+} from "./billing.js";
+import type { Polar } from "@polar-sh/sdk";
 
 export type AppServices =
   | Authenticator
@@ -43,6 +55,7 @@ export type AppServices =
   | ApiTokenStore
   | ShareGrantStore
   | ViewStore;
+export type RuntimeServices = AppServices | BillingMeter;
 
 const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
   Schema.decodeUnknown(schema)(value).pipe(
@@ -89,8 +102,8 @@ const reportServiceFailure = (context: Context, error: KevaError): void => {
 
 const execute = async <A>(
   context: Context,
-  effect: Effect.Effect<A, KevaError, AppServices>,
-  runtime: ManagedRuntime.ManagedRuntime<AppServices, never>,
+  effect: Effect.Effect<A, KevaError, RuntimeServices>,
+  runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>,
 ): Promise<Response> => {
   const exit = await runtime.runPromiseExit(effect);
   if (Exit.isSuccess(exit)) return context.json(exit.value as never);
@@ -103,7 +116,12 @@ const execute = async <A>(
 const principalEffect = (headers: Headers) =>
   Effect.gen(function* () {
     const authenticator = yield* Authenticator;
-    return yield* authenticator.authenticate({ headers });
+    const principal = yield* authenticator.authenticate({ headers });
+    if (isProgrammaticPrincipal(principal)) {
+      const billing = yield* BillingMeter;
+      yield* billing.consumeApiRequest(principal.tenantId);
+    }
+    return principal;
   });
 
 const sessionUser = (principal: Principal) =>
@@ -121,6 +139,10 @@ export interface AppServiceOptions {
   readonly layer: Layer.Layer<AppServices>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
   readonly admin?: { readonly token: string; readonly store: AdminStore };
+  readonly billing?: {
+    readonly store: BillingStore;
+    readonly polar: Polar;
+  };
   // Present only when Better Auth is configured (requires a database). Enables
   // the OAuth 2.1 discovery endpoints and the /mcp resource server. In the
   // no-DB/static-token path these routes stay unmounted, mirroring how token
@@ -134,9 +156,10 @@ export type CreateAppOptions =
   | { readonly getRequestServices: (context: Context) => AppServiceOptions };
 
 interface ResolvedServices {
-  readonly runtime: ManagedRuntime.ManagedRuntime<AppServices, never>;
+  readonly runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
   readonly admin?: { readonly token: string; readonly store: AdminStore };
+  readonly billing?: AppServiceOptions["billing"];
   readonly mcp?: McpDeps;
   readonly dispose?: () => Promise<void>;
 }
@@ -149,9 +172,12 @@ const isRequestScoped = (
   "getRequestServices" in options;
 
 const makeServices = (options: AppServiceOptions): ResolvedServices => ({
-  runtime: ManagedRuntime.make(options.layer),
+  runtime: ManagedRuntime.make(
+    Layer.merge(options.layer, BillingMeterLive(options.billing?.store)),
+  ),
   ...(options.authHandler ? { authHandler: options.authHandler } : {}),
   ...(options.admin ? { admin: options.admin } : {}),
+  ...(options.billing ? { billing: options.billing } : {}),
   ...(options.mcp ? { mcp: options.mcp } : {}),
   ...(options.dispose ? { dispose: options.dispose } : {}),
 });
@@ -269,8 +295,79 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
     }),
   );
 
-  const runRoute = (context: Context, effect: Effect.Effect<unknown, KevaError, AppServices>) =>
+  const runRoute = (context: Context, effect: Effect.Effect<unknown, KevaError, RuntimeServices>) =>
     withServices(context, ({ runtime }) => execute(context, effect, runtime));
+
+  app.get("/api/billing", (context) =>
+    withServices(context, ({ runtime, billing }) => {
+      if (!billing) return context.notFound();
+      return execute(
+        context,
+        Effect.gen(function* () {
+          const principal = yield* principalEffect(context.req.raw.headers);
+          yield* sessionUser(principal);
+          return yield* Effect.tryPromise({
+            try: () => billing.store.getOverview(principal.tenantId),
+            catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
+          }).pipe(Effect.flatMap((overview) => decode(BillingOverview, overview)));
+        }),
+        runtime,
+      );
+    }),
+  );
+
+  app.post("/api/billing/plan", async (context) =>
+    withServices(context, ({ runtime, billing }) => {
+      if (!billing) return context.notFound();
+      return execute(
+        context,
+        Effect.gen(function* () {
+          const principal = yield* principalEffect(context.req.raw.headers);
+          yield* sessionUser(principal);
+          const input = yield* decode(ChangeBillingPlan, yield* jsonBody(context));
+          const current = yield* Effect.tryPromise({
+            try: () => billing.store.currentSubscription(principal.tenantId),
+            catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
+          });
+          if (!current) return yield* new Conflict({ message: "No active subscription" });
+          if (current.plan === input.plan) return { changed: false };
+          const plans = BILLING_PLANS;
+          const currentIndex = plans.findIndex((plan) => plan.slug === current.plan);
+          const nextIndex = plans.findIndex((plan) => plan.slug === input.plan);
+          if (nextIndex < currentIndex) {
+            const allowed = yield* Effect.tryPromise({
+              try: () => billing.store.canDowngrade(principal.tenantId, input.plan),
+              catch: () => new StorageUnavailable({ message: "Usage unavailable" }),
+            });
+            if (!allowed) {
+              return yield* new Conflict({
+                message: "Current storage or item usage exceeds the selected plan",
+              });
+            }
+          }
+          const overview = yield* Effect.tryPromise({
+            try: () => billing.store.getOverview(principal.tenantId),
+            catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
+          });
+          const productId = overview.plans.find((plan) => plan.slug === input.plan)?.productId;
+          if (!productId) return yield* new ValidationError({ message: "Unknown billing plan" });
+          yield* Effect.tryPromise({
+            try: () =>
+              billing.polar.subscriptions.update({
+                id: current.id,
+                subscriptionUpdate: {
+                  productId,
+                  prorationBehavior: nextIndex > currentIndex ? "invoice" : "next_period",
+                },
+              }),
+            catch: () => new StorageUnavailable({ message: "Could not update subscription" }),
+          });
+          return { changed: true };
+        }),
+        runtime,
+      );
+    }),
+  );
 
   // Data routes live under /api so they never collide with the web app's
   // client-side routes (/items/:id, /query, /tokens), which share these

@@ -10,6 +10,14 @@ import { PasswordInput } from "../components/PasswordInput";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { BILLING_PLANS } from "@keva/schema";
+
+const planContinuation = (): string | null => {
+  const plan = new URLSearchParams(window.location.search).get("plan");
+  return BILLING_PLANS.some((candidate) => candidate.slug === plan)
+    ? `/settings?plan=${encodeURIComponent(plan!)}`
+    : null;
+};
 
 export function SignupPage() {
   const [name, setName] = useState("");
@@ -25,11 +33,12 @@ export function SignupPage() {
     setBusy(true);
     try {
       const continuation = oauthContinuation(window.location.search);
+      const destination = continuation ?? planContinuation() ?? "/";
       const result = await authClient.signUp.email({
         email,
         password,
         name,
-        callbackURL: continuation ?? "/",
+        callbackURL: destination,
       });
       if (result.error) {
         setError(result.error.message ?? "Sign up failed.");
@@ -39,7 +48,7 @@ export function SignupPage() {
         setVerificationSent(true);
         return;
       }
-      window.location.replace(continuation ?? "/");
+      window.location.replace(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed.");
     } finally {

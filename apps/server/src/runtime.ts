@@ -9,12 +9,14 @@ import {
 import { ShareGrantStore, makePostgresShareGrantStore } from "./shares.js";
 import { makePostgresViewStore, ViewStore } from "./views.js";
 import type { DatabaseUnit } from "./database.js";
+import type { BillingStore } from "./billing.js";
 
 export interface RuntimeConfig {
   readonly staticToken: string;
   readonly tenantId: string;
   readonly database: DatabaseUnit;
   readonly sessionResolver?: SessionResolver;
+  readonly billing?: BillingStore;
   readonly s3: {
     readonly endpoint: string;
     readonly region: string;

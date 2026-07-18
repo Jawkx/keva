@@ -5,6 +5,7 @@ import {
   encodeCursor,
   Internal,
   QuotaExceeded,
+  SubscriptionRequired,
   validateProperties,
   ValidationError,
   type Actor,
@@ -48,6 +49,8 @@ interface ItemRow {
   readonly status: "pending" | "ready" | "deleting";
   readonly storage_key: string;
   readonly staging_key: string;
+  readonly upload_period_start: Date | string | null;
+  readonly upload_reservation_state: "reserved" | "consumed" | null;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
   readonly properties: KevaItem["properties"];
@@ -288,42 +291,117 @@ const queryOrder = (
 // Reserve tenant storage inside an open transaction: locks the tenant_usage
 // row, checks the quota, and adds the declared size. Returns false (leaving the
 // transaction to roll back) when the quota would be exceeded.
+type ReservationOutcome =
+  | { readonly status: "ok"; readonly periodStart: string | null }
+  | { readonly status: "storage" | "items" | "uploads" | "subscription" };
+
 const reserveTenantQuota = async (
   transaction: Sql,
   tenantId: string,
   declaredSize: number,
-): Promise<boolean> => {
+): Promise<ReservationOutcome> => {
   await transaction`
-    insert into tenant_usage (tenant_id, used_bytes, quota_bytes)
-    values (${tenantId}, 0, ${DEFAULT_STORAGE_QUOTA_BYTES})
+    insert into tenant_usage (tenant_id, used_bytes, used_items, quota_bytes, quota_items)
+    values (${tenantId}, 0, 0, ${DEFAULT_STORAGE_QUOTA_BYTES}, null)
     on conflict (tenant_id) do nothing
   `;
-  const usage = await transaction<{ used_bytes: string; quota_bytes: string | null }[]>`
-    select used_bytes, quota_bytes from tenant_usage where tenant_id = ${tenantId} for update
+  const usage = await transaction<
+    {
+      used_bytes: string;
+      used_items: string;
+      quota_bytes: string | null;
+      quota_items: string | null;
+    }[]
+  >`
+    select used_bytes, used_items, quota_bytes, quota_items
+    from tenant_usage where tenant_id = ${tenantId} for update
   `;
   const current = usage[0]!;
   const usedBytes = Number(current.used_bytes);
+  const usedItems = Number(current.used_items);
   const quotaBytes = current.quota_bytes === null ? null : Number(current.quota_bytes);
-  if (quotaBytes !== null && usedBytes + declaredSize > quotaBytes) return false;
-  await transaction`
-    update tenant_usage set used_bytes = used_bytes + ${declaredSize} where tenant_id = ${tenantId}
+  const quotaItems = current.quota_items === null ? null : Number(current.quota_items);
+  const billing = await transaction<
+    {
+      status: string;
+      grace_ends_at: Date | string | null;
+      trial_ends_at: Date | string | null;
+      current_period_start: Date | string | null;
+      current_period_end: Date | string | null;
+      monthly_uploads_limit: string;
+    }[]
+  >`
+    select status, grace_ends_at, trial_ends_at, current_period_start, current_period_end,
+           monthly_uploads_limit
+    from tenant_billing where tenant_id = ${tenantId} for update
   `;
-  return true;
+  let periodStart: string | null = null;
+  const entitlement = billing[0];
+  if (entitlement) {
+    const allowed =
+      entitlement.status === "active" ||
+      (entitlement.status === "trialing" &&
+        entitlement.trial_ends_at !== null &&
+        new Date(entitlement.trial_ends_at) > new Date()) ||
+      (entitlement.status === "past_due" &&
+        entitlement.grace_ends_at !== null &&
+        new Date(entitlement.grace_ends_at) > new Date());
+    if (!allowed || !entitlement.current_period_start || !entitlement.current_period_end) {
+      return { status: "subscription" };
+    }
+    if (quotaBytes !== null && usedBytes + declaredSize > quotaBytes) return { status: "storage" };
+    if (quotaItems !== null && usedItems + 1 > quotaItems) return { status: "items" };
+    periodStart = asIso(entitlement.current_period_start);
+    const periodEnd = asIso(entitlement.current_period_end);
+    await transaction`
+      insert into tenant_period_usage (
+        tenant_id, period_start, period_end, uploads_used, uploads_reserved, api_requests_used
+      ) values (${tenantId}, ${periodStart}, ${periodEnd}, 0, 0, 0)
+      on conflict (tenant_id, period_start) do nothing
+    `;
+    const periods = await transaction<{ uploads_used: string; uploads_reserved: string }[]>`
+      select uploads_used, uploads_reserved from tenant_period_usage
+      where tenant_id = ${tenantId} and period_start = ${periodStart}
+      for update
+    `;
+    const uploads = Number(periods[0]!.uploads_used) + Number(periods[0]!.uploads_reserved);
+    if (uploads + 1 > Number(entitlement.monthly_uploads_limit)) {
+      return { status: "uploads" };
+    }
+    await transaction`
+      update tenant_period_usage set uploads_reserved = uploads_reserved + 1
+      where tenant_id = ${tenantId} and period_start = ${periodStart}
+    `;
+  }
+  if (!entitlement) {
+    if (quotaBytes !== null && usedBytes + declaredSize > quotaBytes) return { status: "storage" };
+    if (quotaItems !== null && usedItems + 1 > quotaItems) return { status: "items" };
+  }
+  await transaction`
+    update tenant_usage
+    set used_bytes = used_bytes + ${declaredSize}, used_items = used_items + 1
+    where tenant_id = ${tenantId}
+  `;
+  return { status: "ok", periodStart };
 };
 
-const insertItemRow = async (transaction: Sql, item: KevaItem): Promise<void> => {
+const insertItemRow = async (
+  transaction: Sql,
+  item: KevaItem,
+  periodStart: string | null,
+): Promise<void> => {
   const properties = canonicalizeProperties(item.properties);
   await transaction`
     insert into items (
       id, tenant_id, name, content_type, declared_size, size, etag,
       checksum, source, status, storage_key, staging_key, created_at,
-      updated_at, properties
+      updated_at, properties, upload_period_start, upload_reservation_state
     ) values (
       ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
       ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
       ${item.source}, ${item.status}, ${item.storageKey},
       ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
-      ${jsonbParam(properties)}::text::jsonb
+      ${jsonbParam(properties)}::text::jsonb, ${periodStart}, ${periodStart ? "reserved" : null}
     )
   `;
 };
@@ -334,12 +412,22 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       const reserved = yield* attempt(() =>
         sql.begin(async (transaction) => {
           const tx = transaction as unknown as Sql;
-          if (!(await reserveTenantQuota(tx, item.tenantId, item.declaredSize))) return false;
-          await insertItemRow(tx, item);
-          return true;
+          const reservation = await reserveTenantQuota(tx, item.tenantId, item.declaredSize);
+          if (reservation.status !== "ok") return reservation.status;
+          await insertItemRow(tx, item, reservation.periodStart);
+          return "ok" as const;
         }),
       );
-      if (!reserved) return yield* new QuotaExceeded({ message: "Storage limit reached" });
+      if (reserved === "subscription") {
+        return yield* new SubscriptionRequired({ message: "An active subscription is required" });
+      }
+      if (reserved === "items") return yield* new QuotaExceeded({ message: "Item limit reached" });
+      if (reserved === "uploads") {
+        return yield* new QuotaExceeded({ message: "Monthly upload limit reached" });
+      }
+      if (reserved === "storage") {
+        return yield* new QuotaExceeded({ message: "Storage limit reached" });
+      }
     }),
   reserveShareUpload: (reservation) =>
     Effect.gen(function* () {
@@ -365,25 +453,28 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           ) {
             return "share" as const;
           }
-          if (
-            !(await reserveTenantQuota(
-              tx,
-              reservation.item.tenantId,
-              reservation.item.declaredSize,
-            ))
-          ) {
-            return "tenant" as const;
-          }
-          await insertItemRow(tx, reservation.item);
+          const tenantReservation = await reserveTenantQuota(
+            tx,
+            reservation.item.tenantId,
+            reservation.item.declaredSize,
+          );
+          if (tenantReservation.status !== "ok") return tenantReservation.status;
+          await insertItemRow(tx, reservation.item, tenantReservation.periodStart);
           return "ok" as const;
         }),
       );
       if (outcome === "share") {
         return yield* new QuotaExceeded({ message: "Share storage limit reached" });
       }
-      if (outcome === "tenant") {
-        return yield* new QuotaExceeded({ message: "Storage limit reached" });
+      if (outcome === "subscription") {
+        return yield* new SubscriptionRequired({ message: "An active subscription is required" });
       }
+      if (outcome === "items") return yield* new QuotaExceeded({ message: "Item limit reached" });
+      if (outcome === "uploads") {
+        return yield* new QuotaExceeded({ message: "Monthly upload limit reached" });
+      }
+      if (outcome === "storage")
+        return yield* new QuotaExceeded({ message: "Storage limit reached" });
     }),
   get: (tenantId, id) =>
     attempt(async () => {
@@ -401,21 +492,32 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       if (patch.size !== undefined) values.size = patch.size;
       if (patch.etag !== undefined) values.etag = patch.etag;
       if (patch.contentType !== undefined) values.content_type = patch.contentType;
-      const rows =
-        olderThan === undefined
-          ? await sql`
-            update items set ${sql(values)}
-            where tenant_id = ${tenantId} and id = ${id}
-              and status in ${sql(from)}
-            returning id
-          `
-          : await sql`
-            update items set ${sql(values)}
-            where tenant_id = ${tenantId} and id = ${id}
-              and status in ${sql(from)} and created_at < ${olderThan}
-            returning id
+      return sql.begin(async (transaction) => {
+        const rows =
+          olderThan === undefined
+            ? await transaction<ItemRow[]>`
+              select * from items where tenant_id = ${tenantId} and id = ${id}
+                and status in ${transaction(from)} for update
+            `
+            : await transaction<ItemRow[]>`
+              select * from items where tenant_id = ${tenantId} and id = ${id}
+                and status in ${transaction(from)} and created_at < ${olderThan} for update
+            `;
+        const row = rows[0];
+        if (!row) return false;
+        if (patch.status === "deleting" && row.upload_reservation_state === "reserved") {
+          await transaction`
+            update tenant_period_usage
+            set uploads_reserved = greatest(0, uploads_reserved - 1)
+            where tenant_id = ${tenantId} and period_start = ${row.upload_period_start}
           `;
-      return rows.length === 1;
+          values.upload_reservation_state = null;
+        }
+        await transaction`
+          update items set ${transaction(values)} where tenant_id = ${tenantId} and id = ${id}
+        `;
+        return true;
+      });
     }),
   transitionWithEvent: (tenantId, id, from, patch, event) =>
     attempt(async () =>
@@ -430,6 +532,21 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         if (patch.size !== undefined) values.size = patch.size;
         if (patch.etag !== undefined) values.etag = patch.etag;
         if (patch.contentType !== undefined) values.content_type = patch.contentType;
+        if (patch.status === "ready" && row.upload_reservation_state === "reserved") {
+          await transaction`
+            update tenant_period_usage
+            set uploads_reserved = greatest(0, uploads_reserved - 1), uploads_used = uploads_used + 1
+            where tenant_id = ${tenantId} and period_start = ${row.upload_period_start}
+          `;
+          values.upload_reservation_state = "consumed";
+        } else if (patch.status === "deleting" && row.upload_reservation_state === "reserved") {
+          await transaction`
+            update tenant_period_usage
+            set uploads_reserved = greatest(0, uploads_reserved - 1)
+            where tenant_id = ${tenantId} and period_start = ${row.upload_period_start}
+          `;
+          values.upload_reservation_state = null;
+        }
         const updated = await transaction<ItemRow[]>`
           update items set ${transaction(values)} where tenant_id = ${tenantId} and id = ${id} returning *
         `;
@@ -527,7 +644,8 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         const releasedBytes = Number(row.size ?? row.declared_size);
         await transaction`
           update tenant_usage
-          set used_bytes = greatest(0, used_bytes - ${releasedBytes})
+          set used_bytes = greatest(0, used_bytes - ${releasedBytes}),
+              used_items = greatest(0, used_items - 1)
           where tenant_id = ${tenantId}
         `;
         return true;
@@ -595,8 +713,16 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         totalBytes += bytes;
         return { contentType: row.content_type, count, bytes };
       });
-      const quotaRows = await sql<{ used_bytes: string; quota_bytes: string | null }[]>`
-        select used_bytes, quota_bytes from tenant_usage where tenant_id = ${tenantId}
+      const quotaRows = await sql<
+        {
+          used_bytes: string;
+          used_items: string;
+          quota_bytes: string | null;
+          quota_items: string | null;
+        }[]
+      >`
+        select used_bytes, used_items, quota_bytes, quota_items
+        from tenant_usage where tenant_id = ${tenantId}
       `;
       const quotaBytes = quotaRows[0]
         ? quotaRows[0].quota_bytes === null
@@ -604,24 +730,66 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           : Number(quotaRows[0].quota_bytes)
         : DEFAULT_STORAGE_QUOTA_BYTES;
       const accountedBytes = quotaRows[0] ? Number(quotaRows[0].used_bytes) : totalBytes;
+      const accountedItems = quotaRows[0] ? Number(quotaRows[0].used_items) : itemCount;
+      const quotaItems =
+        quotaRows[0]?.quota_items === null || !quotaRows[0]
+          ? null
+          : Number(quotaRows[0].quota_items);
+      const periodRows = await sql<
+        {
+          period_start: Date | string;
+          period_end: Date | string;
+          uploads_used: string;
+          uploads_reserved: string;
+          api_requests_used: string;
+          monthly_uploads_limit: string;
+          monthly_api_requests_limit: string;
+        }[]
+      >`
+        select p.period_start, p.period_end, p.uploads_used, p.uploads_reserved,
+               p.api_requests_used, b.monthly_uploads_limit, b.monthly_api_requests_limit
+        from tenant_billing b
+        join tenant_period_usage p
+          on p.tenant_id = b.tenant_id and p.period_start = b.current_period_start
+        where b.tenant_id = ${tenantId}
+      `;
+      const period = periodRows[0];
       return {
         itemCount,
         totalBytes,
+        accountedItems,
         quotaBytes,
+        quotaItems,
         remainingBytes: quotaBytes === null ? null : Math.max(0, quotaBytes - accountedBytes),
+        remainingItems: quotaItems === null ? null : Math.max(0, quotaItems - accountedItems),
+        period: period
+          ? {
+              startsAt: asIso(period.period_start),
+              endsAt: asIso(period.period_end),
+              uploadsUsed: Number(period.uploads_used),
+              uploadsReserved: Number(period.uploads_reserved),
+              uploadsLimit: Number(period.monthly_uploads_limit),
+              apiRequestsUsed: Number(period.api_requests_used),
+              apiRequestsLimit: Number(period.monthly_api_requests_limit),
+            }
+          : null,
         byType,
       };
     }),
   setQuota: (tenantId, quotaBytes) =>
     attempt(async () => {
       await sql`
-        insert into tenant_usage (tenant_id, used_bytes, quota_bytes)
+        insert into tenant_usage (tenant_id, used_bytes, used_items, quota_bytes)
         values (
           ${tenantId},
           (
             select coalesce(sum(coalesce(size, declared_size)), 0)::bigint
             from items
-            where tenant_id = ${tenantId} and status in ('pending', 'ready')
+            where tenant_id = ${tenantId} and status in ('pending', 'ready', 'deleting')
+          ),
+          (
+            select count(*)::bigint from items
+            where tenant_id = ${tenantId} and status in ('pending', 'ready', 'deleting')
           ),
           ${quotaBytes}
         )

@@ -1,4 +1,7 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
+import type { Polar } from "@polar-sh/sdk";
+import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
 import { betterAuth } from "better-auth/minimal";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import {
@@ -23,6 +26,12 @@ export interface BetterAuthConfig {
     readonly email: string;
     readonly url: string;
   }) => Promise<void>;
+  readonly polar?: {
+    readonly client: Polar;
+    readonly webhookSecret: string;
+    readonly products: ReadonlyArray<{ readonly productId: string; readonly slug: string }>;
+    readonly onSubscription: (subscription: Subscription, eventAt: Date) => Promise<void>;
+  };
 }
 
 export type KevaAuth = ReturnType<typeof betterAuth>;
@@ -179,6 +188,33 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
     },
     plugins: [
       organization(),
+      ...(config.polar
+        ? [
+            polar({
+              client: config.polar.client,
+              createCustomerOnSignUp: true,
+              use: [
+                checkout({
+                  products: [...config.polar.products],
+                  successUrl: "/settings?checkout=complete",
+                  returnUrl: "/settings",
+                  authenticatedUsersOnly: true,
+                }),
+                portal({ returnUrl: `${config.baseURL.replace(/\/$/, "")}/settings` }),
+                webhooks({
+                  secret: config.polar.webhookSecret,
+                  onPayload: async (payload) => {
+                    if (!payload.type.startsWith("subscription.")) return;
+                    await config.polar!.onSubscription(
+                      payload.data as Subscription,
+                      payload.timestamp,
+                    );
+                  },
+                }),
+              ],
+            }),
+          ]
+        : []),
       mcp({
         loginPage: "/login",
         resource: `${config.baseURL.replace(/\/$/, "")}/mcp`,

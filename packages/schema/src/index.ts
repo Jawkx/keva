@@ -9,6 +9,7 @@ import {
 
 export * from "./fields.js";
 export * from "./conditions.js";
+export * from "./billing.js";
 
 export const ITEM_ID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -341,8 +342,22 @@ export type ContentTypeUsage = typeof ContentTypeUsage.Type;
 export const UsageResult = Schema.Struct({
   itemCount: Schema.Number,
   totalBytes: Schema.Number,
+  accountedItems: Schema.Number,
   quotaBytes: Schema.NullOr(Schema.Number),
+  quotaItems: Schema.NullOr(Schema.Number),
   remainingBytes: Schema.NullOr(Schema.Number),
+  remainingItems: Schema.NullOr(Schema.Number),
+  period: Schema.NullOr(
+    Schema.Struct({
+      startsAt: Schema.String,
+      endsAt: Schema.String,
+      uploadsUsed: Schema.Number,
+      uploadsReserved: Schema.Number,
+      uploadsLimit: Schema.Number,
+      apiRequestsUsed: Schema.Number,
+      apiRequestsLimit: Schema.Number,
+    }),
+  ),
   byType: Schema.Array(ContentTypeUsage),
 });
 export type UsageResult = typeof UsageResult.Type;
@@ -745,6 +760,14 @@ export class Conflict extends Schema.TaggedError<Conflict>()("Conflict", {
 export class QuotaExceeded extends Schema.TaggedError<QuotaExceeded>()("QuotaExceeded", {
   message: Schema.String,
 }) {}
+export class SubscriptionRequired extends Schema.TaggedError<SubscriptionRequired>()(
+  "SubscriptionRequired",
+  { message: Schema.String },
+) {}
+export class RateLimitExceeded extends Schema.TaggedError<RateLimitExceeded>()(
+  "RateLimitExceeded",
+  { message: Schema.String, resetsAt: Schema.String },
+) {}
 export class StorageUnavailable extends Schema.TaggedError<StorageUnavailable>()(
   "StorageUnavailable",
   { message: Schema.String },
@@ -760,6 +783,8 @@ export const KevaError = Schema.Union(
   NotFound,
   Conflict,
   QuotaExceeded,
+  SubscriptionRequired,
+  RateLimitExceeded,
   StorageUnavailable,
   Internal,
 );
@@ -779,6 +804,10 @@ export const statusFor = (error: KevaError): number => {
       return 409;
     case "QuotaExceeded":
       return 413;
+    case "SubscriptionRequired":
+      return 402;
+    case "RateLimitExceeded":
+      return 429;
     case "StorageUnavailable":
       return 502;
     case "Internal":

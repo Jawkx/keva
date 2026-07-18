@@ -5,6 +5,7 @@ import { PageHeader } from "../components/PageHeader";
 import { AppearanceCard } from "../components/AppearanceCard";
 import { PasswordInput } from "../components/PasswordInput";
 import { StorageUsageCard } from "../components/StorageUsageCard";
+import { SubscriptionCard } from "../components/SubscriptionCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -67,6 +68,8 @@ export function SettingsPage() {
       <PageHeader title="Settings" description="Manage your account." />
 
       <div className="flex flex-col gap-6">
+        <SubscriptionCard />
+
         <StorageUsageCard />
 
         <AppearanceCard />

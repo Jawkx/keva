@@ -274,8 +274,12 @@ describe("KevaClient", () => {
     const payload = {
       itemCount: 3,
       totalBytes: 15,
+      accountedItems: 3,
       quotaBytes: 100,
+      quotaItems: 10,
       remainingBytes: 85,
+      remainingItems: 7,
+      period: null,
       byType: [{ contentType: "image/png", count: 2, bytes: 10 }],
     };
     const client = new KevaClient({

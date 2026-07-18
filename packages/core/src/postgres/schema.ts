@@ -10,6 +10,7 @@ import type {
 } from "@keva/schema";
 import {
   bigint,
+  boolean,
   check,
   index,
   integer,
@@ -41,6 +42,8 @@ export const items = pgTable(
     // staging-cleanup backstop: a null value on a ready item is an outstanding
     // cleanup obligation.
     stagingCleanedAt: timestamp("staging_cleaned_at", { withTimezone: true, mode: "string" }),
+    uploadPeriodStart: timestamp("upload_period_start", { withTimezone: true, mode: "string" }),
+    uploadReservationState: text("upload_reservation_state").$type<"reserved" | "consumed">(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
     properties: jsonb("properties").$type<Properties>().notNull().default({}),
@@ -64,14 +67,73 @@ export const items = pgTable(
       .on(table.createdAt)
       .where(sql`${table.status} = 'ready' and ${table.stagingCleanedAt} is null`),
     check("items_status_check", sql`${table.status} in ('pending', 'ready', 'deleting')`),
+    check(
+      "items_upload_reservation_state_check",
+      sql`${table.uploadReservationState} is null or ${table.uploadReservationState} in ('reserved', 'consumed')`,
+    ),
   ],
 );
 
 export const tenantUsage = pgTable("tenant_usage", {
   tenantId: text("tenant_id").primaryKey(),
   usedBytes: bigint("used_bytes", { mode: "number" }).notNull().default(0),
+  usedItems: bigint("used_items", { mode: "number" }).notNull().default(0),
   quotaBytes: bigint("quota_bytes", { mode: "number" }).default(10_737_418_240),
+  quotaItems: bigint("quota_items", { mode: "number" }),
 });
+
+export const tenantBilling = pgTable(
+  "tenant_billing",
+  {
+    tenantId: text("tenant_id").primaryKey(),
+    userId: text("user_id").notNull(),
+    polarCustomerId: text("polar_customer_id"),
+    polarSubscriptionId: text("polar_subscription_id"),
+    polarProductId: text("polar_product_id"),
+    planSlug: text("plan_slug").$type<"100gb" | "500gb" | "1tb" | "2tb">(),
+    status: text("status")
+      .$type<"unsubscribed" | "trialing" | "active" | "past_due" | "canceled">()
+      .notNull()
+      .default("unsubscribed"),
+    monthlyUploadsLimit: bigint("monthly_uploads_limit", { mode: "number" }).notNull().default(0),
+    monthlyApiRequestsLimit: bigint("monthly_api_requests_limit", { mode: "number" })
+      .notNull()
+      .default(0),
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true, mode: "string" }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "string" }),
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true, mode: "string" }),
+    graceEndsAt: timestamp("grace_ends_at", { withTimezone: true, mode: "string" }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    lastPolarEventAt: timestamp("last_polar_event_at", { withTimezone: true, mode: "string" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("tenant_billing_user_id_unique").on(table.userId),
+    uniqueIndex("tenant_billing_polar_subscription_id_unique")
+      .on(table.polarSubscriptionId)
+      .where(sql`${table.polarSubscriptionId} is not null`),
+    check(
+      "tenant_billing_status_check",
+      sql`${table.status} in ('unsubscribed', 'trialing', 'active', 'past_due', 'canceled')`,
+    ),
+  ],
+);
+
+export const tenantPeriodUsage = pgTable(
+  "tenant_period_usage",
+  {
+    tenantId: text("tenant_id").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true, mode: "string" }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true, mode: "string" }).notNull(),
+    uploadsUsed: bigint("uploads_used", { mode: "number" }).notNull().default(0),
+    uploadsReserved: bigint("uploads_reserved", { mode: "number" }).notNull().default(0),
+    apiRequestsUsed: bigint("api_requests_used", { mode: "number" }).notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex("tenant_period_usage_tenant_start_unique").on(table.tenantId, table.periodStart),
+    index("tenant_period_usage_period_end_idx").on(table.periodEnd),
+  ],
+);
 
 // Append-only history of item metadata mutations. Deliberately no FK to items
 // — events outlive deletion; `item_name` and `actor` are write-time snapshots.

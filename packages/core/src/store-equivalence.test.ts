@@ -144,8 +144,12 @@ const seedAndRun = async (): Promise<Record<string, string[]>> => {
 const EXPECTED_USAGE = {
   itemCount: 3,
   totalBytes: 15,
+  accountedItems: 3,
   quotaBytes: 10_737_418_240,
+  quotaItems: null,
   remainingBytes: 10_737_418_225,
+  remainingItems: null,
+  period: null,
   byType: [
     { contentType: "application/pdf", count: 1, bytes: 5 },
     { contentType: "image/png", count: 1, bytes: 5 },

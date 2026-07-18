@@ -34,14 +34,15 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { Cause, Effect, Exit, ManagedRuntime, Option, Schema } from "effect";
 import type { Hono } from "hono";
 import type { Context } from "hono";
-import type { AppServices } from "./app.js";
+import type { RuntimeServices } from "./app.js";
 import { mcpScopesToKevaScopes } from "./auth.js";
 import type { ConnectionStore, McpActorNames, McpAuthorizationServer } from "./better-auth.js";
 import { defectTypes, failureOrElse } from "./effect-failure.js";
+import { BillingMeter } from "./billing.js";
 import { ShareGrantStore } from "./shares.js";
 import { ViewStore } from "./views.js";
 
-type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;
+type AppRuntime = ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
 
 const McpItemContentResult = Schema.Struct({
   item: OwnerItem,
@@ -83,7 +84,7 @@ const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
 
 const runEngine = async <A>(
   runtime: AppRuntime,
-  effect: Effect.Effect<A, KevaError, AppServices>,
+  effect: Effect.Effect<A, KevaError, RuntimeServices>,
 ): Promise<A> => {
   const exit = await runtime.runPromiseExit(effect);
   if (Exit.isSuccess(exit)) return exit.value;
@@ -98,7 +99,7 @@ const runEngine = async <A>(
 
 const runValidated = <A, I>(
   runtime: AppRuntime,
-  effect: Effect.Effect<A, KevaError, AppServices>,
+  effect: Effect.Effect<A, KevaError, RuntimeServices>,
   schema: Schema.Schema<A, I, never>,
 ): Promise<A> =>
   runEngine(
@@ -403,6 +404,24 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
         }
         const names = await deps.resolveActorNames(session.userId, session.clientId);
         const principal = principalFromMcpToken(session, tenantId, names);
+        const metered = await runtime.runPromise(
+          Effect.either(
+            Effect.gen(function* () {
+              const billing = yield* BillingMeter;
+              yield* billing.consumeApiRequest(tenantId);
+            }),
+          ),
+        );
+        if (metered._tag === "Left") {
+          return Response.json(
+            {
+              jsonrpc: "2.0",
+              error: { code: -32029, message: metered.left.message },
+              id: null,
+            },
+            { status: 429, headers: { "Retry-After": "3600" } },
+          );
+        }
         const engine = makeMcpEngine(principal, runtime);
         const server = createKevaMcpServer(engine, { scopes: principal.scopes });
         // Fresh server and transport per request keeps the MCP edge stateless.

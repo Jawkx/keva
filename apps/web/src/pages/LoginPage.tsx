@@ -10,6 +10,7 @@ import { PasswordInput } from "../components/PasswordInput";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { BILLING_PLANS } from "@keva/schema";
 
 export function LoginPage() {
   const location = useLocation();
@@ -29,9 +30,13 @@ export function LoginPage() {
         return;
       }
       const continuation = oauthContinuation(window.location.search);
+      const selectedPlan = new URLSearchParams(window.location.search).get("plan");
+      const planDestination = BILLING_PLANS.some((candidate) => candidate.slug === selectedPlan)
+        ? `/settings?plan=${encodeURIComponent(selectedPlan!)}`
+        : null;
       const from = (location.state as { from?: unknown } | null)?.from;
       const returnPath = typeof from === "string" && from.startsWith("/") ? from : "/";
-      window.location.replace(continuation ?? returnPath);
+      window.location.replace(continuation ?? planDestination ?? returnPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed.");
     } finally {

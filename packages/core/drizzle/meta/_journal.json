@@ -57,6 +57,13 @@
       "when": 1784344233767,
       "tag": "0007_nifty_dracula",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784377134026,
+      "tag": "0008_elite_kingpin",
+      "breakpoints": true
     }
   ]
 }

@@ -30,8 +30,12 @@ const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   getUsage: async () => ({
     itemCount: 0,
     totalBytes: 0,
+    accountedItems: 0,
     quotaBytes: 10_737_418_240,
+    quotaItems: null,
     remainingBytes: 10_737_418_240,
+    remainingItems: null,
+    period: null,
     byType: [],
   }),
   listPropertyKeys: async () => ({ keys: ["tag"] }),

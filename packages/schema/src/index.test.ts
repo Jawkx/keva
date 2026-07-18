@@ -159,8 +159,12 @@ describe("schema", () => {
     const usage = {
       itemCount: 3,
       totalBytes: 4096,
+      accountedItems: 3,
       quotaBytes: 10_737_418_240,
+      quotaItems: null,
       remainingBytes: 10_737_414_144,
+      remainingItems: null,
+      period: null,
       byType: [
         { contentType: "image/png", count: 2, bytes: 3072 },
         { contentType: "text/plain", count: 1, bytes: 1024 },

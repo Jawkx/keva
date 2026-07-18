@@ -4,6 +4,7 @@ import { trustedOriginsFor } from "./origins.js";
 import { s3ConfigFor } from "./s3-config.js";
 import { createServerOptions, type ServerOptionsConfig } from "./server-options.js";
 import { emailVerificationConfigFor } from "./email-verification.js";
+import { billingConfigFor } from "./billing-config.js";
 
 interface AssetsBinding {
   readonly fetch: (request: Request) => Promise<Response>;
@@ -21,6 +22,13 @@ interface Env {
   readonly KEVA_ENVIRONMENT?: string;
   readonly RESEND_API_KEY?: string;
   readonly RESEND_FROM?: string;
+  readonly POLAR_ACCESS_TOKEN?: string;
+  readonly POLAR_WEBHOOK_SECRET?: string;
+  readonly POLAR_SERVER?: string;
+  readonly POLAR_PRODUCT_100GB_ID?: string;
+  readonly POLAR_PRODUCT_500GB_ID?: string;
+  readonly POLAR_PRODUCT_1TB_ID?: string;
+  readonly POLAR_PRODUCT_2TB_ID?: string;
   readonly HYPERDRIVE?: { readonly connectionString: string };
   readonly S3_ENDPOINT?: string;
   readonly S3_REGION?: string;
@@ -68,6 +76,7 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
   const { databaseUrl, s3 } = persistentConfigFor(env);
   const emailVerification = emailVerificationConfigFor(env);
+  const polar = billingConfigFor(env);
 
   return {
     staticToken,
@@ -77,6 +86,7 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
     ...(env.BETTER_AUTH_SECRET ? { betterAuthSecret: env.BETTER_AUTH_SECRET } : {}),
     ...(env.BETTER_AUTH_URL ? { betterAuthUrl: env.BETTER_AUTH_URL } : {}),
     ...(emailVerification ? { emailVerification } : {}),
+    ...(polar ? { polar } : {}),
     trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
     s3,
   };
