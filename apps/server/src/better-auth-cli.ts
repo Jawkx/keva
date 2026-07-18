@@ -10,5 +10,5 @@ const client = postgres(
 export const auth: ReturnType<typeof createBetterAuth> = createBetterAuth({
   database: drizzle(client),
   secret: process.env.BETTER_AUTH_SECRET ?? "development-only-better-auth-secret-change-me",
-  baseURL: process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:8787",
+  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:5173",
 });

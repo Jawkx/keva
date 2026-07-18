@@ -48,6 +48,11 @@ jobs:
       - run: pnpm build
       - run: pnpm audit --audit-level high
 
+      - name: Migrate staging database
+        run: pnpm --filter @keva/core db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
       - name: Deploy Cloudflare staging Worker
         run: pnpm exec wrangler deploy --config apps/server/wrangler.toml --env staging
         env:

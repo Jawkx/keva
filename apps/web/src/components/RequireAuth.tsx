@@ -16,7 +16,13 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   }
 
   if (!data) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+        replace
+      />
+    );
   }
 
   return <>{children}</>;

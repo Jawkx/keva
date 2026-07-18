@@ -3,6 +3,7 @@ import { makeAdminStore } from "./admin.js";
 import {
   betterAuthSessionResolver,
   createBetterAuth,
+  makeAuthHandler,
   makeConnectionStore,
   makeMcpActorResolver,
   makeMcpAuthorizationServer,
@@ -41,7 +42,10 @@ const databaseAuth = (config: ServerOptionsConfig, database: DatabaseUnit) => {
       : {}),
   });
 
-  return { auth };
+  return {
+    auth,
+    handler: makeAuthHandler(auth, database.db, config.betterAuthUrl ?? config.baseUrl),
+  };
 };
 
 export const createServerOptions = (config: ServerOptionsConfig): AppServiceOptions => {
@@ -59,11 +63,12 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
     layer,
     ...(auth
       ? {
-          authHandler: auth.auth.handler,
+          authHandler: auth.handler,
           ...(config.adminToken
             ? { admin: { token: config.adminToken, store: makeAdminStore(database.sql) } }
             : {}),
           mcp: {
+            mcpUrl: `${(config.betterAuthUrl ?? config.baseUrl).replace(/\/$/, "")}/mcp`,
             authorizationServer: makeMcpAuthorizationServer(auth.auth),
             resolveTenant: makeUserTenantResolver(database.db),
             resolveActorNames: makeMcpActorResolver(database.db),

@@ -188,6 +188,21 @@ describe("createKevaMcpServer tool execution", () => {
       });
       expect(result.content).toEqual([
         {
+          type: "text",
+          text: JSON.stringify(
+            {
+              download_url: "https://blob/x",
+              file_id: item.id,
+              mime_type: "text/plain",
+              file_name: "a.txt",
+              size: 1,
+              expires_at: "2030-01-01T00:00:00Z",
+            },
+            null,
+            2,
+          ),
+        },
+        {
           type: "resource_link",
           uri: "https://blob/x",
           name: "a.txt",

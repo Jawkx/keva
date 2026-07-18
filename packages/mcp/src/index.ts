@@ -357,25 +357,37 @@ const run = (fn: () => Promise<unknown>): Promise<CallToolResult> =>
 
 const itemContentResult = ({ item, download }: McpItemContent): CallToolResult => {
   const size = item.size ?? item.declaredSize;
+  const reference = {
+    download_url: download.url,
+    file_id: item.id,
+    mime_type: item.contentType,
+    file_name: item.name,
+    size,
+    expires_at: download.expiresAt,
+  };
   return {
     structuredContent: {
       file_uri: {
-        download_url: download.url,
-        file_id: item.id,
-        mime_type: item.contentType,
-        file_name: item.name,
+        download_url: reference.download_url,
+        file_id: reference.file_id,
+        mime_type: reference.mime_type,
+        file_name: reference.file_name,
       },
-      item_id: item.id,
-      size,
-      expires_at: download.expiresAt,
+      item_id: reference.file_id,
+      size: reference.size,
+      expires_at: reference.expires_at,
     },
     content: [
       {
+        type: "text",
+        text: JSON.stringify(reference, null, 2),
+      },
+      {
         type: "resource_link",
-        uri: download.url,
-        name: item.name,
-        mimeType: item.contentType,
-        size,
+        uri: reference.download_url,
+        name: reference.file_name,
+        mimeType: reference.mime_type,
+        size: reference.size,
       },
     ],
   };

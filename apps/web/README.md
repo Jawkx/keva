@@ -30,6 +30,7 @@ web app's development origin through its CORS configuration.
 ```sh
 KEVA_STATIC_TOKEN=dev-token \
 BETTER_AUTH_SECRET=dev-secret-change-me \
+BETTER_AUTH_URL=http://localhost:5173 \
 DATABASE_URL=postgres://localhost:5432/keva \
 S3_ENDPOINT=http://127.0.0.1:9000 \
 S3_REGION=us-east-1 \

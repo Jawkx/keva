@@ -1,7 +1,8 @@
 import { Plug, TriangleAlert } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { getMcpClient } from "../lib/connections";
 import { parseConsentRequest, SCOPE_DESCRIPTIONS, submitConsent } from "../lib/oauth";
-import { useMountEffect } from "../lib/useMountEffect";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,11 +10,14 @@ import { Spinner } from "@/components/ui/spinner";
 
 export function OAuthConsentPage() {
   const request = parseConsentRequest(window.location.search);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    request ? null : "This authorization link is invalid or has expired.",
+  );
   const [busy, setBusy] = useState(false);
-
-  useMountEffect(() => {
-    if (!request) setError("This authorization link is invalid or has expired.");
+  const clientQuery = useQuery({
+    queryKey: ["mcp-client", request?.clientId],
+    queryFn: () => getMcpClient(request!.clientId!),
+    enabled: Boolean(request?.clientId),
   });
 
   const decide = async (accept: boolean) => {
@@ -42,7 +46,8 @@ export function OAuthConsentPage() {
               Authorize access
             </CardTitle>
             <CardDescription>
-              An application wants to connect to your keva storage over MCP.
+              {clientQuery.data?.name ?? "An application"} wants to connect to your keva storage
+              over MCP.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -71,7 +76,8 @@ export function OAuthConsentPage() {
 
                 {request.clientId && (
                   <p className="truncate text-xs text-muted-foreground">
-                    Client&nbsp;ID: <code className="font-mono">{request.clientId}</code>
+                    {clientQuery.data?.name ? "Registered application" : "Client ID"}:{" "}
+                    <code className="font-mono">{clientQuery.data?.name ?? request.clientId}</code>
                   </p>
                 )}
 
