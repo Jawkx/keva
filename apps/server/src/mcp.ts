@@ -43,6 +43,11 @@ import { ViewStore } from "./views.js";
 
 type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;
 
+const McpItemContentResult = Schema.Struct({
+  item: OwnerItem,
+  download: DownloadResult,
+});
+
 export interface McpAccessToken {
   readonly userId: string;
   readonly scopes: string;
@@ -128,14 +133,16 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         }),
         OwnerItem,
       ),
-    getContentUrl: (id) =>
+    getItemContent: (id) =>
       runValidated(
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
-          return yield* engine.download(itemId);
+          const item = toOwnerItem(yield* engine.get(itemId));
+          const download = yield* engine.download(itemId);
+          return { item, download };
         }),
-        DownloadResult,
+        McpItemContentResult,
       ),
     getItemEvents: ({ id, limit, cursor }) =>
       runValidated(
