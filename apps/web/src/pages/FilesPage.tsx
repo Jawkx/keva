@@ -830,15 +830,29 @@ function FilesPageContent({
             <Empty className="py-16">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <Search />
+                  {!filtered && !hasItems ? <Files /> : <Search />}
                 </EmptyMedia>
-                <EmptyTitle>{emptyPage ? "No items on this page" : "No matches"}</EmptyTitle>
+                <EmptyTitle>
+                  {emptyPage
+                    ? "No items on this page"
+                    : !filtered && !hasItems
+                      ? "No items yet"
+                      : "No matches"}
+                </EmptyTitle>
                 <EmptyDescription>
                   {emptyPage
                     ? "Items on this page may have been deleted. Use the pagination controls to continue browsing."
-                    : "No items match your search and filters."}
+                    : !filtered && !hasItems
+                      ? "Upload your first file, or drop one anywhere on this page."
+                      : "No items match your search and filters."}
                 </EmptyDescription>
               </EmptyHeader>
+              {!filtered && !hasItems && (
+                <Button onClick={() => uploadInputRef.current?.click()}>
+                  <Upload data-icon="inline-start" />
+                  Upload
+                </Button>
+              )}
             </Empty>
             {pageControls}
           </>
@@ -972,25 +986,7 @@ function FilesPageContent({
         </div>
       )}
 
-      {!loading && !hasItems && !filtered ? (
-        <div className="flex flex-1 items-center justify-center p-6">
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Files />
-              </EmptyMedia>
-              <EmptyTitle>No items yet</EmptyTitle>
-              <EmptyDescription>
-                Upload your first file, or drop one anywhere on this page.
-              </EmptyDescription>
-            </EmptyHeader>
-            <Button onClick={() => uploadInputRef.current?.click()}>
-              <Upload data-icon="inline-start" />
-              Upload
-            </Button>
-          </Empty>
-        </div>
-      ) : splitOpen ? (
+      {splitOpen ? (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 w-full min-w-0 flex-1">
           <ResizablePanel defaultSize={58} minSize={35} className="min-w-0">
             {leftPane}
