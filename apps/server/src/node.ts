@@ -42,8 +42,12 @@ const appOptions = createServerOptions({
   tenantId: process.env.KEVA_TENANT_ID ?? "local",
   baseUrl,
   databaseUrl: required("DATABASE_URL"),
-  ...(process.env.BETTER_AUTH_SECRET ? { betterAuthSecret: process.env.BETTER_AUTH_SECRET } : {}),
-  ...(process.env.BETTER_AUTH_URL ? { betterAuthUrl: process.env.BETTER_AUTH_URL } : {}),
+  ...(process.env.BETTER_AUTH_SECRET
+    ? {
+        betterAuthSecret: process.env.BETTER_AUTH_SECRET,
+        betterAuthUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:5173",
+      }
+    : {}),
   ...(process.env.KEVA_ADMIN_TOKEN ? { adminToken: process.env.KEVA_ADMIN_TOKEN } : {}),
   ...(emailVerification ? { emailVerification } : {}),
   trustedOrigins,

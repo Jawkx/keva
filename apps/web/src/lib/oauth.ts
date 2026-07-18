@@ -1,5 +1,15 @@
+import { Effect, Schema } from "effect";
+import { KevaProtocolError, KevaTransportError } from "@keva/sdk";
+import { runEffectPromise } from "./effect-runtime";
+
 const MCP_AUTHORIZE_PATH = "/api/auth/mcp/authorize";
 const CONSENT_PATH = "/api/auth/oauth2/consent";
+
+const ConsentResponse = Schema.Struct({ redirectURI: Schema.String });
+
+export class OAuthConsentError extends Error {
+  readonly _tag = "OAuthConsentError";
+}
 
 export const oauthContinuation = (search: string): string | null => {
   const params = new URLSearchParams(search);
@@ -23,28 +33,41 @@ export const parseConsentRequest = (search: string): ConsentRequest | null => {
   };
 };
 
-export const submitConsent = async (accept: boolean, consentCode: string): Promise<string> => {
-  const response = await fetch(CONSENT_PATH, {
-    method: "POST",
-    credentials: "include",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ accept, consent_code: consentCode }),
+export const submitConsentEffect = (
+  accept: boolean,
+  consentCode: string,
+): Effect.Effect<string, OAuthConsentError | KevaProtocolError | KevaTransportError> =>
+  Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: (signal) =>
+        fetch(CONSENT_PATH, {
+          method: "POST",
+          credentials: "include",
+          signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ accept, consent_code: consentCode }),
+        }),
+      catch: (cause) => new KevaTransportError(cause),
+    });
+    const payload: unknown = yield* Effect.promise(() => response.json().catch(() => undefined));
+    if (!response.ok) {
+      const message =
+        typeof payload === "object" && payload !== null
+          ? ((payload as { error_description?: string }).error_description ??
+            (payload as { message?: string }).message)
+          : undefined;
+      return yield* Effect.fail(
+        new OAuthConsentError(message ?? "Could not record your decision."),
+      );
+    }
+    const result = yield* Schema.decodeUnknown(ConsentResponse)(payload).pipe(
+      Effect.mapError(() => new KevaProtocolError("Consent response was invalid")),
+    );
+    return result.redirectURI;
   });
-  const payload: unknown = await response.json().catch(() => undefined);
-  const redirectURI =
-    typeof payload === "object" && payload !== null && "redirectURI" in payload
-      ? (payload as { redirectURI: unknown }).redirectURI
-      : undefined;
-  if (!response.ok || typeof redirectURI !== "string") {
-    const message =
-      typeof payload === "object" && payload !== null
-        ? ((payload as { error_description?: string }).error_description ??
-          (payload as { message?: string }).message)
-        : undefined;
-    throw new Error(message ?? "Could not record your decision.");
-  }
-  return redirectURI;
-};
+
+export const submitConsent = (accept: boolean, consentCode: string): Promise<string> =>
+  runEffectPromise(submitConsentEffect(accept, consentCode));
 
 export const SCOPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "keva:read": "Read your items, their metadata, and file contents",

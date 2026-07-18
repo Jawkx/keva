@@ -61,7 +61,7 @@ import {
   type UsageResult as UsageResultType,
   type ViewRecord as ViewRecordType,
 } from "@keva/schema";
-import { Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 
 export type {
   AccountShareRecordType as AccountShareRecord,
@@ -131,6 +131,16 @@ export class KevaProtocolError extends Error {
   readonly _tag = "KevaProtocolError";
 }
 
+export class KevaTransportError extends Error {
+  readonly _tag = "KevaTransportError";
+
+  constructor(readonly cause: unknown) {
+    super("Unable to reach the server", { cause });
+  }
+}
+
+export type KevaClientError = KevaErrorType | KevaProtocolError | KevaTransportError;
+
 const decode = <A, I>(schema: Schema.Schema<A, I>, value: unknown): A =>
   Schema.decodeUnknownSync(schema)(value);
 
@@ -141,43 +151,90 @@ interface RequestConfig {
   readonly fetch: typeof globalThis.fetch;
 }
 
-const httpRequest = async <A, I>(
+const fetchEffect = (
+  fetch: typeof globalThis.fetch,
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Effect.Effect<Response, KevaTransportError> =>
+  Effect.tryPromise({
+    try: (signal) => fetch(input, { ...init, signal }),
+    catch: (cause) => new KevaTransportError(cause),
+  });
+
+const requireOk = (
+  response: Response,
+  message: string,
+): Effect.Effect<Response, KevaProtocolError> =>
+  response.ok ? Effect.succeed(response) : Effect.fail(new KevaProtocolError(message));
+
+const downloadBytesFromUrlEffect = (
+  fetch: typeof globalThis.fetch,
+  url: string,
+): Effect.Effect<Uint8Array, KevaProtocolError | KevaTransportError> =>
+  Effect.tryPromise({
+    try: async (signal) => {
+      const response = await fetch(url, { signal });
+      if (!response.ok) {
+        throw new KevaProtocolError(`Blob download failed with ${response.status}`);
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    },
+    catch: (cause) => (cause instanceof KevaProtocolError ? cause : new KevaTransportError(cause)),
+  });
+
+const decodeResponse = <A, I>(
+  schema: Schema.Schema<A, I>,
+  value: unknown,
+  message: string,
+): Effect.Effect<A, KevaProtocolError> =>
+  Schema.decodeUnknown(schema)(value).pipe(Effect.mapError(() => new KevaProtocolError(message)));
+
+const httpRequestEffect = <A, I>(
   config: RequestConfig,
   method: string,
   path: string,
   schema: Schema.Schema<A, I>,
   body?: unknown,
-): Promise<A> => {
-  const response = await config.fetch(`${config.baseUrl}${path}`, {
-    method,
-    credentials: config.credentials,
-    headers: {
-      ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const payload = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    try {
-      throw decode(KevaError, payload);
-    } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "_tag" in error &&
-        error._tag !== "ParseError"
-      )
-        throw error;
-      throw new KevaProtocolError(`Server returned ${response.status} with an invalid error body`);
+): Effect.Effect<A, KevaClientError> =>
+  Effect.gen(function* () {
+    const response = yield* fetchEffect(config.fetch, `${config.baseUrl}${path}`, {
+      method,
+      credentials: config.credentials,
+      headers: {
+        ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const payload: unknown = yield* Effect.promise(() => response.json().catch(() => undefined));
+    if (!response.ok) {
+      const apiError = yield* decodeResponse(
+        KevaError,
+        payload,
+        `Server returned ${response.status} with an invalid error body`,
+      );
+      return yield* Effect.fail(apiError);
     }
-  }
-  try {
-    return decode(schema, payload);
-  } catch {
-    throw new KevaProtocolError(`Server returned ${response.status} with an invalid response body`);
-  }
-};
+    return yield* decodeResponse(
+      schema,
+      payload,
+      `Server returned ${response.status} with an invalid response body`,
+    );
+  });
+
+const httpRequest = <A, I>(
+  config: RequestConfig,
+  method: string,
+  path: string,
+  schema: Schema.Schema<A, I>,
+  body?: unknown,
+): Promise<A> =>
+  Effect.runPromiseExit(httpRequestEffect(config, method, path, schema, body)).then((exit) => {
+    if (Exit.isSuccess(exit)) return exit.value;
+    const failure = Cause.failureOption(exit.cause);
+    if (Option.isNone(failure)) throw Cause.squash(exit.cause);
+    throw failure.value instanceof KevaTransportError ? failure.value.cause : failure.value;
+  });
 
 export class KevaClient {
   readonly #baseUrl: string;
@@ -212,6 +269,26 @@ export class KevaClient {
     );
   }
 
+  #requestEffect<A, I>(
+    method: string,
+    path: string,
+    schema: Schema.Schema<A, I>,
+    body?: unknown,
+  ): Effect.Effect<A, KevaClientError> {
+    return httpRequestEffect(
+      {
+        baseUrl: this.#baseUrl,
+        token: this.#token,
+        credentials: this.#credentials,
+        fetch: this.#fetch,
+      },
+      method,
+      path,
+      schema,
+      body,
+    );
+  }
+
   async initiate(input: InitiateUploadType) {
     const body = decode(InitiateUpload, input);
     return this.#request("POST", "/items", OwnerInitiateUploadResult, body);
@@ -219,6 +296,18 @@ export class KevaClient {
 
   async startUpload(input: InitiateUploadType): Promise<ItemUploadSession> {
     return { initiated: await this.initiate(input) };
+  }
+
+  startUploadEffect(input: InitiateUploadType): Effect.Effect<ItemUploadSession, KevaClientError> {
+    return Effect.try({
+      try: () => decode(InitiateUpload, input),
+      catch: () => new KevaProtocolError("Invalid upload input"),
+    }).pipe(
+      Effect.flatMap((body) =>
+        this.#requestEffect("POST", "/items", OwnerInitiateUploadResult, body),
+      ),
+      Effect.map((initiated) => ({ initiated })),
+    );
   }
 
   async putUpload(session: ItemUploadSession, body: UploadBody): Promise<void> {
@@ -233,8 +322,33 @@ export class KevaClient {
     }
   }
 
+  putUploadEffect(
+    session: ItemUploadSession,
+    body: UploadBody,
+  ): Effect.Effect<void, KevaProtocolError | KevaTransportError> {
+    return fetchEffect(this.#fetch, session.initiated.uploadUrl, {
+      method: "PUT",
+      headers: session.initiated.headers,
+      credentials: "omit",
+      body,
+    }).pipe(
+      Effect.flatMap((response) =>
+        requireOk(response, `Blob upload failed with ${response.status}`),
+      ),
+      Effect.asVoid,
+    );
+  }
+
   completeUpload(session: ItemUploadSession): Promise<KevaItemType> {
     return this.confirm(session.initiated.item.id);
+  }
+
+  completeUploadEffect(session: ItemUploadSession): Effect.Effect<KevaItemType, KevaClientError> {
+    return this.#requestEffect(
+      "POST",
+      `/items/${encodeURIComponent(session.initiated.item.id)}/confirm`,
+      OwnerItem,
+    );
   }
 
   async uploadBody(input: InitiateUploadType, body: UploadBody): Promise<KevaItemType> {
@@ -274,6 +388,10 @@ export class KevaClient {
     return this.#request("GET", `/items/${encodeURIComponent(id)}`, OwnerItem);
   }
 
+  getEffect(id: string): Effect.Effect<KevaItemType, KevaClientError> {
+    return this.#requestEffect("GET", `/items/${encodeURIComponent(id)}`, OwnerItem);
+  }
+
   getDownloadUrl(id: string): Promise<DownloadResultType> {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
   }
@@ -290,6 +408,14 @@ export class KevaClient {
   async downloadBytes(id: string): Promise<Uint8Array> {
     const response = await this.downloadResponse(id);
     return new Uint8Array(await response.arrayBuffer());
+  }
+
+  downloadBytesEffect(id: string): Effect.Effect<Uint8Array, KevaClientError> {
+    return this.#requestEffect(
+      "GET",
+      `/items/${encodeURIComponent(id)}/content`,
+      DownloadResult,
+    ).pipe(Effect.flatMap((target) => downloadBytesFromUrlEffect(this.#fetch, target.url)));
   }
 
   download(id: string): Promise<Uint8Array> {
@@ -325,6 +451,17 @@ export class KevaClient {
     query: QueryType = { where: [], limit: 100, order: "created_at_asc" },
   ): Promise<QueryResultType> {
     return this.#request("POST", "/query", OwnerQueryResult, decode(Query, query));
+  }
+
+  queryEffect(
+    query: QueryType = { where: [], limit: 100, order: "created_at_asc" },
+  ): Effect.Effect<QueryResultType, KevaClientError> {
+    return Effect.try({
+      try: () => decode(Query, query),
+      catch: () => new KevaProtocolError("Invalid query input"),
+    }).pipe(
+      Effect.flatMap((body) => this.#requestEffect("POST", "/query", OwnerQueryResult, body)),
+    );
   }
 
   usage(): Promise<UsageResultType> {
@@ -489,6 +626,16 @@ export interface ShareAccessClient {
   uploadFile(file: File): Promise<SharedItemType>;
 }
 
+export interface EffectShareAccessClient extends ShareAccessClient {
+  downloadBytesEffect(id: string): Effect.Effect<Uint8Array, KevaClientError>;
+  startUploadEffect(file: File): Effect.Effect<ShareUploadSession, KevaClientError>;
+  putUploadEffect(
+    session: ShareUploadSession,
+    body: UploadBody,
+  ): Effect.Effect<void, KevaProtocolError | KevaTransportError>;
+  completeUploadEffect(session: ShareUploadSession): Effect.Effect<SharedItemType, KevaClientError>;
+}
+
 export class ShareClient {
   readonly #config: RequestConfig;
 
@@ -508,6 +655,15 @@ export class ShareClient {
     body?: unknown,
   ): Promise<A> {
     return httpRequest(this.#config, method, path, schema, body);
+  }
+
+  #requestEffect<A, I>(
+    method: string,
+    path: string,
+    schema: Schema.Schema<A, I>,
+    body?: unknown,
+  ): Effect.Effect<A, KevaClientError> {
+    return httpRequestEffect(this.#config, method, path, schema, body);
   }
 
   self(): Promise<ShareSelfType> {
@@ -542,6 +698,14 @@ export class ShareClient {
     return new Uint8Array(await response.arrayBuffer());
   }
 
+  downloadBytesEffect(id: string): Effect.Effect<Uint8Array, KevaClientError> {
+    return this.#requestEffect(
+      "GET",
+      `/items/${encodeURIComponent(id)}/content`,
+      DownloadResult,
+    ).pipe(Effect.flatMap((target) => downloadBytesFromUrlEffect(this.#config.fetch, target.url)));
+  }
+
   confirm(id: string): Promise<SharedItemType> {
     return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, SharedItem);
   }
@@ -561,6 +725,23 @@ export class ShareClient {
     };
   }
 
+  startUploadEffect(file: File): Effect.Effect<ShareUploadSession, KevaClientError> {
+    return Effect.try({
+      try: () =>
+        decode(InitiateUpload, {
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+        }),
+      catch: () => new KevaProtocolError("Invalid upload input"),
+    }).pipe(
+      Effect.flatMap((body) =>
+        this.#requestEffect("POST", "/items", SharedInitiateUploadResult, body),
+      ),
+      Effect.map((initiated) => ({ initiated })),
+    );
+  }
+
   async putUpload(session: ShareUploadSession, body: UploadBody): Promise<void> {
     const response = await this.#config.fetch(session.initiated.uploadUrl, {
       method: "PUT",
@@ -573,8 +754,35 @@ export class ShareClient {
     }
   }
 
+  putUploadEffect(
+    session: ShareUploadSession,
+    body: UploadBody,
+  ): Effect.Effect<void, KevaProtocolError | KevaTransportError> {
+    return fetchEffect(this.#config.fetch, session.initiated.uploadUrl, {
+      method: "PUT",
+      headers: session.initiated.headers,
+      credentials: "omit",
+      body,
+    }).pipe(
+      Effect.flatMap((response) =>
+        requireOk(response, `Blob upload failed with ${response.status}`),
+      ),
+      Effect.asVoid,
+    );
+  }
+
   completeUpload(session: ShareUploadSession): Promise<SharedItemType> {
     return this.confirm(session.initiated.item.id);
+  }
+
+  completeUploadEffect(
+    session: ShareUploadSession,
+  ): Effect.Effect<SharedItemType, KevaClientError> {
+    return this.#requestEffect(
+      "POST",
+      `/items/${encodeURIComponent(session.initiated.item.id)}/confirm`,
+      SharedItem,
+    );
   }
 
   // Upload into the share. Name/size/type only — the server force-applies the
@@ -616,6 +824,15 @@ export class SharedViewClient implements ShareAccessClient {
     return httpRequest(this.#config, method, `${this.#prefix}${path}`, schema, body);
   }
 
+  #requestEffect<A, I>(
+    method: string,
+    path: string,
+    schema: Schema.Schema<A, I>,
+    body?: unknown,
+  ): Effect.Effect<A, KevaClientError> {
+    return httpRequestEffect(this.#config, method, `${this.#prefix}${path}`, schema, body);
+  }
+
   self(): Promise<AccountShareSelfType> {
     return this.#request("GET", "/self", AccountShareSelf);
   }
@@ -641,6 +858,14 @@ export class SharedViewClient implements ShareAccessClient {
     return new Uint8Array(await response.arrayBuffer());
   }
 
+  downloadBytesEffect(id: string): Effect.Effect<Uint8Array, KevaClientError> {
+    return this.#requestEffect(
+      "GET",
+      `/items/${encodeURIComponent(id)}/content`,
+      DownloadResult,
+    ).pipe(Effect.flatMap((target) => downloadBytesFromUrlEffect(this.#config.fetch, target.url)));
+  }
+
   confirm(id: string): Promise<SharedItemType> {
     return this.#request("POST", `/items/${encodeURIComponent(id)}/confirm`, SharedItem);
   }
@@ -660,6 +885,23 @@ export class SharedViewClient implements ShareAccessClient {
     };
   }
 
+  startUploadEffect(file: File): Effect.Effect<ShareUploadSession, KevaClientError> {
+    return Effect.try({
+      try: () =>
+        decode(InitiateUpload, {
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+        }),
+      catch: () => new KevaProtocolError("Invalid upload input"),
+    }).pipe(
+      Effect.flatMap((body) =>
+        this.#requestEffect("POST", "/items", SharedInitiateUploadResult, body),
+      ),
+      Effect.map((initiated) => ({ initiated })),
+    );
+  }
+
   async putUpload(session: ShareUploadSession, body: UploadBody): Promise<void> {
     const response = await this.#config.fetch(session.initiated.uploadUrl, {
       method: "PUT",
@@ -670,8 +912,35 @@ export class SharedViewClient implements ShareAccessClient {
     if (!response.ok) throw new KevaProtocolError(`Blob upload failed with ${response.status}`);
   }
 
+  putUploadEffect(
+    session: ShareUploadSession,
+    body: UploadBody,
+  ): Effect.Effect<void, KevaProtocolError | KevaTransportError> {
+    return fetchEffect(this.#config.fetch, session.initiated.uploadUrl, {
+      method: "PUT",
+      headers: session.initiated.headers,
+      credentials: "omit",
+      body,
+    }).pipe(
+      Effect.flatMap((response) =>
+        requireOk(response, `Blob upload failed with ${response.status}`),
+      ),
+      Effect.asVoid,
+    );
+  }
+
   completeUpload(session: ShareUploadSession): Promise<SharedItemType> {
     return this.confirm(session.initiated.item.id);
+  }
+
+  completeUploadEffect(
+    session: ShareUploadSession,
+  ): Effect.Effect<SharedItemType, KevaClientError> {
+    return this.#requestEffect(
+      "POST",
+      `/items/${encodeURIComponent(session.initiated.item.id)}/confirm`,
+      SharedItem,
+    );
   }
 
   async uploadFile(file: File): Promise<SharedItemType> {

@@ -161,6 +161,18 @@ const itemIdArgs = z.object({
   id: z.string().regex(ITEM_ID_PATTERN).describe("The item id."),
 });
 
+const itemContentOutput = z.object({
+  file_uri: z.object({
+    download_url: z.string(),
+    file_id: z.string(),
+    mime_type: z.string(),
+    file_name: z.string(),
+  }),
+  item_id: z.string().regex(ITEM_ID_PATTERN),
+  size: z.number().int().nonnegative(),
+  expires_at: z.string().refine(isIsoInstant, "Expected an ISO-8601 instant"),
+});
+
 const propertyValuesArgs = z.object({
   key: z
     .string()
@@ -281,10 +293,15 @@ export type ItemEventsToolInput = {
 };
 export type UploadContentToolInput = z.infer<typeof uploadContentArgs>;
 
+export interface McpItemContent {
+  readonly item: OwnerItem;
+  readonly download: DownloadResult;
+}
+
 export interface McpEngine {
   readonly queryItems: (input: QueryToolInput) => Promise<OwnerQueryResult>;
   readonly getItem: (id: string) => Promise<OwnerItem>;
-  readonly getContentUrl: (id: string) => Promise<DownloadResult>;
+  readonly getItemContent: (id: string) => Promise<McpItemContent>;
   readonly getItemEvents: (input: ItemEventsToolInput) => Promise<ItemEventsResult>;
   readonly getUsage: () => Promise<UsageResult>;
   readonly listPropertyKeys: () => Promise<PropertyKeysResult>;
@@ -327,12 +344,53 @@ const fail = (message: string): CallToolResult => ({
   isError: true,
 });
 
-const run = async (fn: () => Promise<unknown>): Promise<CallToolResult> => {
+const runResult = async (fn: () => Promise<CallToolResult>): Promise<CallToolResult> => {
   try {
-    return ok(await fn());
+    return await fn();
   } catch (error) {
     return fail(error instanceof ClientSafeToolError ? error.message : "Tool execution failed");
   }
+};
+
+const run = (fn: () => Promise<unknown>): Promise<CallToolResult> =>
+  runResult(async () => ok(await fn()));
+
+const itemContentResult = ({ item, download }: McpItemContent): CallToolResult => {
+  const size = item.size ?? item.declaredSize;
+  const reference = {
+    download_url: download.url,
+    file_id: item.id,
+    mime_type: item.contentType,
+    file_name: item.name,
+    size,
+    expires_at: download.expiresAt,
+  };
+  return {
+    structuredContent: {
+      file_uri: {
+        download_url: reference.download_url,
+        file_id: reference.file_id,
+        mime_type: reference.mime_type,
+        file_name: reference.file_name,
+      },
+      item_id: reference.file_id,
+      size: reference.size,
+      expires_at: reference.expires_at,
+    },
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(reference, null, 2),
+      },
+      {
+        type: "resource_link",
+        uri: reference.download_url,
+        name: reference.file_name,
+        mimeType: reference.mime_type,
+        size: reference.size,
+      },
+    ],
+  };
 };
 
 export const createKevaMcpServer = (
@@ -375,14 +433,16 @@ export const createKevaMcpServer = (
     );
 
     server.registerTool(
-      "get_content_url",
+      "get_item_content",
       {
-        title: "Get content URL",
-        description: "Get a short-lived, presigned download URL for an item's file contents.",
+        title: "Get item content",
+        description:
+          "Get an item's file contents as a transferable file reference with its name, MIME type, size, and short-lived download access.",
         inputSchema: itemIdArgs.shape,
-        annotations: { readOnlyHint: true, openWorldHint: false },
+        outputSchema: itemContentOutput.shape,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ id }) => run(() => engine.getContentUrl(id)),
+      ({ id }) => runResult(async () => itemContentResult(await engine.getItemContent(id))),
     );
 
     server.registerTool(

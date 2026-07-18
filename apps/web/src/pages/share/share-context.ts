@@ -1,8 +1,8 @@
-import type { ShareAccessClient, ShareSelf } from "@keva/sdk";
+import type { EffectShareAccessClient, ShareSelf } from "@keva/sdk";
 import { createContext, useContext } from "react";
 
 export interface ShareContextValue {
-  readonly client: ShareAccessClient;
+  readonly client: EffectShareAccessClient;
   readonly self: ShareSelf;
   readonly selfQueryKey: readonly unknown[];
   readonly onGone: () => void;

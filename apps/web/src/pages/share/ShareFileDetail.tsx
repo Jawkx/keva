@@ -11,6 +11,8 @@ import { formatBytes, formatDate, formatPropertyValue, formatRelative } from "..
 import { shareContentQueryKey, shareItemQueryKey } from "../../lib/items-cache";
 import { objectUrlFor } from "../../lib/object-url-cache";
 import { isCsv, isImage, isPdf, isPreviewable } from "../../lib/preview";
+import { runEffectPromise } from "../../lib/effect-runtime";
+import { loadPreviewContent } from "../../lib/preview-content";
 import { useShare } from "./share-context";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -25,8 +27,6 @@ type Preview =
   | { kind: "pdf"; url: string }
   | { kind: "csv"; text: string }
   | { kind: "text"; text: string };
-
-type PreviewContent = { kind: "blob"; blob: Blob } | { kind: "text"; text: string };
 
 type Panel = "preview" | "info";
 
@@ -58,19 +58,15 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
     enabled: Boolean(item) && isPreviewable(item!),
     staleTime: Infinity,
     gcTime: 0,
-    queryFn: async () => {
-      const bytes = await client.downloadBytes(itemId);
-      if (isImage(item!) || isPdf(item!)) {
-        return {
-          kind: "blob",
-          blob: new Blob([bytes.slice().buffer as ArrayBuffer], { type: item!.contentType }),
-        } satisfies PreviewContent;
-      }
-      return {
-        kind: "text",
-        text: new TextDecoder().decode(bytes).slice(0, 5000),
-      } satisfies PreviewContent;
-    },
+    queryFn: ({ signal }) =>
+      runEffectPromise(
+        loadPreviewContent(
+          client.downloadBytesEffect(itemId),
+          item!.contentType,
+          isImage(item!) || isPdf(item!),
+        ),
+        signal,
+      ),
   });
   const previewLoading = contentQuery.isLoading;
 

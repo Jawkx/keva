@@ -202,7 +202,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
     context.json({ _tag: "Forbidden", message: "Organization management is not available" }, 403),
   );
 
-  app.on(["GET", "POST"], "/api/auth/*", (context) =>
+  app.all("/api/auth/*", (context) =>
     withServices(context, ({ authHandler }) =>
       authHandler ? authHandler(context.req.raw) : context.notFound(),
     ),

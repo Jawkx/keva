@@ -6,6 +6,7 @@ export default defineConfig({
     "./src/postgres/schema.ts",
     "../../apps/server/src/auth-schema.ts",
     "../../apps/server/src/account-share-schema.ts",
+    "../../apps/server/src/mcp-connection-schema.ts",
   ],
   out: "./drizzle",
   dbCredentials: {

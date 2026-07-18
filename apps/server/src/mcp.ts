@@ -43,6 +43,11 @@ import { ViewStore } from "./views.js";
 
 type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;
 
+const McpItemContentResult = Schema.Struct({
+  item: OwnerItem,
+  download: DownloadResult,
+});
+
 export interface McpAccessToken {
   readonly userId: string;
   readonly scopes: string;
@@ -50,6 +55,7 @@ export interface McpAccessToken {
 }
 
 export interface McpDeps {
+  readonly mcpUrl: string;
   readonly authorizationServer: McpAuthorizationServer;
   readonly resolveTenant: (userId: string) => Promise<string | null>;
   readonly resolveActorNames: (userId: string, clientId: string) => Promise<McpActorNames>;
@@ -128,14 +134,16 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         }),
         OwnerItem,
       ),
-    getContentUrl: (id) =>
+    getItemContent: (id) =>
       runValidated(
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
-          return yield* engine.download(itemId);
+          const item = toOwnerItem(yield* engine.get(itemId));
+          const download = yield* engine.download(itemId);
+          return { item, download };
         }),
-        DownloadResult,
+        McpItemContentResult,
       ),
     getItemEvents: ({ id, limit, cursor }) =>
       runValidated(
@@ -363,9 +371,24 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
       deps.authorizationServer.protectedResourceMetadata(context.req.raw),
     ),
   );
+  app.get("/.well-known/oauth-protected-resource/mcp", (context) =>
+    withServices(context, (deps) =>
+      deps.authorizationServer.protectedResourceMetadata(context.req.raw),
+    ),
+  );
 
-  app.all("/mcp", (context) =>
-    withServices(context, (deps, runtime) => {
+  const mcpCorsHeaders = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+    "access-control-allow-headers":
+      "Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id",
+    "access-control-expose-headers": "WWW-Authenticate, Mcp-Session-Id",
+  };
+
+  app.options("/mcp", () => new Response(null, { status: 204, headers: mcpCorsHeaders }));
+
+  app.all("/mcp", async (context) => {
+    const response = await withServices(context, (deps, runtime) => {
       const handle = deps.authorizationServer.withMcpAuth(async (request, session) => {
         const tenantId = await deps.resolveTenant(session.userId);
         if (!tenantId) {
@@ -388,14 +411,60 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
         });
         try {
           await server.connect(transport);
-          return await transport.handleRequest(request);
+          const response = await transport.handleRequest(request);
+          if (response.ok) {
+            try {
+              await deps.connections.observe(session.userId, session.clientId);
+            } catch (error) {
+              console.error(
+                JSON.stringify({
+                  event: "mcp.connection_activity.failed",
+                  clientId: session.clientId,
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              );
+            }
+          }
+          return response;
         } finally {
           await server.close();
         }
       });
       return handle(context.req.raw);
-    }),
-  );
+    });
+    const headers = new Headers(response.headers);
+    for (const [name, value] of Object.entries(mcpCorsHeaders)) headers.set(name, value);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  });
+
+  app.get("/api/mcp/config", async (context) => {
+    return withServices(context, async (deps) => {
+      const session = await deps.authorizationServer.sessionApi.getSession({
+        headers: context.req.raw.headers,
+      });
+      if (!session) {
+        return context.json({ _tag: "Unauthorized", message: "Sign in required" }, 401);
+      }
+      return context.json({ mcpUrl: deps.mcpUrl });
+    });
+  });
+
+  app.get("/api/mcp/clients/:id", async (context) => {
+    return withServices(context, async (deps) => {
+      const session = await deps.authorizationServer.sessionApi.getSession({
+        headers: context.req.raw.headers,
+      });
+      if (!session) {
+        return context.json({ _tag: "Unauthorized", message: "Sign in required" }, 401);
+      }
+      const name = await deps.connections.clientName(context.req.param("id"));
+      return name ? context.json({ name }) : context.json({ _tag: "NotFound" }, 404);
+    });
+  });
 
   app.get("/api/connections", async (context) => {
     return withServices(context, async (deps) => {

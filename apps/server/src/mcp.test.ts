@@ -70,12 +70,15 @@ const stubMcpDeps = (overrides: {
   session?: { user: { id: string } } | null;
   connections?: McpDeps["connections"];
 }): McpDeps => ({
+  mcpUrl: "http://localhost:8787/mcp",
   authorizationServer: stubAuthorizationServer(overrides),
   resolveTenant: async () => "test-tenant",
   resolveActorNames: async () => ({ userName: "Test User", clientName: "Test Client" }),
   connections: overrides.connections ?? {
     list: async () => [],
     revoke: async () => false,
+    observe: async () => undefined,
+    clientName: async () => null,
   },
 });
 
@@ -183,9 +186,14 @@ describe("/api/connections", () => {
               name: "Claude",
               scopes: ["keva:read"],
               createdAt: "2026-01-01T00:00:00.000Z",
+              active: true,
+              observed: true,
+              lastSeenAt: "2026-01-02T00:00:00.000Z",
             },
           ],
           revoke: async () => true,
+          observe: async () => undefined,
+          clientName: async () => "Claude",
         },
       }),
     });
@@ -197,6 +205,9 @@ describe("/api/connections", () => {
         name: "Claude",
         scopes: ["keva:read"],
         createdAt: "2026-01-01T00:00:00.000Z",
+        active: true,
+        observed: true,
+        lastSeenAt: "2026-01-02T00:00:00.000Z",
       },
     ]);
   });
@@ -213,6 +224,8 @@ describe("/api/connections", () => {
             revoked = { userId, clientId };
             return true;
           },
+          observe: async () => undefined,
+          clientName: async () => null,
         },
       }),
     });
@@ -220,5 +233,41 @@ describe("/api/connections", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ revoked: true });
     expect(revoked).toEqual({ userId: "u1", clientId: "client-9" });
+  });
+});
+
+describe("MCP discovery and browser transport", () => {
+  it("serves both protected-resource metadata locations", async () => {
+    const app = createApp({ layer: baseLayer(), mcp: stubMcpDeps({}) });
+
+    const root = await app.request("/.well-known/oauth-protected-resource");
+    const pathAware = await app.request("/.well-known/oauth-protected-resource/mcp");
+
+    expect(root.status).toBe(200);
+    expect(pathAware.status).toBe(200);
+    expect(await pathAware.json()).toEqual(await root.json());
+  });
+
+  it("answers MCP CORS preflight without bearer authentication", async () => {
+    const app = createApp({ layer: baseLayer(), mcp: stubMcpDeps({}) });
+    const response = await app.request("/mcp", {
+      method: "OPTIONS",
+      headers: { origin: "https://client.example" },
+    });
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("access-control-allow-headers")).toContain("Authorization");
+  });
+
+  it("returns the configured canonical MCP URL to signed-in users", async () => {
+    const app = createApp({
+      layer: baseLayer(),
+      mcp: stubMcpDeps({ session: { user: { id: "u1" } } }),
+    });
+    const response = await app.request("/api/mcp/config");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ mcpUrl: "http://localhost:8787/mcp" });
   });
 });

@@ -1,5 +1,6 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth/minimal";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import {
   mcp,
   oAuthDiscoveryMetadata,
@@ -11,6 +12,7 @@ import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { SessionResolver } from "./auth.js";
 import * as authSchema from "./auth-schema.js";
+import * as mcpConnectionSchema from "./mcp-connection-schema.js";
 
 export interface BetterAuthConfig {
   readonly database: PostgresJsDatabase<any>;
@@ -104,6 +106,24 @@ export const KEVA_MCP_SCOPES = [
   "keva:shares",
 ] as const;
 
+const MCP_OAUTH_SCOPES = ["openid", "profile", "email", "offline_access", ...KEVA_MCP_SCOPES];
+
+const isLoopbackHost = (hostname: string): boolean =>
+  hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+
+export const isAllowedMcpRedirectUri = (value: string): boolean => {
+  if (value.length > 2048 || value.includes(",")) return false;
+  try {
+    const url = new URL(value);
+    if (url.hash || url.username || url.password) return false;
+    if (url.protocol === "https:") return true;
+    if (url.protocol === "http:") return isLoopbackHost(url.hostname);
+    return !["data:", "file:", "javascript:", "vbscript:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+};
+
 export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
   const sendVerificationEmail = config.sendVerificationEmail;
   return betterAuth({
@@ -130,6 +150,33 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
         }
       : {}),
     experimental: { joins: true },
+    hooks: {
+      before: createAuthMiddleware(async (context) => {
+        if (context.path !== "/mcp/register") return;
+        const body =
+          typeof context.body === "object" && context.body !== null
+            ? (context.body as Record<string, unknown>)
+            : {};
+        const redirectUris = body.redirect_uris;
+        if (
+          !Array.isArray(redirectUris) ||
+          redirectUris.length === 0 ||
+          redirectUris.length > 10 ||
+          redirectUris.some((value) => typeof value !== "string" || !isAllowedMcpRedirectUri(value))
+        ) {
+          throw new APIError("BAD_REQUEST", { message: "Invalid OAuth redirect URI" });
+        }
+        const suppliedName = typeof body.client_name === "string" ? body.client_name.trim() : "";
+        return {
+          context: {
+            body: {
+              ...body,
+              client_name: suppliedName.slice(0, 120) || "MCP Client",
+            },
+          },
+        };
+      }),
+    },
     plugins: [
       organization(),
       mcp({
@@ -141,13 +188,15 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
           loginPage: "/login",
           consentPage: "/oauth/consent",
           allowDynamicClientRegistration: true,
+          requirePKCE: true,
+          allowPlainCodeChallengeMethod: false,
           // Merged after the plugin's openid/profile/email/offline_access set.
           scopes: [...KEVA_MCP_SCOPES],
           // The protected-resource metadata advertises scopes from
           // metadata.scopes_supported and does NOT inherit `scopes`, so MCP
           // clients discover keva:* only if it is listed here too.
           metadata: {
-            scopes_supported: ["openid", "profile", "email", "offline_access", ...KEVA_MCP_SCOPES],
+            scopes_supported: MCP_OAUTH_SCOPES,
           },
         },
       }),
@@ -188,6 +237,52 @@ export interface McpAuthorizationServer {
   readonly sessionApi: BetterAuthSessionApi;
 }
 
+export const makeAuthHandler =
+  (
+    auth: KevaAuth,
+    db: PostgresJsDatabase<typeof authSchema>,
+    baseURL: string,
+  ): ((request: Request) => Promise<Response>) =>
+  async (request) => {
+    const url = new URL(request.url);
+    if (request.method !== "GET" || url.pathname !== "/api/auth/mcp/authorize") {
+      return auth.handler(request);
+    }
+
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) {
+      const login = new URL("/login", baseURL);
+      login.search = url.search;
+      return Response.redirect(login, 302);
+    }
+
+    const clientId = url.searchParams.get("client_id");
+    if (clientId && url.searchParams.get("prompt") !== "consent") {
+      const requestedScopes = new Set(
+        (url.searchParams.get("scope") ?? "openid").split(/\s+/).filter(Boolean),
+      );
+      const consents = await db
+        .select({ scopes: authSchema.oauthConsent.scopes })
+        .from(authSchema.oauthConsent)
+        .where(
+          and(
+            eq(authSchema.oauthConsent.userId, session.user.id),
+            eq(authSchema.oauthConsent.clientId, clientId),
+            eq(authSchema.oauthConsent.consentGiven, true),
+          ),
+        );
+      const grantedScopes = new Set(
+        consents.flatMap((consent) => consent.scopes.split(/\s+/).filter(Boolean)),
+      );
+      if ([...requestedScopes].some((scope) => !grantedScopes.has(scope))) {
+        url.searchParams.set("prompt", "consent");
+        request = new Request(url, request);
+      }
+    }
+
+    return auth.handler(request);
+  };
+
 type BetterAuthMcpRuntime = Parameters<typeof withMcpAuth>[0] &
   Parameters<typeof oAuthDiscoveryMetadata>[0] &
   Parameters<typeof oAuthProtectedResourceMetadata>[0];
@@ -199,8 +294,19 @@ export const betterAuthSessionApi = (auth: KevaAuth): BetterAuthSessionApi =>
 
 export const makeMcpAuthorizationServer = (auth: KevaAuth): McpAuthorizationServer => {
   const runtime = auth as unknown as BetterAuthMcpRuntime;
+  const authorizationServerMetadata = oAuthDiscoveryMetadata(runtime);
   return {
-    authorizationServerMetadata: oAuthDiscoveryMetadata(runtime),
+    authorizationServerMetadata: async (request) => {
+      const response = await authorizationServerMetadata(request);
+      if (!response.ok) return response;
+      const metadata = (await response.json()) as Record<string, unknown>;
+      const headers = new Headers(response.headers);
+      headers.delete("content-length");
+      return Response.json(
+        { ...metadata, scopes_supported: MCP_OAUTH_SCOPES },
+        { status: response.status, headers },
+      );
+    },
     protectedResourceMetadata: oAuthProtectedResourceMetadata(runtime),
     withMcpAuth: (handler) =>
       withMcpAuth(runtime, (request, session) =>
@@ -287,59 +393,186 @@ export interface ConnectionSummary {
   readonly name: string | null;
   readonly scopes: ReadonlyArray<string>;
   readonly createdAt: string;
+  readonly active: boolean;
+  readonly observed: boolean;
+  readonly lastSeenAt: string | null;
 }
 
 export interface ConnectionStore {
   readonly list: (userId: string) => Promise<ReadonlyArray<ConnectionSummary>>;
   readonly revoke: (userId: string, clientId: string) => Promise<boolean>;
+  readonly observe: (userId: string, clientId: string) => Promise<void>;
+  readonly clientName: (clientId: string) => Promise<string | null>;
 }
 
 const toIso = (value: Date | string): string =>
   (value instanceof Date ? value : new Date(value)).toISOString();
 
 export const makeConnectionStore = (
-  db: PostgresJsDatabase<typeof authSchema>,
+  db: PostgresJsDatabase<typeof authSchema & typeof mcpConnectionSchema>,
 ): ConnectionStore => ({
   list: async (userId) => {
-    const rows = await db
-      .select({
-        clientId: authSchema.oauthConsent.clientId,
-        scopes: authSchema.oauthConsent.scopes,
-        createdAt: authSchema.oauthConsent.createdAt,
-        name: authSchema.oauthApplication.name,
-      })
-      .from(authSchema.oauthConsent)
-      .leftJoin(
-        authSchema.oauthApplication,
-        eq(authSchema.oauthConsent.clientId, authSchema.oauthApplication.clientId),
+    const [consents, tokens, activity] = await Promise.all([
+      db
+        .select({
+          clientId: authSchema.oauthConsent.clientId,
+          scopes: authSchema.oauthConsent.scopes,
+          createdAt: authSchema.oauthConsent.createdAt,
+          name: authSchema.oauthApplication.name,
+        })
+        .from(authSchema.oauthConsent)
+        .leftJoin(
+          authSchema.oauthApplication,
+          eq(authSchema.oauthConsent.clientId, authSchema.oauthApplication.clientId),
+        )
+        .where(
+          and(
+            eq(authSchema.oauthConsent.userId, userId),
+            eq(authSchema.oauthConsent.consentGiven, true),
+          ),
+        ),
+      db
+        .select({
+          clientId: authSchema.oauthAccessToken.clientId,
+          scopes: authSchema.oauthAccessToken.scopes,
+          createdAt: authSchema.oauthAccessToken.createdAt,
+          accessTokenExpiresAt: authSchema.oauthAccessToken.accessTokenExpiresAt,
+          refreshTokenExpiresAt: authSchema.oauthAccessToken.refreshTokenExpiresAt,
+          name: authSchema.oauthApplication.name,
+        })
+        .from(authSchema.oauthAccessToken)
+        .leftJoin(
+          authSchema.oauthApplication,
+          eq(authSchema.oauthAccessToken.clientId, authSchema.oauthApplication.clientId),
+        )
+        .where(eq(authSchema.oauthAccessToken.userId, userId)),
+      db
+        .select({
+          clientId: mcpConnectionSchema.mcpConnectionActivity.clientId,
+          firstSeenAt: mcpConnectionSchema.mcpConnectionActivity.firstSeenAt,
+          lastSeenAt: mcpConnectionSchema.mcpConnectionActivity.lastSeenAt,
+          name: authSchema.oauthApplication.name,
+        })
+        .from(mcpConnectionSchema.mcpConnectionActivity)
+        .leftJoin(
+          authSchema.oauthApplication,
+          eq(
+            mcpConnectionSchema.mcpConnectionActivity.clientId,
+            authSchema.oauthApplication.clientId,
+          ),
+        )
+        .where(eq(mcpConnectionSchema.mcpConnectionActivity.userId, userId)),
+    ]);
+
+    interface MutableConnection {
+      clientId: string;
+      name: string | null;
+      scopes: Set<string>;
+      createdAt: string;
+      active: boolean;
+      observed: boolean;
+      lastSeenAt: string | null;
+    }
+    const connections = new Map<string, MutableConnection>();
+    const connection = (clientId: string, name: string | null, createdAt: Date | string) => {
+      const created = toIso(createdAt);
+      const existing = connections.get(clientId);
+      if (existing) {
+        existing.name ??= name;
+        if (created < existing.createdAt) existing.createdAt = created;
+        return existing;
+      }
+      const next: MutableConnection = {
+        clientId,
+        name,
+        scopes: new Set(),
+        createdAt: created,
+        active: false,
+        observed: false,
+        lastSeenAt: null,
+      };
+      connections.set(clientId, next);
+      return next;
+    };
+
+    for (const row of consents) {
+      const item = connection(row.clientId, row.name ?? null, row.createdAt);
+      for (const scope of row.scopes.split(/\s+/).filter(Boolean)) item.scopes.add(scope);
+    }
+    const now = Date.now();
+    for (const row of tokens) {
+      const item = connection(row.clientId, row.name ?? null, row.createdAt);
+      for (const scope of row.scopes.split(/\s+/).filter(Boolean)) item.scopes.add(scope);
+      if (
+        new Date(row.accessTokenExpiresAt).getTime() > now ||
+        new Date(row.refreshTokenExpiresAt).getTime() > now
+      ) {
+        item.active = true;
+      }
+    }
+    for (const row of activity) {
+      const item = connection(row.clientId, row.name ?? null, row.firstSeenAt);
+      item.observed = true;
+      item.lastSeenAt = toIso(row.lastSeenAt);
+    }
+
+    return [...connections.values()]
+      .sort((left, right) =>
+        (right.lastSeenAt ?? right.createdAt).localeCompare(left.lastSeenAt ?? left.createdAt),
       )
-      .where(eq(authSchema.oauthConsent.userId, userId))
-      .orderBy(authSchema.oauthConsent.createdAt);
-    return rows.map((row) => ({
-      clientId: row.clientId,
-      name: row.name ?? null,
-      scopes: row.scopes ? row.scopes.split(" ").filter(Boolean) : [],
-      createdAt: toIso(row.createdAt),
-    }));
+      .map((item) => ({ ...item, scopes: [...item.scopes] }));
   },
   revoke: async (userId, clientId) => {
+    return db.transaction(async (tx) => {
+      const deletedTokens = await tx
+        .delete(authSchema.oauthAccessToken)
+        .where(
+          and(
+            eq(authSchema.oauthAccessToken.userId, userId),
+            eq(authSchema.oauthAccessToken.clientId, clientId),
+          ),
+        )
+        .returning({ clientId: authSchema.oauthAccessToken.clientId });
+      const deletedConsents = await tx
+        .delete(authSchema.oauthConsent)
+        .where(
+          and(
+            eq(authSchema.oauthConsent.userId, userId),
+            eq(authSchema.oauthConsent.clientId, clientId),
+          ),
+        )
+        .returning({ clientId: authSchema.oauthConsent.clientId });
+      const deletedActivity = await tx
+        .delete(mcpConnectionSchema.mcpConnectionActivity)
+        .where(
+          and(
+            eq(mcpConnectionSchema.mcpConnectionActivity.userId, userId),
+            eq(mcpConnectionSchema.mcpConnectionActivity.clientId, clientId),
+          ),
+        )
+        .returning({ clientId: mcpConnectionSchema.mcpConnectionActivity.clientId });
+      return deletedTokens.length + deletedConsents.length + deletedActivity.length > 0;
+    });
+  },
+  observe: async (userId, clientId) => {
+    const now = new Date();
     await db
-      .delete(authSchema.oauthAccessToken)
-      .where(
-        and(
-          eq(authSchema.oauthAccessToken.userId, userId),
-          eq(authSchema.oauthAccessToken.clientId, clientId),
-        ),
-      );
-    const deleted = await db
-      .delete(authSchema.oauthConsent)
-      .where(
-        and(
-          eq(authSchema.oauthConsent.userId, userId),
-          eq(authSchema.oauthConsent.clientId, clientId),
-        ),
-      )
-      .returning({ clientId: authSchema.oauthConsent.clientId });
-    return deleted.length > 0;
+      .insert(mcpConnectionSchema.mcpConnectionActivity)
+      .values({ userId, clientId, firstSeenAt: now, lastSeenAt: now })
+      .onConflictDoUpdate({
+        target: [
+          mcpConnectionSchema.mcpConnectionActivity.userId,
+          mcpConnectionSchema.mcpConnectionActivity.clientId,
+        ],
+        set: { lastSeenAt: now },
+      });
+  },
+  clientName: async (clientId) => {
+    const clients = await db
+      .select({ name: authSchema.oauthApplication.name })
+      .from(authSchema.oauthApplication)
+      .where(eq(authSchema.oauthApplication.clientId, clientId))
+      .limit(1);
+    return clients[0]?.name ?? null;
   },
 });

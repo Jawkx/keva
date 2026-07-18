@@ -22,7 +22,10 @@ const item: OwnerItem = {
 const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   queryItems: async () => ({ items: [] }),
   getItem: async () => item,
-  getContentUrl: async () => ({ url: "https://blob/x", expiresAt: "2030-01-01T00:00:00Z" }),
+  getItemContent: async () => ({
+    item,
+    download: { url: "https://blob/x", expiresAt: "2030-01-01T00:00:00Z" },
+  }),
   getItemEvents: async () => ({ events: [] }),
   getUsage: async () => ({
     itemCount: 0,
@@ -110,8 +113,8 @@ describe("createKevaMcpServer tool registration", () => {
 
   it("exposes only read tools for a read-only principal", async () => {
     expect(await toolNames(["read"])).toEqual([
-      "get_content_url",
       "get_item",
+      "get_item_content",
       "get_item_events",
       "get_property_summary",
       "get_usage",
@@ -161,6 +164,57 @@ describe("createKevaMcpServer tool registration", () => {
 });
 
 describe("createKevaMcpServer tool execution", () => {
+  it("returns item content as a ChatGPT file reference and standard MCP resource link", async () => {
+    const getItemContent = vi.fn(stubEngine().getItemContent);
+    const { client, close } = await connect(stubEngine({ getItemContent }), ["read"]);
+
+    try {
+      const result = await client.callTool({
+        name: "get_item_content",
+        arguments: { id: item.id },
+      });
+
+      expect(getItemContent).toHaveBeenCalledWith(item.id);
+      expect(result.structuredContent).toEqual({
+        file_uri: {
+          download_url: "https://blob/x",
+          file_id: item.id,
+          mime_type: "text/plain",
+          file_name: "a.txt",
+        },
+        item_id: item.id,
+        size: 1,
+        expires_at: "2030-01-01T00:00:00Z",
+      });
+      expect(result.content).toEqual([
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              download_url: "https://blob/x",
+              file_id: item.id,
+              mime_type: "text/plain",
+              file_name: "a.txt",
+              size: 1,
+              expires_at: "2030-01-01T00:00:00Z",
+            },
+            null,
+            2,
+          ),
+        },
+        {
+          type: "resource_link",
+          uri: "https://blob/x",
+          name: "a.txt",
+          mimeType: "text/plain",
+          size: 1,
+        },
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
   it("delegates query_items with canonical conditions and serializes the result", async () => {
     const queryItems = vi.fn(async () => ({ items: [item], nextCursor: "c1" }));
     const { client, close } = await connect(stubEngine({ queryItems }), ["read"]);

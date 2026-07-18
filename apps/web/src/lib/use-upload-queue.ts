@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useRef, useState } from "react";
+import { Effect } from "effect";
 import type { QueryClient } from "@tanstack/react-query";
 import type { PropertyValue, QueryCondition, QueryOrder } from "@keva/schema";
 import {
@@ -10,6 +11,8 @@ import {
 import { errorMessage } from "./errors";
 import { cacheConfirmedItemUpload, itemsQueryKey } from "./items-cache";
 import { keva } from "./keva";
+import { useMountEffect } from "./useMountEffect";
+import { uploadFileEffect } from "./upload-workflow";
 
 export type PendingUpload = {
   readonly status: "uploading" | "error";
@@ -57,105 +60,118 @@ export function useUploadQueue({
   readonly uploadStamp: Record<string, PropertyValue>;
 }) {
   const [uploads, setUploads] = useState<UploadQueueRow[]>([]);
+  const controllers = useRef(new Set<AbortController>());
 
-  const uploadOne = useCallback(
-    async (id: string, upload: PendingUpload) => {
-      let session = upload.session;
-      let phase = upload.phase;
-      try {
-        if (phase === "put" && session && isUploadSessionExpired(session)) session = undefined;
-        if (!session) {
-          phase = "put";
-          session = await keva.startUpload({
-            name: upload.file.name,
-            contentType: upload.file.type || "application/octet-stream",
-            size: upload.file.size,
-            ...upload.input,
-          });
-          setUploads((prev) =>
-            prev.map((row) =>
-              row.id === id
-                ? { ...row, upload: { ...upload, session, phase, status: "uploading" } }
-                : row,
-            ),
-          );
-        }
-        if (phase === "put") {
-          await keva.putUpload(session, upload.file);
-          phase = "confirm";
-        }
-        const item = await keva.completeUpload(session);
-        cacheConfirmedItemUpload(queryClient, item, {
-          listQueryKey: itemsQueryKey(activeSearch, activeWhere, order),
-          refetchLists: Boolean(
-            order !== "created_at_desc" || activeSearch.trim() || activeWhere.length > 0,
-          ),
-        });
-        setUploads((prev) => prev.filter((row) => row.id !== id));
-      } catch (error) {
+  useMountEffect(() => () => {
+    for (const controller of controllers.current) controller.abort();
+  });
+
+  const uploadOne = (id: string, upload: PendingUpload) =>
+    uploadFileEffect(
+      {
+        start: keva.startUploadEffect({
+          name: upload.file.name,
+          contentType: upload.file.type || "application/octet-stream",
+          size: upload.file.size,
+          ...upload.input,
+        }),
+        put: (session) => keva.putUploadEffect(session, upload.file),
+        confirm: (session) => keva.completeUploadEffect(session),
+      },
+      upload,
+      (session, phase) => {
         setUploads((prev) =>
           prev.map((row) =>
             row.id === id
-              ? {
-                  ...row,
-                  upload: {
-                    ...upload,
-                    session,
-                    phase,
-                    status: "error",
-                    error: errorMessage(error),
-                  },
-                }
+              ? { ...row, upload: { ...upload, session, phase, status: "uploading" } }
               : row,
           ),
         );
-      }
-    },
-    [activeSearch, activeWhere, order, queryClient],
-  );
+      },
+    ).pipe(
+      Effect.match({
+        onFailure: ({ cause, session, phase }) => {
+          setUploads((prev) =>
+            prev.map((row) =>
+              row.id === id
+                ? {
+                    ...row,
+                    upload: {
+                      ...upload,
+                      session,
+                      phase,
+                      status: "error",
+                      error: errorMessage(cause),
+                    },
+                  }
+                : row,
+            ),
+          );
+        },
+        onSuccess: (item) => {
+          cacheConfirmedItemUpload(queryClient, item, {
+            listQueryKey: itemsQueryKey(activeSearch, activeWhere, order),
+            refetchLists: Boolean(
+              order !== "created_at_desc" || activeSearch.trim() || activeWhere.length > 0,
+            ),
+          });
+          setUploads((prev) => prev.filter((row) => row.id !== id));
+        },
+      }),
+    );
 
-  const startUploads = useCallback(
-    (files: File[]) => {
-      const entries = files.map((file) => {
-        const upload: PendingUpload = {
-          status: "uploading",
-          file,
-          input: { properties: uploadStamp, source: "upload" },
-          phase: "put",
-        };
-        return { id: `upload:${crypto.randomUUID()}`, upload };
-      });
-      setUploads((prev) => [
-        ...entries.map((entry) => optimisticRow(entry.id, entry.upload.file, entry.upload)),
-        ...prev,
-      ]);
-      for (const entry of entries) void uploadOne(entry.id, entry.upload);
-    },
-    [uploadOne, uploadStamp],
-  );
+  const runUploads = (
+    entries: ReadonlyArray<{ readonly id: string; readonly upload: PendingUpload }>,
+  ) => {
+    const controller = new AbortController();
+    controllers.current.add(controller);
+    void Effect.runPromise(
+      Effect.forEach(entries, (entry) => uploadOne(entry.id, entry.upload), {
+        concurrency: 3,
+        discard: true,
+      }),
+      { signal: controller.signal },
+    )
+      .catch(() => undefined)
+      .finally(() => controllers.current.delete(controller));
+  };
 
-  const retryUpload = useCallback(
-    (row: UploadQueueRow) => {
-      const upload = row.upload;
-      if (!upload) return;
-      const session =
-        upload.phase === "put" && upload.session && isUploadSessionExpired(upload.session)
-          ? undefined
-          : upload.session;
-      const { error: _error, ...retryBase } = upload;
-      const retry: PendingUpload = {
-        ...retryBase,
-        session,
-        phase: session ? upload.phase : "put",
+  const startUploads = (files: File[]) => {
+    const entries = files.map((file) => {
+      const upload: PendingUpload = {
         status: "uploading",
+        file,
+        input: { properties: uploadStamp, source: "upload" },
+        phase: "put",
       };
-      setUploads((prev) =>
-        prev.map((current) => (current.id === row.id ? { ...current, upload: retry } : current)),
-      );
-      void uploadOne(row.id, retry);
-    },
-    [uploadOne],
-  );
+      return { id: `upload:${crypto.randomUUID()}`, upload };
+    });
+    setUploads((prev) => [
+      ...entries.map((entry) => optimisticRow(entry.id, entry.upload.file, entry.upload)),
+      ...prev,
+    ]);
+    runUploads(entries);
+  };
+
+  const retryUpload = (row: UploadQueueRow) => {
+    const upload = row.upload;
+    if (!upload) return;
+    const session =
+      upload.phase === "put" && upload.session && isUploadSessionExpired(upload.session)
+        ? undefined
+        : upload.session;
+    const { error: _error, ...retryBase } = upload;
+    const retry: PendingUpload = {
+      ...retryBase,
+      session,
+      phase: session ? upload.phase : "put",
+      status: "uploading",
+    };
+    setUploads((prev) =>
+      prev.map((current) => (current.id === row.id ? { ...current, upload: retry } : current)),
+    );
+    runUploads([{ id: row.id, upload: retry }]);
+  };
 
   return { uploads, startUploads, retryUpload };
 }

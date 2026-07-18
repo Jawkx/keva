@@ -18,12 +18,8 @@ import { ShareFileDetail } from "./ShareFileDetail";
 import { ShareItemList } from "./ShareItemList";
 import { ShareShell } from "./ShareShell";
 import { ShareUnavailable } from "./ShareUnavailable";
-import {
-  ShareUploadButton,
-  ShareUploadProgress,
-  ShareUploadZone,
-  useShareUpload,
-} from "./ShareUploadZone";
+import { ShareUploadButton, ShareUploadProgress, ShareUploadZone } from "./ShareUploadZone";
+import { useShareUpload } from "./use-share-upload";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
