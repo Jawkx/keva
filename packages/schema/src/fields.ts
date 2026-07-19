@@ -146,14 +146,6 @@ export const FIELDS: readonly FieldDescriptor[] = [
     queryType: "nullable-string",
   },
   {
-    key: "system.checksum",
-    owner: "system",
-    required: false,
-    column: "checksum",
-    itemField: "checksum",
-    queryType: "nullable-string",
-  },
-  {
     key: "system.source",
     owner: "system",
     required: true,

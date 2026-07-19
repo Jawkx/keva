@@ -4,6 +4,7 @@ import {
   decodeCursor as decodeSharedCursor,
   encodeCursor,
   Internal,
+  Conflict,
   QuotaExceeded,
   SubscriptionRequired,
   validateProperties,
@@ -24,6 +25,7 @@ import postgres, { type Sql } from "postgres";
 import {
   MetadataStore,
   type MetadataStoreService,
+  type UploadAttempt,
   DEFAULT_STORAGE_QUOTA_BYTES,
   SUGGESTION_KEY_LIMIT,
   SUGGESTION_VALUE_LIMIT,
@@ -44,11 +46,11 @@ interface ItemRow {
   readonly declared_size: number | string;
   readonly size: number | string | null;
   readonly etag: string | null;
-  readonly checksum: string | null;
   readonly source: string;
-  readonly status: "pending" | "ready" | "deleting";
+  readonly status: "pending" | "confirming" | "ready" | "deleting";
   readonly storage_key: string;
   readonly staging_key: string;
+  readonly revision: number;
   readonly upload_period_start: Date | string | null;
   readonly upload_reservation_state: "reserved" | "consumed" | null;
   readonly created_at: Date | string;
@@ -67,14 +69,52 @@ const mapRow = (row: ItemRow): KevaItem => ({
   declaredSize: Number(row.declared_size),
   size: row.size === null ? null : Number(row.size),
   etag: row.etag,
-  checksum: row.checksum,
   source: row.source,
   status: row.status,
   storageKey: row.storage_key,
   stagingKey: row.staging_key,
+  revision: row.revision,
   createdAt: asIso(row.created_at),
   updatedAt: asIso(row.updated_at),
   properties: canonicalizeProperties(row.properties),
+});
+
+interface UploadAttemptRow {
+  readonly id: string;
+  readonly tenant_id: string;
+  readonly item_id: string | null;
+  readonly retry_key: string | null;
+  readonly request_hash: string | null;
+  readonly staging_key: string;
+  readonly storage_key: string;
+  readonly upload_url: string;
+  readonly upload_headers: Readonly<Record<string, string>>;
+  readonly expected_size: number | string;
+  readonly expires_at: Date | string;
+  readonly state: UploadAttempt["state"];
+  readonly observed_etag: string | null;
+  readonly cleanup_after: Date | string;
+  readonly next_retry_at: Date | string;
+  readonly retry_count: number;
+}
+
+const mapAttemptRow = (row: UploadAttemptRow): UploadAttempt => ({
+  id: row.id,
+  tenantId: row.tenant_id,
+  itemId: row.item_id,
+  retryKey: row.retry_key,
+  requestHash: row.request_hash,
+  stagingKey: row.staging_key,
+  storageKey: row.storage_key,
+  uploadUrl: row.upload_url,
+  uploadHeaders: row.upload_headers,
+  expectedSize: Number(row.expected_size),
+  expiresAt: asIso(row.expires_at),
+  state: row.state,
+  observedEtag: row.observed_etag,
+  cleanupAfter: asIso(row.cleanup_after),
+  nextRetryAt: asIso(row.next_retry_at),
+  retryCount: row.retry_count,
 });
 
 interface ItemEventRow {
@@ -90,6 +130,7 @@ interface ItemEventRow {
 
 type PatchResult =
   | { readonly status: "missing" }
+  | { readonly status: "conflict" }
   | { readonly status: "limit-exceeded" }
   | { readonly status: "updated"; readonly previous: KevaItem; readonly updated: KevaItem };
 
@@ -394,11 +435,11 @@ const insertItemRow = async (
   await transaction`
     insert into items (
       id, tenant_id, name, content_type, declared_size, size, etag,
-      checksum, source, status, storage_key, staging_key, created_at,
+      source, status, storage_key, staging_key, created_at,
       updated_at, properties, upload_period_start, upload_reservation_state
     ) values (
       ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
-      ${item.declaredSize}, ${item.size}, ${item.etag}, ${item.checksum},
+      ${item.declaredSize}, ${item.size}, ${item.etag},
       ${item.source}, ${item.status}, ${item.storageKey},
       ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
       ${jsonbParam(properties)}::text::jsonb, ${periodStart}, ${periodStart ? "reserved" : null}
@@ -429,6 +470,82 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         return yield* new QuotaExceeded({ message: "Storage limit reached" });
       }
     }),
+  createUpload: (item, uploadAttempt, shareReservation) =>
+    Effect.gen(function* () {
+      const outcome = yield* attempt(() =>
+        sql.begin(async (transaction) => {
+          const tx = transaction as unknown as Sql;
+          if (uploadAttempt.retryKey) {
+            await tx`select pg_advisory_xact_lock(hashtextextended(${`${item.tenantId}:retry:${uploadAttempt.retryKey}`}, 0))`;
+            const existing = await tx<UploadAttemptRow[]>`
+              select * from upload_attempts
+              where tenant_id = ${item.tenantId} and retry_key = ${uploadAttempt.retryKey}
+              for update
+            `;
+            if (existing[0]) {
+              if (existing[0].request_hash !== uploadAttempt.requestHash)
+                return { status: "conflict" as const };
+              const items = await tx<ItemRow[]>`
+                select * from items where tenant_id = ${item.tenantId} and id = ${existing[0].item_id} limit 1
+              `;
+              if (items[0])
+                return {
+                  status: "reused" as const,
+                  item: mapRow(items[0]),
+                  attempt: mapAttemptRow(existing[0]),
+                };
+            }
+          }
+          if (shareReservation) {
+            const source = `share:${shareReservation.grantId}`;
+            await tx`select pg_advisory_xact_lock(hashtextextended(${`${item.tenantId}:${shareReservation.grantId}`}, 0))`;
+            const usage = await tx<{ count: string; bytes: string }[]>`
+              select count(*)::bigint as count, coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
+              from items where tenant_id = ${item.tenantId} and source = ${source}
+                and status in ('pending', 'confirming', 'ready')
+            `;
+            if (
+              (shareReservation.maxItems !== null &&
+                Number(usage[0]!.count) + 1 > shareReservation.maxItems) ||
+              (shareReservation.maxTotalBytes !== null &&
+                Number(usage[0]!.bytes) + item.declaredSize > shareReservation.maxTotalBytes)
+            )
+              return { status: "share" as const };
+          }
+          const reservation = await reserveTenantQuota(tx, item.tenantId, item.declaredSize);
+          if (reservation.status !== "ok") return { status: reservation.status };
+          await insertItemRow(tx, item, reservation.periodStart);
+          await tx`
+            insert into upload_attempts (id, tenant_id, item_id, retry_key, request_hash, staging_key, storage_key,
+              upload_url, upload_headers,
+              expected_size, expires_at, state, observed_etag, cleanup_after, next_retry_at, retry_count)
+            values (${uploadAttempt.id}, ${uploadAttempt.tenantId}, ${uploadAttempt.itemId}, ${uploadAttempt.retryKey},
+              ${uploadAttempt.requestHash}, ${uploadAttempt.stagingKey}, ${uploadAttempt.storageKey},
+              ${uploadAttempt.uploadUrl}, ${jsonbParam(uploadAttempt.uploadHeaders)}::text::jsonb, ${uploadAttempt.expectedSize},
+              ${uploadAttempt.expiresAt}, ${uploadAttempt.state}, ${uploadAttempt.observedEtag},
+              ${uploadAttempt.cleanupAfter}, ${uploadAttempt.nextRetryAt}, ${uploadAttempt.retryCount})
+          `;
+          return { status: "created" as const };
+        }),
+      );
+      if (outcome.status === "conflict")
+        return yield* new Conflict({
+          message: "Retry key was already used for a different upload",
+        });
+      if (outcome.status === "share")
+        return yield* new QuotaExceeded({ message: "Share storage limit reached" });
+      if (outcome.status === "subscription")
+        return yield* new SubscriptionRequired({ message: "An active subscription is required" });
+      if (outcome.status === "items")
+        return yield* new QuotaExceeded({ message: "Item limit reached" });
+      if (outcome.status === "uploads")
+        return yield* new QuotaExceeded({ message: "Monthly upload limit reached" });
+      if (outcome.status === "storage")
+        return yield* new QuotaExceeded({ message: "Storage limit reached" });
+      return outcome.status === "reused"
+        ? { item: outcome.item, attempt: outcome.attempt, reused: true }
+        : { item, attempt: uploadAttempt, reused: false };
+    }),
   reserveShareUpload: (reservation) =>
     Effect.gen(function* () {
       const source = `share:${reservation.grantId}`;
@@ -443,7 +560,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             from items
             where tenant_id = ${reservation.item.tenantId}
               and source = ${source}
-              and status in ('pending', 'ready')
+              and status in ('pending', 'confirming', 'ready')
           `;
           const current = usage[0]!;
           if (
@@ -556,7 +673,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         return item;
       }),
     ),
-  patch: (tenantId, id, patch, updatedAt) =>
+  patch: (tenantId, id, patch, updatedAt, expectedRevision) =>
     Effect.gen(function* () {
       const result: PatchResult = yield* attempt(async () => {
         return sql.begin(async (transaction): Promise<PatchResult> => {
@@ -567,12 +684,17 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         `;
           const row = rows[0];
           if (!row) return { status: "missing" };
+          if (expectedRevision !== undefined && row.revision !== expectedRevision)
+            return { status: "conflict" } as PatchResult;
           const properties = { ...row.properties, ...patch.set };
           for (const key of patch.unset) delete properties[key];
           if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
           // `updated_at` is always present, so `sql(values)` is never empty and
           // the inline `properties` clause always has a valid leading comma.
-          const values: Record<string, unknown> = { updated_at: updatedAt };
+          const values: Record<string, unknown> = {
+            updated_at: updatedAt,
+            revision: row.revision + 1,
+          };
           for (const [key, value] of Object.entries(patch.fields)) {
             const field = FIELD_BY_KEY.get(key);
             if (field) values[field.column] = value;
@@ -591,11 +713,13 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       if (result.status === "limit-exceeded") {
         return yield* new QuotaExceeded({ message: "Property limits exceeded" });
       }
+      if (result.status === "conflict")
+        return yield* new Conflict({ message: "Item revision changed" });
       return result.status === "updated"
         ? { previous: result.previous, updated: result.updated }
         : null;
     }),
-  patchWithEvent: (tenantId, id, patch, updatedAt, event) =>
+  patchWithEvent: (tenantId, id, patch, updatedAt, expectedRevision, event) =>
     Effect.gen(function* () {
       const result: PatchResult = yield* attempt(async () =>
         sql.begin(async (transaction): Promise<PatchResult> => {
@@ -604,10 +728,15 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           `;
           const row = rows[0];
           if (!row) return { status: "missing" };
+          if (expectedRevision !== undefined && row.revision !== expectedRevision)
+            return { status: "conflict" } as PatchResult;
           const properties = { ...row.properties, ...patch.set };
           for (const key of patch.unset) delete properties[key];
           if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
-          const values: Record<string, unknown> = { updated_at: updatedAt };
+          const values: Record<string, unknown> = {
+            updated_at: updatedAt,
+            revision: row.revision + 1,
+          };
           for (const [key, value] of Object.entries(patch.fields)) {
             const field = FIELD_BY_KEY.get(key);
             if (field) values[field.column] = value;
@@ -627,6 +756,8 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       if (result.status === "limit-exceeded") {
         return yield* new QuotaExceeded({ message: "Property limits exceeded" });
       }
+      if (result.status === "conflict")
+        return yield* new Conflict({ message: "Item revision changed" });
       return result.status === "updated"
         ? { previous: result.previous, updated: result.updated }
         : null;
@@ -785,11 +916,11 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           (
             select coalesce(sum(coalesce(size, declared_size)), 0)::bigint
             from items
-            where tenant_id = ${tenantId} and status in ('pending', 'ready', 'deleting')
+            where tenant_id = ${tenantId} and status in ('pending', 'confirming', 'ready', 'deleting')
           ),
           (
             select count(*)::bigint from items
-            where tenant_id = ${tenantId} and status in ('pending', 'ready', 'deleting')
+            where tenant_id = ${tenantId} and status in ('pending', 'confirming', 'ready', 'deleting')
           ),
           ${quotaBytes}
         )
@@ -803,7 +934,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
                coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
         from items
         where tenant_id = ${tenantId} and source = ${source}
-          and status in ('pending', 'ready')
+          and status in ('pending', 'confirming', 'ready')
       `;
       const row = rows[0];
       return { count: Number(row?.count ?? 0), bytes: Number(row?.bytes ?? 0) };
@@ -898,22 +1029,36 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           `;
       return rows.map(mapRow);
     }),
-  listStagingUncleaned: (limit) =>
+  listUploadAttemptsForItem: (tenantId, itemId) =>
     attempt(async () => {
-      const rows = await sql<ItemRow[]>`
-        select * from items
-        where status = 'ready' and staging_cleaned_at is null
-        order by created_at asc limit ${limit}
+      const rows = await sql<UploadAttemptRow[]>`
+        select * from upload_attempts where tenant_id = ${tenantId} and item_id = ${itemId}
       `;
-      return rows.map(mapRow);
+      return rows.map(mapAttemptRow);
     }),
-  markStagingCleaned: (tenantId, id) =>
+  listUploadAttemptsForCleanup: (limit, eligibleAt) =>
     attempt(async () => {
-      await sql`
-        update items set staging_cleaned_at = now()
-        where tenant_id = ${tenantId} and id = ${id}
+      const rows = await sql<UploadAttemptRow[]>`
+        select * from upload_attempts
+        where cleanup_after <= ${eligibleAt} and next_retry_at <= ${eligibleAt}
+        order by next_retry_at asc, id asc limit ${limit}
       `;
+      return rows.map(mapAttemptRow);
     }),
+  updateUploadAttempt: (id, patch) =>
+    attempt(async () => {
+      const values: Record<string, unknown> = {};
+      if (patch.state !== undefined) values.state = patch.state;
+      if (patch.observedEtag !== undefined) values.observed_etag = patch.observedEtag;
+      if (patch.nextRetryAt !== undefined) values.next_retry_at = patch.nextRetryAt;
+      if (patch.retryCount !== undefined) values.retry_count = patch.retryCount;
+      if (Object.keys(values).length > 0)
+        await sql`update upload_attempts set ${sql(values)} where id = ${id}`;
+    }),
+  removeUploadAttempt: (id) =>
+    attempt(
+      async () => (await sql`delete from upload_attempts where id = ${id} returning id`).length > 0,
+    ),
   appendEvent: (event) =>
     attempt(async () => {
       await sql`

@@ -59,7 +59,7 @@ export type Properties = typeof Properties.Type;
 export const Scope = Schema.Literal("read", "write", "delete", "views", "shares", "admin");
 export type Scope = typeof Scope.Type;
 
-export const ItemStatus = Schema.Literal("pending", "ready", "deleting");
+export const ItemStatus = Schema.Literal("pending", "confirming", "ready", "deleting");
 export type ItemStatus = typeof ItemStatus.Type;
 
 export const ItemId = Schema.String.pipe(Schema.pattern(ITEM_ID_PATTERN));
@@ -119,11 +119,11 @@ export const KevaItem = Schema.Struct({
   declaredSize: Schema.Number,
   size: Schema.NullOr(Schema.Number),
   etag: Schema.NullOr(Schema.String),
-  checksum: Schema.NullOr(Schema.String),
   source: Schema.NonEmptyString,
   status: ItemStatus,
   storageKey: Schema.NonEmptyString,
   stagingKey: Schema.NonEmptyString,
+  revision: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   properties: Properties,
@@ -381,6 +381,7 @@ export const InitiateUpload = Schema.Struct({
     default: () => "upload",
   }),
   properties: Schema.optionalWith(Properties, { default: () => ({}) }),
+  retryKey: Schema.optional(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(200))),
 });
 export type InitiateUpload = typeof InitiateUpload.Type;
 
@@ -398,6 +399,9 @@ export type InitiateUploadResult = typeof InitiateUploadResult.Type;
 // authority that routes each key to its column or the property blob and rejects
 // writes to system-owned or reserved keys.
 export const ItemPatch = Schema.Struct({
+  expectedRevision: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
+  ),
   set: Schema.optionalWith(Schema.Record({ key: Schema.String, value: PropertyValue }), {
     default: () => ({}),
   }),
@@ -415,11 +419,18 @@ export type DownloadResult = typeof DownloadResult.Type;
 
 export const ItemEventAction = Schema.Literal(
   "uploaded",
+  "updated",
   "renamed",
   "properties_changed",
   "deleted",
 );
 export type ItemEventAction = typeof ItemEventAction.Type;
+
+const PropertyChanges = Schema.Struct({
+  set: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
+  previous: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
+  unset: Schema.optional(Schema.Array(Schema.String)),
+});
 
 export const ItemEventPayload = Schema.Struct({
   size: Schema.optional(Schema.NullOr(Schema.Number)),
@@ -427,9 +438,14 @@ export const ItemEventPayload = Schema.Struct({
   source: Schema.optional(Schema.String),
   from: Schema.optional(Schema.String),
   to: Schema.optional(Schema.String),
-  set: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
-  previous: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
-  unset: Schema.optional(Schema.Array(Schema.String)),
+  ...PropertyChanges.fields,
+  name: Schema.optional(
+    Schema.Struct({
+      from: Schema.String,
+      to: Schema.String,
+    }),
+  ),
+  properties: Schema.optional(PropertyChanges),
 });
 export type ItemEventPayload = typeof ItemEventPayload.Type;
 
@@ -503,16 +519,11 @@ export const UpdateView = Schema.Struct({
 });
 export type UpdateView = typeof UpdateView.Type;
 
-// Nullable fields serialize as `null` (not absent) so the frontend can rely on
-// their presence.
 export const ShareGrantRecord = Schema.Struct({
   id: Schema.String,
   tenantId: Schema.String,
   viewId: Schema.String,
   name: Schema.NonEmptyString,
-  // Plaintext link, persisted so it stays viewable after creation. Null for
-  // grants minted before persistent links existed (only a secret hash was kept).
-  token: Schema.NullOr(Schema.String),
   scopes: Schema.Array(ShareScope),
   conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.NullOr(Properties),
@@ -652,9 +663,9 @@ export const SharedItem = Schema.Struct({
   declaredSize: Schema.Number,
   size: Schema.NullOr(Schema.Number),
   etag: Schema.NullOr(Schema.String),
-  checksum: Schema.NullOr(Schema.String),
   source: Schema.NonEmptyString,
   status: ItemStatus,
+  revision: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   properties: Properties,
@@ -679,9 +690,9 @@ export const toSharedItem = (item: KevaItem): SharedItem => ({
   declaredSize: item.declaredSize,
   size: item.size,
   etag: item.etag,
-  checksum: item.checksum,
   source: item.source,
   status: item.status,
+  revision: item.revision,
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
   properties: item.properties,

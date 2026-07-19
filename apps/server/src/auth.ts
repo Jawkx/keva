@@ -349,6 +349,23 @@ export const requireStorageManagement = (
     ? Effect.void
     : Effect.fail(new Forbidden({ message: `Missing '${scope}' scope` }));
 
+export const hasStoragePermissions = (
+  principal: Principal,
+  scopes: ReadonlyArray<Scope>,
+): boolean =>
+  (principal.via === "session" && principal.scopes.includes("admin")) ||
+  scopes.every((scope) => principal.scopes.includes(scope));
+
+export const requireStoragePermissions = (
+  principal: Principal,
+  scopes: ReadonlyArray<Scope>,
+): Effect.Effect<void, Forbidden> => {
+  const missing = scopes.filter((scope) => !principal.scopes.includes(scope));
+  return hasStoragePermissions(principal, scopes)
+    ? Effect.void
+    : Effect.fail(new Forbidden({ message: `Missing required scopes: ${missing.join(", ")}` }));
+};
+
 // MCP clients request OAuth scopes (`keva:read`/`keva:write`/`keva:delete`,
 // advertised in the protected-resource metadata); the granted set arrives on
 // the access token as a space-separated string. Map it onto keva's Scope enum,

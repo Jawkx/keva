@@ -185,6 +185,12 @@ export type PropertyValuesToolInput = { readonly key: string };
 const setPropertiesArgs = z
   .object({
     id: z.string().regex(ITEM_ID_PATTERN).describe("The item id."),
+    expectedRevision: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Reject the edit if the item no longer has this revision."),
     set: z
       .record(z.string(), propertyValue)
       .optional()
@@ -216,6 +222,12 @@ const uploadArgs = z.object({
     .describe("Exact byte size."),
   source: nonEmptyString.default("upload").describe("Item source label (default 'upload')."),
   properties: z.record(z.string(), propertyValue).default({}),
+  retryKey: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Stable key for safely retrying initiation."),
 });
 
 const uploadContentArgs = z.object({
@@ -285,6 +297,7 @@ export type SetPropertiesToolInput = {
   readonly id: string;
   readonly set?: ItemPatch["set"] | undefined;
   readonly unset?: ItemPatch["unset"] | undefined;
+  readonly expectedRevision?: number | undefined;
 };
 export type ItemEventsToolInput = {
   readonly id: string;
@@ -620,7 +633,8 @@ export const createKevaMcpServer = (
       "update_view",
       {
         title: "Update saved view",
-        description: "Update a saved view's name, icon, and/or conditions.",
+        description:
+          "Update a saved view's name, icon, and/or conditions. If active shares use the view, this immediately changes their access and requires shares plus each delegated read/write scope.",
         inputSchema: updateViewArgs.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
@@ -645,7 +659,7 @@ export const createKevaMcpServer = (
       {
         title: "Create share link",
         description:
-          "Create a read and/or upload share for an existing saved view or a new inline view.",
+          "Create a share for an existing saved view or a new inline view. Download shares require read access; upload shares require write access. The secret token is returned only once.",
         inputSchema: createShareArgs.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
@@ -655,7 +669,8 @@ export const createKevaMcpServer = (
       "list_shares",
       {
         title: "List share links",
-        description: "List active share-link records, scopes, limits, and expiry information.",
+        description:
+          "List active share-link names, filters, scopes, limits, and expiry information without secret tokens.",
         inputSchema: {},
         annotations: { readOnlyHint: true, openWorldHint: false },
       },

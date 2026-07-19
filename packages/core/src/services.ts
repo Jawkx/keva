@@ -33,7 +33,11 @@ export interface BlobStoreService {
   ) => Effect.Effect<PresignedRequest, KevaError>;
   readonly presignDownload: (key: string) => Effect.Effect<PresignedRequest, KevaError>;
   readonly head: (key: string) => Effect.Effect<BlobHead | null, KevaError>;
-  readonly copy: (sourceKey: string, destinationKey: string) => Effect.Effect<void, KevaError>;
+  readonly copy: (
+    sourceKey: string,
+    destinationKey: string,
+    sourceEtag?: string | null,
+  ) => Effect.Effect<void, KevaError>;
   readonly delete: (key: string) => Effect.Effect<void, KevaError>;
 }
 
@@ -57,8 +61,35 @@ export interface ItemPatchInput {
   readonly unset: readonly string[];
 }
 
+export interface UploadAttempt {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly itemId: string | null;
+  readonly retryKey: string | null;
+  readonly requestHash: string | null;
+  readonly stagingKey: string;
+  readonly storageKey: string;
+  readonly uploadUrl: string;
+  readonly uploadHeaders: Readonly<Record<string, string>>;
+  readonly expectedSize: number;
+  readonly expiresAt: string;
+  readonly state: "pending" | "confirming" | "confirmed" | "abandoned";
+  readonly observedEtag: string | null;
+  readonly cleanupAfter: string;
+  readonly nextRetryAt: string;
+  readonly retryCount: number;
+}
+
 export interface MetadataStoreService {
   readonly insert: (item: KevaItem) => Effect.Effect<void, KevaError>;
+  readonly createUpload: (
+    item: KevaItem,
+    attempt: UploadAttempt,
+    shareReservation?: ShareUploadReservation,
+  ) => Effect.Effect<
+    { readonly item: KevaItem; readonly attempt: UploadAttempt; readonly reused: boolean },
+    KevaError
+  >;
   readonly reserveShareUpload: (
     reservation: ShareUploadReservation,
   ) => Effect.Effect<void, KevaError>;
@@ -84,12 +115,14 @@ export interface MetadataStoreService {
     id: string,
     patch: ItemPatchInput,
     updatedAt: string,
+    expectedRevision?: number,
   ) => Effect.Effect<ItemPatchResult | null, KevaError>;
   readonly patchWithEvent: (
     tenantId: string,
     id: string,
     patch: ItemPatchInput,
     updatedAt: string,
+    expectedRevision: number | undefined,
     event: (previous: KevaItem, updated: KevaItem) => ItemEvent | null,
   ) => Effect.Effect<ItemPatchResult | null, KevaError>;
   readonly remove: (
@@ -128,10 +161,19 @@ export interface MetadataStoreService {
   // Ready items whose staging blob has not yet been recorded as purged. Drives
   // the durable staging-cleanup backstop; each swept item is then marked with
   // `markStagingCleaned` so the job makes progress instead of re-scanning.
-  readonly listStagingUncleaned: (
+  readonly listUploadAttemptsForItem: (
+    tenantId: string,
+    itemId: string,
+  ) => Effect.Effect<ReadonlyArray<UploadAttempt>, KevaError>;
+  readonly listUploadAttemptsForCleanup: (
     limit: number,
-  ) => Effect.Effect<ReadonlyArray<KevaItem>, KevaError>;
-  readonly markStagingCleaned: (tenantId: string, id: string) => Effect.Effect<void, KevaError>;
+    eligibleAt: string,
+  ) => Effect.Effect<ReadonlyArray<UploadAttempt>, KevaError>;
+  readonly updateUploadAttempt: (
+    id: string,
+    patch: Partial<Pick<UploadAttempt, "state" | "observedEtag" | "nextRetryAt" | "retryCount">>,
+  ) => Effect.Effect<void, KevaError>;
+  readonly removeUploadAttempt: (id: string) => Effect.Effect<boolean, KevaError>;
   readonly appendEvent: (event: ItemEvent) => Effect.Effect<void, KevaError>;
   // Newest-first keyset pagination, same cursor format as `query`.
   readonly listEvents: (

@@ -33,6 +33,7 @@ import {
   Authenticator,
   requireAdminSession,
   requireStorageManagement,
+  requireStoragePermissions,
 } from "./auth.js";
 import { defectTypes, failureOrElse } from "./effect-failure.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
@@ -338,7 +339,10 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const body = yield* decode(InitiateUpload, yield* jsonBody(context));
-        const result = yield* makeKevaEngine(principal).initiate(body);
+        const result = yield* makeKevaEngine(principal).initiate(
+          body,
+          context.req.header("Retry-Key") ?? body.retryKey,
+        );
         return {
           ...result,
           item: redactItem(principal, result.item),
@@ -604,7 +608,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         yield* requireStorageManagement(principal, "views");
         const body = yield* decode(UpdateView, yield* jsonBody(context));
         const shares = yield* ShareGrantStore;
-        const view = yield* shares.updateView(principal.tenantId, context.req.param("id"), body);
+        const view = yield* shares.updateView(principal, context.req.param("id"), body);
         if (!view) return yield* new NotFound({ message: "View not found" });
         return view;
       }),
@@ -632,6 +636,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         const principal = yield* principalEffect(context.req.raw.headers);
         yield* requireStorageManagement(principal, "shares");
         const body = yield* decode(CreateShareGrant, yield* jsonBody(context));
+        yield* requireStoragePermissions(principal, ["shares", ...body.scopes]);
         if (body.expiresAt && !isFutureInstant(body.expiresAt)) {
           return yield* new ValidationError({ message: "Share expiration must be in the future" });
         }

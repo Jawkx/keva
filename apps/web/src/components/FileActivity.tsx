@@ -28,6 +28,10 @@ const actionLabel = (event: ItemEvent): string => {
       return payload.size != null
         ? `uploaded this file (${formatBytes(payload.size)})`
         : "uploaded this file";
+    case "updated":
+      return payload.name
+        ? `renamed “${payload.name.from}” to “${payload.name.to}”`
+        : "changed properties";
     case "renamed":
       return `renamed “${payload.from ?? "?"}” to “${payload.to ?? "?"}”`;
     case "properties_changed":
@@ -38,8 +42,9 @@ const actionLabel = (event: ItemEvent): string => {
 };
 
 const propertyChangeRows = (event: ItemEvent): string[] => {
-  if (event.action !== "properties_changed") return [];
-  const payload = event.payload;
+  if (event.action !== "properties_changed" && event.action !== "updated") return [];
+  const payload = event.action === "updated" ? event.payload.properties : event.payload;
+  if (!payload) return [];
   const rows: string[] = [];
   for (const [key, value] of Object.entries(payload.set ?? {})) {
     const previous = payload.previous?.[key];

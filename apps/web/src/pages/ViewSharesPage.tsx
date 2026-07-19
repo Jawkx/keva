@@ -3,7 +3,6 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CopyButton } from "../components/CopyButton";
 import { AccountShareCreateDialog } from "../components/AccountShareCreateDialog";
 import { PageHeader } from "../components/PageHeader";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
@@ -40,9 +39,6 @@ import {
 
 const isExpired = (expiresAt: string | null): boolean =>
   expiresAt !== null && new Date(expiresAt).getTime() <= Date.now();
-
-const shareUrlOf = (token: string | null): string | null =>
-  token === null ? null : `${window.location.origin}/s/${token}`;
 
 export function ViewSharesPage() {
   const { viewId } = useParams<{ viewId: string }>();
@@ -264,7 +260,6 @@ export function ViewSharesPage() {
                     <TableHeader className="bg-muted/50">
                       <TableRow className="hover:bg-transparent">
                         <TableHead>Name</TableHead>
-                        <TableHead>Link</TableHead>
                         <TableHead>Access</TableHead>
                         <TableHead>Expires</TableHead>
                         <TableHead>Last used</TableHead>
@@ -273,30 +268,9 @@ export function ViewSharesPage() {
                     </TableHeader>
                     <TableBody>
                       {shares.map((share) => {
-                        const shareUrl = shareUrlOf(share.token);
                         return (
                           <TableRow key={share.id} className="hover:bg-transparent">
                             <TableCell className="font-medium">{share.name}</TableCell>
-                            <TableCell>
-                              {shareUrl ? (
-                                <div className="flex items-center gap-1">
-                                  <span
-                                    className="flex max-w-[16rem] font-mono text-xs text-muted-foreground"
-                                    title={shareUrl}
-                                  >
-                                    <span className="min-w-0 truncate">
-                                      {shareUrl.slice(0, -8)}
-                                    </span>
-                                    <span className="shrink-0">{shareUrl.slice(-8)}</span>
-                                  </span>
-                                  <CopyButton value={shareUrl} label="Copy link" />
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">
-                                  Link unavailable
-                                </span>
-                              )}
-                            </TableCell>
                             <TableCell>
                               <div className="flex flex-wrap gap-1">
                                 {share.scopes.map((scope) => (

@@ -79,7 +79,7 @@ const eventFor = (
 });
 
 export const makeKevaEngine = (principal: Principal) => ({
-  initiate: (input: InitiateUpload) =>
+  initiate: (input: InitiateUpload, retryKey?: string) =>
     Effect.gen(function* () {
       yield* requireScope(principal, "write");
       if (input.size > 5 * 1024 * 1024 * 1024) {
@@ -117,7 +117,13 @@ export const makeKevaEngine = (principal: Principal) => ({
           });
         }
       }
+      if (retryKey !== undefined && (retryKey.length === 0 || retryKey.length > 200)) {
+        return yield* new ValidationError({
+          message: "Retry-Key must contain 1 to 200 characters",
+        });
+      }
       const id = crypto.randomUUID();
+      const attemptId = crypto.randomUUID();
       const timestamp = now();
       const item: KevaItem = {
         id,
@@ -127,31 +133,57 @@ export const makeKevaEngine = (principal: Principal) => ({
         declaredSize: input.size,
         size: null,
         etag: null,
-        checksum: null,
         source,
         status: "pending",
         storageKey: `items/${principal.tenantId}/${id}`,
-        stagingKey: `staging/${principal.tenantId}/${id}`,
+        stagingKey: `staging/${principal.tenantId}/${attemptId}`,
+        revision: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
         properties: canonicalizeProperties(properties),
       };
-      if (share && limits && (limits.maxItems !== null || limits.maxTotalBytes !== null)) {
-        yield* metadata.reserveShareUpload({
-          grantId: share.grantId,
-          maxItems: limits.maxItems,
-          maxTotalBytes: limits.maxTotalBytes,
-          item,
-        });
-      } else {
-        yield* metadata.insert(item);
-      }
       const upload = yield* blobs.presignUpload(item.stagingKey, input.size, input.contentType);
-      return {
+      const requestHash = JSON.stringify({
+        name: input.name,
+        contentType: input.contentType,
+        size: input.size,
+        source,
+        properties: canonicalizeProperties(properties),
+      });
+      const created = yield* metadata.createUpload(
         item,
-        uploadUrl: upload.url,
-        expiresAt: upload.expiresAt,
-        headers: { ...upload.headers },
+        {
+          id: attemptId,
+          tenantId: principal.tenantId,
+          itemId: id,
+          retryKey: retryKey ?? null,
+          requestHash: retryKey ? requestHash : null,
+          stagingKey: item.stagingKey,
+          storageKey: item.storageKey,
+          uploadUrl: upload.url,
+          uploadHeaders: upload.headers,
+          expectedSize: input.size,
+          expiresAt: upload.expiresAt,
+          state: "pending",
+          observedEtag: null,
+          cleanupAfter: upload.expiresAt,
+          nextRetryAt: upload.expiresAt,
+          retryCount: 0,
+        },
+        share && limits && (limits.maxItems !== null || limits.maxTotalBytes !== null)
+          ? {
+              grantId: share.grantId,
+              maxItems: limits.maxItems,
+              maxTotalBytes: limits.maxTotalBytes,
+              item,
+            }
+          : undefined,
+      );
+      return {
+        item: created.item,
+        uploadUrl: created.attempt.uploadUrl,
+        expiresAt: created.attempt.expiresAt,
+        headers: { ...created.attempt.uploadHeaders },
       };
     }),
 
@@ -170,28 +202,53 @@ export const makeKevaEngine = (principal: Principal) => ({
         return yield* new NotFound({ message: "Item not found" });
       }
       if (item.status === "ready") return item;
-      if (item.status !== "pending") {
+      if (item.status !== "pending" && item.status !== "confirming") {
         return yield* new Conflict({ message: "Upload is no longer pending" });
       }
-      const head = yield* blobs.head(item.stagingKey);
-      if (!head) {
+      const attempts = yield* metadata.listUploadAttemptsForItem(principal.tenantId, id);
+      const attempt = attempts.find((candidate) => candidate.stagingKey === item.stagingKey);
+      if (!attempt) return yield* new Conflict({ message: "Upload attempt does not exist" });
+      const staged = yield* blobs.head(item.stagingKey);
+      if (!staged && item.status === "pending") {
         return yield* new Conflict({ message: "Staged upload does not exist" });
       }
-      if (head.size !== item.declaredSize) {
+      if (staged && staged.size !== item.declaredSize) {
         return yield* new ValidationError({
-          message: `Uploaded size ${head.size} does not match declared size ${item.declaredSize}`,
+          message: `Uploaded size ${staged.size} does not match declared size ${item.declaredSize}`,
         });
       }
-      yield* blobs.copy(item.stagingKey, item.storageKey);
+      if (item.status === "pending") {
+        const claimed = yield* metadata.transition(principal.tenantId, id, ["pending"], {
+          status: "confirming",
+          updatedAt: now(),
+        });
+        if (!claimed) return yield* new Conflict({ message: "Upload changed while confirming" });
+      }
+      if (staged) {
+        yield* metadata.updateUploadAttempt(attempt.id, {
+          state: "confirming",
+          observedEtag: staged.etag,
+        });
+        yield* blobs.copy(item.stagingKey, item.storageKey, staged.etag);
+      }
+      const final = yield* blobs.head(item.storageKey);
+      const expectedEtag = staged?.etag ?? attempt.observedEtag;
+      if (
+        !final ||
+        final.size !== item.declaredSize ||
+        (expectedEtag !== null && final.etag !== expectedEtag)
+      ) {
+        return yield* new Conflict({ message: "Final upload verification failed" });
+      }
       const confirmed = yield* metadata.transitionWithEvent(
         principal.tenantId,
         id,
-        ["pending"],
+        ["confirming"],
         {
           status: "ready",
-          size: head.size,
-          etag: head.etag,
-          contentType: head.contentType ?? item.contentType,
+          size: final.size,
+          etag: final.etag,
+          contentType: final.contentType ?? item.contentType,
           updatedAt: now(),
         },
         (updated) =>
@@ -204,13 +261,11 @@ export const makeKevaEngine = (principal: Principal) => ({
       if (!confirmed) {
         const current = yield* metadata.get(principal.tenantId, id);
         if (current?.status === "ready") return current;
+        yield* blobs.delete(item.storageKey);
         return yield* new Conflict({ message: "Upload expired while confirming" });
       }
-      // Purge staging now; record the cleanup durably so the backstop sweep can
-      // tell this obligation is discharged. If either step fails the item stays
-      // marked uncleaned and `sweepStaging` retries it.
+      yield* metadata.updateUploadAttempt(attempt.id, { state: "confirmed" });
       yield* blobs.delete(item.stagingKey).pipe(
-        Effect.flatMap(() => metadata.markStagingCleaned(principal.tenantId, id)),
         Effect.catchAll((error) =>
           Effect.logWarning(
             JSON.stringify({
@@ -262,13 +317,8 @@ export const makeKevaEngine = (principal: Principal) => ({
         id,
         routed.routed,
         now(),
+        patch.expectedRevision,
         (previous, updated) => {
-          if (previous.name !== updated.name) {
-            return eventFor(principal, updated, "renamed", {
-              from: previous.name,
-              to: updated.name,
-            });
-          }
           const changedSet: Record<string, PropertyValue> = {};
           const previousValues: Record<string, PropertyValue> = {};
           for (const [key, value] of Object.entries(updated.properties)) {
@@ -280,11 +330,22 @@ export const makeKevaEngine = (principal: Principal) => ({
             (key) => !(key in updated.properties),
           );
           for (const key of removed) previousValues[key] = previous.properties[key]!;
-          return Object.keys(changedSet).length > 0 || removed.length > 0
-            ? eventFor(principal, updated, "properties_changed", {
-                ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
-                ...(Object.keys(previousValues).length > 0 ? { previous: previousValues } : {}),
-                ...(removed.length > 0 ? { unset: removed } : {}),
+          const nameChanged = previous.name !== updated.name;
+          const propertiesChanged = Object.keys(changedSet).length > 0 || removed.length > 0;
+          return nameChanged || propertiesChanged
+            ? eventFor(principal, updated, "updated", {
+                ...(nameChanged ? { name: { from: previous.name, to: updated.name } } : {}),
+                ...(propertiesChanged
+                  ? {
+                      properties: {
+                        ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
+                        ...(Object.keys(previousValues).length > 0
+                          ? { previous: previousValues }
+                          : {}),
+                        ...(removed.length > 0 ? { unset: removed } : {}),
+                      },
+                    }
+                  : {}),
               })
             : null;
         },
@@ -363,14 +424,19 @@ export const makeKevaEngine = (principal: Principal) => ({
         const claimed = yield* metadata.transitionWithEvent(
           principal.tenantId,
           id,
-          ["ready", "pending"],
+          ["ready", "pending", "confirming"],
           { status: "deleting", updatedAt: now() },
           (updated) => eventFor(principal, updated, "deleted", {}),
         );
         if (!claimed) return;
       }
       yield* blobs.delete(current.storageKey);
-      yield* blobs.delete(current.stagingKey);
+      const attempts = yield* metadata.listUploadAttemptsForItem(principal.tenantId, id);
+      yield* Effect.forEach(attempts, (attempt) =>
+        blobs
+          .delete(attempt.stagingKey)
+          .pipe(Effect.zipRight(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" }))),
+      );
       yield* metadata.remove(principal.tenantId, id, "deleting");
     }),
 });
@@ -379,6 +445,7 @@ export interface LifecycleJobOptions {
   readonly batchSize?: number;
   readonly pendingTtlMs?: number;
   readonly concurrency?: number;
+  readonly maxBatches?: number;
 }
 
 export interface LifecycleBatchResult {
@@ -428,7 +495,10 @@ export const reapPending = (options: LifecycleJobOptions = {}) =>
   Effect.gen(function* () {
     const metadata = yield* MetadataStore;
     const cutoff = new Date(Date.now() - (options.pendingTtlMs ?? 60 * 60 * 1000)).toISOString();
-    const pending = yield* metadata.listByStatus("pending", options.batchSize ?? 100, cutoff);
+    const pending = [
+      ...(yield* metadata.listByStatus("pending", options.batchSize ?? 100, cutoff)),
+      ...(yield* metadata.listByStatus("confirming", options.batchSize ?? 100, cutoff)),
+    ].slice(0, options.batchSize ?? 100);
     return yield* runLifecycleBatch(
       "reap_pending",
       pending,
@@ -437,7 +507,7 @@ export const reapPending = (options: LifecycleJobOptions = {}) =>
         metadata.transition(
           item.tenantId,
           item.id,
-          ["pending"],
+          [item.status],
           { status: "deleting", updatedAt: now() },
           cutoff,
         ),
@@ -457,6 +527,14 @@ export const sweepDeleting = (options: LifecycleJobOptions = {}) =>
         Effect.gen(function* () {
           yield* blobs.delete(item.storageKey);
           yield* blobs.delete(item.stagingKey);
+          const attempts = yield* metadata.listUploadAttemptsForItem(item.tenantId, item.id);
+          yield* Effect.forEach(attempts, (attempt) =>
+            blobs
+              .delete(attempt.stagingKey)
+              .pipe(
+                Effect.zipRight(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" })),
+              ),
+          );
           return yield* metadata.remove(item.tenantId, item.id, "deleting");
         }),
     );
@@ -466,18 +544,33 @@ export const sweepStaging = (options: LifecycleJobOptions = {}) =>
   Effect.gen(function* () {
     const metadata = yield* MetadataStore;
     const blobs = yield* BlobStore;
-    // Only ready items with an outstanding staging obligation. Marking each
-    // cleaned drops it from the next scan, so the job makes progress instead of
-    // re-deleting the same oldest rows forever.
-    const uncleaned = yield* metadata.listStagingUncleaned(options.batchSize ?? 100);
-    return yield* runLifecycleBatch(
-      "sweep_staging",
-      uncleaned,
-      lifecycleConcurrency(options),
-      (item) =>
-        blobs.delete(item.stagingKey).pipe(
-          Effect.flatMap(() => metadata.markStagingCleaned(item.tenantId, item.id)),
-          Effect.as(true),
+    const attempts = yield* metadata.listUploadAttemptsForCleanup(options.batchSize ?? 100, now());
+    const results = yield* Effect.forEach(
+      attempts,
+      (attempt) =>
+        blobs.delete(attempt.stagingKey).pipe(
+          Effect.zipRight(
+            attempt.state === "abandoned" || attempt.state === "confirming"
+              ? blobs.delete(attempt.storageKey)
+              : Effect.void,
+          ),
+          Effect.zipRight(metadata.removeUploadAttempt(attempt.id)),
+          Effect.map((completed) => ({ completed, failed: false })),
+          Effect.catchAll(() =>
+            metadata
+              .updateUploadAttempt(attempt.id, {
+                retryCount: attempt.retryCount + 1,
+                nextRetryAt: new Date(
+                  Date.now() + Math.min(60 * 60_000, 2 ** attempt.retryCount * 60_000),
+                ).toISOString(),
+              })
+              .pipe(Effect.as({ completed: false, failed: true })),
+          ),
         ),
+      { concurrency: lifecycleConcurrency(options) },
     );
+    return {
+      completed: results.filter((result) => result.completed).length,
+      failed: results.filter((result) => result.failed).length,
+    };
   });

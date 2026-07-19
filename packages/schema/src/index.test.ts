@@ -7,6 +7,7 @@ import {
   CreateView,
   decodeCursor,
   encodeCursor,
+  ItemEvent,
   ItemId,
   itemMatchesCondition,
   type KevaItem,
@@ -23,6 +24,41 @@ import {
 } from "./index.js";
 
 describe("schema", () => {
+  it("decodes updated events and legacy patch events", () => {
+    const base = {
+      id: "event-1",
+      tenantId: "tenant-a",
+      itemId: "00000000-0000-0000-0000-000000000001",
+      itemName: "final.txt",
+      actor: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(
+      Schema.decodeUnknownSync(ItemEvent)({
+        ...base,
+        action: "updated",
+        payload: {
+          name: { from: "draft.txt", to: "final.txt" },
+          properties: { set: { status: "done" } },
+        },
+      }).action,
+    ).toBe("updated");
+    expect(
+      Schema.decodeUnknownSync(ItemEvent)({
+        ...base,
+        action: "renamed",
+        payload: { from: "draft.txt", to: "final.txt" },
+      }).action,
+    ).toBe("renamed");
+    expect(
+      Schema.decodeUnknownSync(ItemEvent)({
+        ...base,
+        action: "properties_changed",
+        payload: { set: { status: "done" } },
+      }).action,
+    ).toBe("properties_changed");
+  });
+
   it("rejects invalid arrays, legacy scalars, and reserved keys", () => {
     expect(() => Schema.decodeUnknownSync(Properties)({ tags: ["a", 1] })).toThrow();
     expect(() => Schema.decodeUnknownSync(Properties)({ tags: [] })).toThrow();
@@ -183,11 +219,11 @@ const sampleItem = (overrides: Partial<KevaItem> = {}): KevaItem => ({
   declaredSize: 2048,
   size: 2048,
   etag: "etag",
-  checksum: null,
   source: "upload",
   status: "ready",
   storageKey: "items/tenant-a/1",
   stagingKey: "staging/tenant-a/1",
+  revision: 1,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   properties: { project: "alpha", tags: ["x", "y"], label: null },

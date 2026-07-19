@@ -50,6 +50,30 @@ describe("S3BlobStore", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("conditionally copies and validates the CopyObject result", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response("<CopyObjectResult><ETag>etag</ETag></CopyObjectResult>", { status: 200 }),
+      );
+
+    await expect(
+      Effect.runPromise(store.copy("staging/source", "items/final", "etag")),
+    ).resolves.toBeUndefined();
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.headers.get("x-amz-copy-source-if-match")).toBe('"etag"');
+  });
+
+  it("rejects an embedded CopyObject error returned with HTTP 200", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("<Error><Code>InternalError</Code></Error>", { status: 200 }),
+    );
+
+    await expect(
+      Effect.runPromise(Effect.flip(store.copy("staging/source", "items/final", "etag"))),
+    ).resolves.toMatchObject({ _tag: "StorageUnavailable" });
+  });
+
   it.each([undefined, "", "invalid", "-1", "1.5"])(
     "rejects a successful HEAD with invalid content-length %s",
     async (contentLength) => {

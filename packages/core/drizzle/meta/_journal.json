@@ -64,6 +64,13 @@
       "when": 1784377134026,
       "tag": "0008_elite_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784470758541,
+      "tag": "0009_exotic_skin",
+      "breakpoints": true
     }
   ]
 }

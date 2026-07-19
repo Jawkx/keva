@@ -33,11 +33,11 @@ export const items = pgTable(
     declaredSize: bigint("declared_size", { mode: "number" }).notNull(),
     size: bigint("size", { mode: "number" }),
     etag: text("etag"),
-    checksum: text("checksum"),
     source: text("source").notNull(),
     status: text("status").$type<ItemStatus>().notNull(),
     storageKey: text("storage_key").notNull(),
     stagingKey: text("staging_key").notNull(),
+    revision: integer("revision").notNull().default(1),
     // Set once an item's staging blob has been purged. Drives the durable
     // staging-cleanup backstop: a null value on a ready item is an outstanding
     // cleanup obligation.
@@ -66,11 +66,43 @@ export const items = pgTable(
     index("items_staging_uncleaned_idx")
       .on(table.createdAt)
       .where(sql`${table.status} = 'ready' and ${table.stagingCleanedAt} is null`),
-    check("items_status_check", sql`${table.status} in ('pending', 'ready', 'deleting')`),
+    check(
+      "items_status_check",
+      sql`${table.status} in ('pending', 'confirming', 'ready', 'deleting')`,
+    ),
     check(
       "items_upload_reservation_state_check",
       sql`${table.uploadReservationState} is null or ${table.uploadReservationState} in ('reserved', 'consumed')`,
     ),
+  ],
+);
+
+export const uploadAttempts = pgTable(
+  "upload_attempts",
+  {
+    id: uuid("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    itemId: uuid("item_id"),
+    retryKey: text("retry_key"),
+    requestHash: text("request_hash"),
+    stagingKey: text("staging_key").notNull(),
+    storageKey: text("storage_key").notNull(),
+    uploadUrl: text("upload_url").notNull(),
+    uploadHeaders: jsonb("upload_headers").$type<Readonly<Record<string, string>>>().notNull(),
+    expectedSize: bigint("expected_size", { mode: "number" }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    state: text("state").$type<"pending" | "confirming" | "confirmed" | "abandoned">().notNull(),
+    observedEtag: text("observed_etag"),
+    cleanupAfter: timestamp("cleanup_after", { withTimezone: true, mode: "string" }).notNull(),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true, mode: "string" }).notNull(),
+    retryCount: integer("retry_count").notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex("upload_attempts_tenant_retry_key_unique")
+      .on(table.tenantId, table.retryKey)
+      .where(sql`${table.retryKey} is not null`),
+    index("upload_attempts_item_idx").on(table.tenantId, table.itemId),
+    index("upload_attempts_cleanup_idx").on(table.cleanupAfter, table.nextRetryAt),
   ],
 );
 
@@ -158,7 +190,7 @@ export const itemEvents = pgTable(
     ),
     check(
       "item_events_action_check",
-      sql`${table.action} in ('uploaded', 'renamed', 'properties_changed', 'deleted')`,
+      sql`${table.action} in ('uploaded', 'updated', 'renamed', 'properties_changed', 'deleted')`,
     ),
   ],
 );
@@ -202,8 +234,7 @@ export const views = pgTable(
 // enforces the nullable quota columns (null = unlimited). Deleting a view
 // cascades to its grants (revokes the links); a manual revoke is a row delete.
 // Orphaned `source = "share:{id}"` on items is harmless. `secret_hash` verifies
-// incoming tokens; `token` holds the plaintext link so it stays viewable after
-// creation (null for grants minted before persistent links existed).
+// incoming tokens; plaintext tokens are returned only at creation time.
 export const shareGrants = pgTable(
   "share_grants",
   {
@@ -215,7 +246,6 @@ export const shareGrants = pgTable(
     kind: text("kind").$type<"link" | "account">().notNull().default("link"),
     name: text("name").notNull(),
     secretHash: text("secret_hash").notNull(),
-    token: text("token"),
     scopes: jsonb("scopes").$type<ReadonlyArray<ShareScope>>().notNull(),
     writeStamp: jsonb("write_stamp").$type<Properties>(),
     maxItemBytes: bigint("max_item_bytes", { mode: "number" }),

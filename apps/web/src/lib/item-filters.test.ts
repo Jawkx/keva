@@ -3,6 +3,7 @@ import {
   buildFilterWhere,
   createConditionDraft,
   decodeFilterParam,
+  draftFromConditions,
   inferScalar,
   operatorForValueCount,
   operatorsForKey,
@@ -28,6 +29,47 @@ describe("item filters", () => {
     ).toEqual([
       { key: "project", op: "has_value", value: "keva" },
       { key: "audience", op: "has_all", value: ["internal", "mobile"] },
+    ]);
+  });
+
+  it("canonicalizes value operators and operands at the query boundary", () => {
+    const row = createConditionDraft("project", "has_value", ["alpha"]);
+    const draft = { kinds: [], size: "any" as const, rows: [row] };
+
+    expect(buildFilterWhere(draft)).toEqual([{ key: "project", op: "has_value", value: "alpha" }]);
+    expect(buildFilterWhere({ ...draft, rows: [{ ...row, values: ["alpha", "beta"] }] })).toEqual([
+      { key: "project", op: "has_any", value: ["alpha", "beta"] },
+    ]);
+    expect(buildFilterWhere({ ...draft, rows: [{ ...row, values: ["beta"] }] })).toEqual([
+      { key: "project", op: "has_value", value: "beta" },
+    ]);
+    expect(
+      buildFilterWhere({
+        ...draft,
+        rows: [{ ...row, op: "has_any", values: ["beta"] }],
+      }),
+    ).toEqual([{ key: "project", op: "has_value", value: "beta" }]);
+  });
+
+  it("round-trips loaded multi-value conditions without narrowing them", () => {
+    const conditions = [{ key: "project", op: "has_any" as const, value: ["alpha", "beta"] }];
+
+    expect(buildFilterWhere(draftFromConditions(conditions))).toEqual(conditions);
+  });
+
+  it("canonicalizes text operators while preserving explicit multi-value semantics", () => {
+    expect(
+      buildFilterWhere({
+        kinds: [],
+        size: "any",
+        rows: [
+          createConditionDraft("description", "contains_text", ["alpha", "beta"]),
+          createConditionDraft("audience", "has_all", ["internal"]),
+        ],
+      }),
+    ).toEqual([
+      { key: "description", op: "contains_any", value: ["alpha", "beta"] },
+      { key: "audience", op: "has_all", value: ["internal"] },
     ]);
   });
 

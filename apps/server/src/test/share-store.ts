@@ -1,6 +1,7 @@
 import {
   type AccountShareRecord,
   Conflict,
+  Forbidden,
   NotFound,
   type ReceivedShare,
   ValidationError,
@@ -8,6 +9,7 @@ import {
   propertiesMatchCondition,
   type Principal,
   type ShareGrantRecord,
+  type Scope,
   type ViewRecord,
 } from "@keva/schema";
 import { Effect } from "effect";
@@ -18,7 +20,6 @@ interface StoredGrant {
   tenantId: string;
   viewId: string;
   name: string;
-  token: string | null;
   scopes: ShareGrantRecord["scopes"];
   writeStamp: ShareGrantRecord["writeStamp"];
   maxItemBytes: number | null;
@@ -56,7 +57,6 @@ export const makeInMemoryShareGrantStore = (
     tenantId: grant.tenantId,
     viewId: grant.viewId,
     name: grant.name,
-    token: grant.token,
     scopes: [...grant.scopes],
     conditions: conditionsFor(grant.viewId),
     writeStamp: grant.writeStamp,
@@ -172,7 +172,6 @@ export const makeInMemoryShareGrantStore = (
             tenantId,
             viewId,
             name: input.name,
-            token: `keva_sh_${id}_${secret}`,
             scopes: [...input.scopes],
             writeStamp: input.writeStamp ?? null,
             maxItemBytes: input.maxItemBytes ?? null,
@@ -266,7 +265,6 @@ export const makeInMemoryShareGrantStore = (
             tenantId,
             viewId: view.id,
             name: view.name,
-            token: null,
             scopes: [...input.scopes],
             writeStamp: input.writeStamp ?? null,
             maxItemBytes: input.maxItemBytes ?? null,
@@ -407,20 +405,37 @@ export const makeInMemoryShareGrantStore = (
           grant: toAccountRecord(grant, account),
         };
       }),
-    updateView: (tenantId, id, input) =>
+    updateView: (principal, id, input) =>
       Effect.gen(function* () {
         const result = yield* Effect.sync(() => {
           const view = views.get(id);
-          if (!view || view.tenantId !== tenantId) return { status: "missing" as const };
+          if (!view || view.tenantId !== principal.tenantId) return { status: "missing" as const };
           const conditions = input.conditions ?? view.conditions;
-          const grantIds = [...grants.values()]
+          const activeGrants = [...grants.values()]
             .map((entry) => entry.grant)
             .filter(
               (grant) =>
-                grant.tenantId === tenantId &&
+                grant.tenantId === principal.tenantId &&
                 grant.viewId === id &&
+                (!grant.expiresAt || new Date(grant.expiresAt) > new Date()),
+            );
+          const requiredScopes: Scope[] = [
+            "views",
+            ...(activeGrants.length ? (["shares"] as const) : []),
+            ...new Set(activeGrants.flatMap((grant) => grant.scopes)),
+          ];
+          if (
+            !(
+              (principal.via === "session" && principal.scopes.includes("admin")) ||
+              requiredScopes.every((scope) => principal.scopes.includes(scope))
+            )
+          ) {
+            return { status: "forbidden" as const, requiredScopes };
+          }
+          const grantIds = activeGrants
+            .filter(
+              (grant) =>
                 grant.scopes.includes("write") &&
-                (!grant.expiresAt || new Date(grant.expiresAt) > new Date()) &&
                 (!conditions.every((condition) => isPropertyKey(condition.key)) ||
                   !conditions.every((condition) =>
                     propertiesMatchCondition(grant.writeStamp ?? {}, condition),
@@ -442,6 +457,11 @@ export const makeInMemoryShareGrantStore = (
           return yield* new Conflict({
             message: "Revoke the affected upload links before changing this view's conditions",
             grantIds: result.grantIds,
+          });
+        }
+        if (result.status === "forbidden") {
+          return yield* new Forbidden({
+            message: `Missing required scopes: ${result.requiredScopes.join(", ")}`,
           });
         }
         return result.status === "updated" ? result.view : null;

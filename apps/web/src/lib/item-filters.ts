@@ -223,8 +223,9 @@ const rowCondition = (row: ConditionDraft): QueryCondition | null => {
   if (key.length === 0) return null;
   if (!opNeedsValue(row.op)) return { key, op: row.op };
   if (row.values.length === 0) return null;
-  if (opAllowsMultiple(row.op)) return { key, op: row.op, value: row.values.map(String) };
-  return { key, op: row.op, value: row.values[0]! };
+  const op = operatorForValueCount(row.op, row.values.length);
+  if (opAllowsMultiple(op)) return { key, op, value: row.values.map(String) };
+  return { key, op, value: row.values[0]! };
 };
 
 export const buildFilterWhere = (draft: FilterDraft): QueryCondition[] => [

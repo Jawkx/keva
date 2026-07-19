@@ -110,13 +110,23 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
           });
         }),
       ),
-    copy: (sourceKey, destinationKey) =>
+    copy: (sourceKey, destinationKey, sourceEtag) =>
       request(destinationKey, {
         method: "PUT",
         headers: {
           "x-amz-copy-source": `/${trimSlashes(config.bucket)}/${encodeKey(sourceKey)}`,
+          ...(sourceEtag ? { "x-amz-copy-source-if-match": `"${sourceEtag}"` } : {}),
         },
-      }).pipe(Effect.asVoid),
+      }).pipe(
+        Effect.flatMap((response) =>
+          Effect.tryPromise({ try: () => response.text(), catch: storageError }),
+        ),
+        Effect.flatMap((body) =>
+          /<CopyObjectResult(?:\s|>)/.test(body) && !/<Error(?:\s|>)/.test(body)
+            ? Effect.void
+            : Effect.fail(storageError()),
+        ),
+      ),
     delete: (key) =>
       request(key, { method: "DELETE" }, (response) => response.ok || response.status === 404).pipe(
         Effect.asVoid,

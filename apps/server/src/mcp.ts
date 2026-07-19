@@ -36,6 +36,7 @@ import type { Hono } from "hono";
 import type { Context } from "hono";
 import type { RuntimeServices } from "./app.js";
 import { mcpScopesToKevaScopes } from "./auth.js";
+import { requireStoragePermissions } from "./auth.js";
 import type { ConnectionStore, McpActorNames, McpAuthorizationServer } from "./better-auth.js";
 import { defectTypes, failureOrElse } from "./effect-failure.js";
 import { BillingMeter } from "./billing.js";
@@ -169,7 +170,7 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         runtime,
         Effect.gen(function* () {
           const upload = yield* decode(InitiateUpload, input);
-          const result = yield* engine.initiate(upload);
+          const result = yield* engine.initiate(upload, upload.retryKey);
           return { ...result, item: toOwnerItem(result.item) };
         }),
         OwnerInitiateUploadResult,
@@ -235,6 +236,9 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
           const patch = yield* decode(ItemPatch, {
             ...(input.set !== undefined ? { set: input.set } : {}),
             ...(input.unset !== undefined ? { unset: input.unset } : {}),
+            ...(input.expectedRevision !== undefined
+              ? { expectedRevision: input.expectedRevision }
+              : {}),
           });
           return toOwnerItem(yield* engine.patch(itemId, patch));
         }),
@@ -307,7 +311,7 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         Effect.gen(function* () {
           const body = yield* decode(UpdateView, input);
           const shares = yield* ShareGrantStore;
-          const view = yield* shares.updateView(principal.tenantId, id, body);
+          const view = yield* shares.updateView(principal, id, body);
           if (!view) return yield* new NotFound({ message: "View not found" });
           return view;
         }),
@@ -326,6 +330,7 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         runtime,
         Effect.gen(function* () {
           const body = yield* decode(CreateShareGrant, input);
+          yield* requireStoragePermissions(principal, ["shares", ...body.scopes]);
           if (body.expiresAt && !isFutureInstant(body.expiresAt)) {
             return yield* new ValidationError({
               message: "Share expiration must be in the future",

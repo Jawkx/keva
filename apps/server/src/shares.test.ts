@@ -1,5 +1,5 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
-import type { CreateShareGrantResult, QueryCondition, ViewRecord } from "@keva/schema";
+import type { CreateShareGrantResult, QueryCondition, Scope, ViewRecord } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
@@ -64,9 +64,17 @@ const sessionResolver = async (headers: Headers) =>
           }
         : null;
 
-const makeApp = () => {
+const makeApp = (scopedTokenScopes?: ReadonlyArray<Scope>) => {
   const views = new Map<string, ViewRecord>();
-  const tokens = Layer.succeed(ApiTokenStore, emptyTokenStore);
+  const tokens = Layer.succeed(ApiTokenStore, {
+    ...emptyTokenStore,
+    resolve: (token: string) =>
+      Effect.succeed(
+        token === "scoped-token" && scopedTokenScopes
+          ? { tenantId: TENANT, scopes: [...scopedTokenScopes], via: "token" as const }
+          : null,
+      ),
+  });
   const shares = Layer.succeed(ShareGrantStore, makeInMemoryShareGrantStore(views, USERS));
   const viewsLayer = Layer.succeed(ViewStore, makeInMemoryViewStore(views));
   const auth = TokenAndStaticAuthFromStoreLive({
@@ -89,6 +97,10 @@ const makeApp = () => {
 const admin = { cookie: ADMIN_COOKIE, "content-type": "application/json" };
 const staticAuth = { authorization: `Bearer ${STATIC}`, "content-type": "application/json" };
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+const scopedAuth = {
+  authorization: "Bearer scoped-token",
+  "content-type": "application/json",
+};
 
 const putToStorage = (uploadUrl: string, init?: RequestInit) => fetch(uploadUrl, init);
 
@@ -183,7 +195,7 @@ describe("server share subsystem", () => {
 
     await expect(
       Effect.runPromise(
-        store.updateView(TENANT, "view-1", {
+        store.updateView({ tenantId: TENANT, scopes: ["admin"], via: "session" }, "view-1", {
           conditions: [{ key: "project", op: "has_value", value: "beta" }],
         }),
       ),
@@ -273,6 +285,84 @@ describe("server share subsystem", () => {
     });
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ _tag: "ValidationError" });
+  });
+
+  it("requires read or write authority matching the share being created", async () => {
+    const sharesOnly = makeApp(["shares"]);
+    const readAttempt = await sharesOnly.request("/api/shares", {
+      method: "POST",
+      headers: scopedAuth,
+      body: JSON.stringify({
+        name: "Download",
+        view: { name: "All", conditions: [] },
+        scopes: ["read"],
+      }),
+    });
+    expect(readAttempt.status).toBe(403);
+
+    const readAndShares = makeApp(["shares", "read"]);
+    const allowed = await readAndShares.request("/api/shares", {
+      method: "POST",
+      headers: scopedAuth,
+      body: JSON.stringify({
+        name: "Download",
+        view: { name: "All", conditions: [] },
+        scopes: ["read"],
+      }),
+    });
+    expect(allowed.status).toBe(200);
+
+    const writeAttempt = await readAndShares.request("/api/shares", {
+      method: "POST",
+      headers: scopedAuth,
+      body: JSON.stringify({
+        name: "Upload",
+        view: { name: "All uploads", conditions: [] },
+        scopes: ["write"],
+        writeStamp: {},
+      }),
+    });
+    expect(writeAttempt.status).toBe(403);
+  });
+
+  it("does not return share secrets from list operations", async () => {
+    const app = makeApp();
+    const { body } = await shareAlpha(app);
+    expect(body.token).toMatch(/^keva_sh_/);
+    expect(body.record).not.toHaveProperty("token");
+
+    const listed = await app.request("/api/shares", { headers: admin });
+    expect(listed.status).toBe(200);
+    expect((await listed.json()) as unknown[]).toEqual([
+      expect.not.objectContaining({ token: expect.anything() }),
+    ]);
+  });
+
+  it("requires shares and delegated content scopes to edit a shared view", async () => {
+    const app = makeApp(["views"]);
+    const { view } = await createView(app, ALPHA);
+    await createShare(app, { name: "Download", viewId: view.id, scopes: ["read"] });
+
+    const viewsOnly = await app.request(`/api/views/${view.id}`, {
+      method: "PATCH",
+      headers: scopedAuth,
+      body: JSON.stringify({ conditions: [] }),
+    });
+    expect(viewsOnly.status).toBe(403);
+
+    const fullyScoped = makeApp(["views", "shares", "read"]);
+    const created = await createView(fullyScoped, ALPHA);
+    await createShare(fullyScoped, {
+      name: "Download",
+      viewId: created.view.id,
+      scopes: ["read"],
+    });
+    const allowed = await fullyScoped.request(`/api/views/${created.view.id}`, {
+      method: "PATCH",
+      headers: scopedAuth,
+      body: JSON.stringify({ conditions: [] }),
+    });
+    expect(allowed.status).toBe(200);
   });
 
   it("scopes reads to the view conditions and redacts internal fields", async () => {

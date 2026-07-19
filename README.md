@@ -22,9 +22,9 @@ It fails to start when either configuration is incomplete. See
 
 Production cleanup runs every five minutes: abandoned pending uploads and
 deleting items are removed, and ready items are reconciled against their staging
-objects. Configure a bucket lifecycle rule to expire the `staging/` prefix only
-after a period longer than the maximum upload and confirmation window; it is a
-defense in depth measure, not the primary cleanup path.
+objects. A bucket lifecycle rule expiring the `staging/` prefix after a period
+longer than the maximum upload and confirmation window is required. Durable
+upload-attempt tombstones remain until each presigned URL expires.
 
 ```ts
 import { KevaClient } from "@keva/sdk";
@@ -59,6 +59,15 @@ The SDK base URL should point at the API prefix (`/api`), not the server root.
 Item responses intentionally exclude tenant IDs and physical storage keys. The
 private `@keva/sdk` is currently `0.0.0` and unpublished, so these internal
 fields were removed immediately rather than carried through a deprecation period.
+
+An item is one immutable file. Its bytes never change after it becomes ready;
+every upload creates a new item, names are non-unique labels, and uploading the
+same name does not replace anything. Keva does not provide built-in file
+versioning. Send a unique `Retry-Key` header (or `retryKey` field) when initiating
+an upload to make a lost-response retry return the same item; reusing it for
+different details returns a conflict. Metadata responses include `revision`;
+patches may include `expectedRevision` to reject stale edits, while omitting it
+keeps last-writer-wins behavior.
 
 ## MCP uploads
 

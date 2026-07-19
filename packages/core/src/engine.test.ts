@@ -205,11 +205,11 @@ describe("KevaEngine", () => {
         declaredSize: 1,
         size: null,
         etag: null,
-        checksum: null,
         source: "upload",
         status: "pending",
         storageKey: "items/tenant-a/abandoned",
         stagingKey: "staging/tenant-a/abandoned",
+        revision: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
         properties: {},
@@ -392,11 +392,11 @@ describe("lifecycle batches", () => {
           declaredSize: 1,
           size: 1,
           etag: null,
-          checksum: null,
           source: "upload",
           status: "deleting",
           storageKey: `items/tenant-lifecycle/${name}`,
           stagingKey: `staging/tenant-lifecycle/${name}`,
+          revision: 1,
           createdAt: timestamp,
           updatedAt: timestamp,
           properties: {},
@@ -458,9 +458,9 @@ describe("KevaEngine item history", () => {
     expect(result.otherTenant.events).toHaveLength(0);
     expect(result.events.map((event) => event.action)).toEqual([
       "deleted",
-      "properties_changed",
-      "properties_changed",
-      "renamed",
+      "updated",
+      "updated",
+      "updated",
       "uploaded",
     ]);
     const [deleted, second, first, renamed, uploaded] = result.events;
@@ -474,13 +474,15 @@ describe("KevaEngine item history", () => {
       source: "upload",
     });
     expect(uploaded!.itemName).toBe("report.txt");
-    expect(renamed!.payload).toEqual({ from: "report.txt", to: "final.txt" });
+    expect(renamed!.payload).toEqual({ name: { from: "report.txt", to: "final.txt" } });
     expect(renamed!.itemName).toBe("final.txt");
-    expect(first!.payload).toEqual({ set: { priority: "high" } });
+    expect(first!.payload).toEqual({ properties: { set: { priority: "high" } } });
     expect(second!.payload).toEqual({
-      set: { status2: "done" },
-      previous: { priority: "high" },
-      unset: ["priority"],
+      properties: {
+        set: { status2: "done" },
+        previous: { priority: "high" },
+        unset: ["priority"],
+      },
     });
     expect(deleted!.payload).toEqual({});
   });
@@ -522,7 +524,34 @@ describe("KevaEngine item history", () => {
       return events.map((event) => event.action);
     }).pipe(Effect.provide(layer()));
 
-    expect(await Effect.runPromise(program)).toEqual(["properties_changed", "uploaded"]);
+    expect(await Effect.runPromise(program)).toEqual(["updated", "uploaded"]);
+  });
+
+  it("records a combined rename and property patch in one event", async () => {
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(actorPrincipal);
+      const item = yield* upload("tenant-a", "draft.txt", new TextEncoder().encode("x"));
+      yield* engine.patch(item.id, { set: { project: "alpha", draft: null }, unset: [] });
+      yield* Effect.sleep(2);
+      yield* engine.patch(item.id, {
+        set: { name: "final.txt", project: "beta", reviewedBy: "alice" },
+        unset: ["draft"],
+      });
+      return yield* engine.events(item.id);
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.events[0]).toMatchObject({
+      action: "updated",
+      payload: {
+        name: { from: "draft.txt", to: "final.txt" },
+        properties: {
+          set: { project: "beta", reviewedBy: "alice" },
+          previous: { project: "alpha", draft: null },
+          unset: ["draft"],
+        },
+      },
+    });
   });
 });
 

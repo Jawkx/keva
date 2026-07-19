@@ -10,18 +10,26 @@ import {
   propertiesMatchCondition,
   type CreateShareGrant,
   type CreateShareGrantResult,
+  Forbidden,
   type Principal,
   type Properties,
   type QueryCondition,
   type ShareGrantRecord,
   type ShareScope,
+  type Scope,
   type UpdateView,
   type ViewRecord,
 } from "@keva/schema";
 import { Context, Effect } from "effect";
 import { type Sql } from "postgres";
 import { jsonbParam } from "./postgres-json.js";
-import { type AuthStrategy, hashSecret, randomTokenPart, secureEqual } from "./auth.js";
+import {
+  type AuthStrategy,
+  hasStoragePermissions,
+  hashSecret,
+  randomTokenPart,
+  secureEqual,
+} from "./auth.js";
 
 // Share tokens mirror API tokens (`keva_sk_…`): a public id and a secret,
 // single-underscore separated over a delimiter-free hex alphabet so the split
@@ -82,10 +90,10 @@ export interface ShareGrantStoreService {
     id: string,
   ) => Effect.Effect<AccountShareAccess | null, StorageUnavailable>;
   readonly updateView: (
-    tenantId: string,
+    principal: Principal,
     id: string,
     input: UpdateView,
-  ) => Effect.Effect<ViewRecord | null, StorageUnavailable | Conflict>;
+  ) => Effect.Effect<ViewRecord | null, StorageUnavailable | Conflict | Forbidden>;
 }
 
 export class ShareGrantStore extends Context.Tag("@keva/server/ShareGrantStore")<
@@ -103,7 +111,6 @@ interface ShareRow {
   readonly kind: "link" | "account";
   readonly name: string;
   readonly secret_hash: string;
-  readonly token: string | null;
   readonly scopes: ReadonlyArray<ShareScope>;
   readonly view_conditions: ReadonlyArray<QueryCondition>;
   readonly write_stamp: Properties | null;
@@ -161,7 +168,6 @@ const shareRecord = (row: ShareRow): ShareGrantRecord => ({
   tenantId: row.tenant_id,
   viewId: row.view_id,
   name: row.name,
-  token: row.token ?? null,
   scopes: [...row.scopes],
   conditions: [...row.view_conditions],
   writeStamp: row.write_stamp ?? null,
@@ -340,10 +346,10 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
             const rows = await transaction<ShareRow[]>`
           with g as (
             insert into share_grants (
-              id, tenant_id, view_id, name, secret_hash, token, scopes, write_stamp,
+              id, tenant_id, view_id, name, secret_hash, scopes, write_stamp,
               max_item_bytes, max_total_bytes, max_items, created_at, expires_at
             ) values (
-              ${id}, ${tenantId}, ${view.id}, ${input.name}, ${secretHash}, ${plaintext},
+              ${id}, ${tenantId}, ${view.id}, ${input.name}, ${secretHash},
               ${jsonbParam(input.scopes)}::jsonb,
               ${jsonbParam(input.writeStamp)}::jsonb,
               ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},
@@ -455,10 +461,10 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
             const unreachableSecretHash = await hashSecret(randomTokenPart(32));
             const grants = await transaction<ShareRow[]>`
               insert into share_grants (
-                id, tenant_id, view_id, kind, name, secret_hash, token, scopes, write_stamp,
+                id, tenant_id, view_id, kind, name, secret_hash, scopes, write_stamp,
                 max_item_bytes, max_total_bytes, max_items, created_at, expires_at
               ) values (
-                ${id}, ${tenantId}, ${view.id}, 'account', ${view.name}, ${unreachableSecretHash}, null,
+                ${id}, ${tenantId}, ${view.id}, 'account', ${view.name}, ${unreachableSecretHash},
                 ${jsonbParam(input.scopes)}::jsonb,
                 ${jsonbParam(input.writeStamp)}::jsonb,
                 ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},
@@ -679,21 +685,26 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
       },
       catch: storageError,
     }),
-  updateView: (tenantId, id, input) =>
+  updateView: (principal, id, input) =>
     Effect.gen(function* () {
       const result = yield* Effect.tryPromise({
         try: () =>
           sql.begin(async (transaction) => {
             const views = await transaction<ViewRow[]>`
-              select * from views where tenant_id = ${tenantId} and id = ${id} for update
+              select * from views where tenant_id = ${principal.tenantId} and id = ${id} for update
             `;
             const view = views[0];
             if (!view) return { status: "missing" as const };
             const conditions = input.conditions ?? view.conditions;
-            const grants = await transaction<{ id: string; write_stamp: Properties | null }[]>`
-              select id, write_stamp from share_grants
-              where tenant_id = ${tenantId} and view_id = ${id}
-                and scopes @> '["write"]'::jsonb
+            const grants = await transaction<
+              {
+                id: string;
+                scopes: ReadonlyArray<ShareScope>;
+                write_stamp: Properties | null;
+              }[]
+            >`
+              select id, scopes, write_stamp from share_grants
+              where tenant_id = ${principal.tenantId} and view_id = ${id}
                 and (expires_at is null or expires_at > now())
                 and (
                   kind = 'link' or exists (
@@ -702,8 +713,21 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
                 )
               for update
             `;
+            const delegatedScopes = [...new Set(grants.flatMap((grant) => grant.scopes))];
+            const requiredScopes: Scope[] = [
+              "views",
+              ...(grants.length ? (["shares"] as const) : []),
+              ...delegatedScopes,
+            ];
+            if (!hasStoragePermissions(principal, requiredScopes)) {
+              return { status: "forbidden" as const, requiredScopes };
+            }
             const grantIds = grants
-              .filter((grant) => incompatibleWriteGrant(grant.write_stamp, conditions))
+              .filter(
+                (grant) =>
+                  grant.scopes.includes("write") &&
+                  incompatibleWriteGrant(grant.write_stamp, conditions),
+              )
               .map((grant) => grant.id);
             if (grantIds.length > 0) return { status: "incompatible" as const, grantIds };
             const updated = await transaction<ViewRow[]>`
@@ -712,7 +736,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
                 icon = coalesce(${input.icon ?? null}::text, icon),
                 conditions = coalesce(${jsonbParam(input.conditions)}::jsonb, conditions),
                 updated_at = now()
-              where tenant_id = ${tenantId} and id = ${id}
+              where tenant_id = ${principal.tenantId} and id = ${id}
               returning *
             `;
             return { status: "updated" as const, view: viewRecord(updated[0]!) };
@@ -723,6 +747,11 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
         return yield* new Conflict({
           message: "Revoke the affected upload links before changing this view's conditions",
           grantIds: result.grantIds,
+        });
+      }
+      if (result.status === "forbidden") {
+        return yield* new Forbidden({
+          message: `Missing required scopes: ${result.requiredScopes.join(", ")}`,
         });
       }
       return result.status === "updated" ? result.view : null;
