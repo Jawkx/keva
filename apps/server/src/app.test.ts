@@ -116,61 +116,6 @@ describe("server API", () => {
     expect(disposed).toBe(3);
   });
 
-  it("protects admin usage routes with the separate admin token", async () => {
-    const adminUser = {
-      id: "user-1",
-      name: "Admin Test",
-      email: "admin@example.com",
-      tenantId: "tenant-1",
-      usedBytes: 25,
-      quotaBytes: 100,
-      quotaSource: "custom" as const,
-    };
-    const updates: Array<number | null> = [];
-    const app = createApp({
-      layer,
-      admin: {
-        token: "admin-secret",
-        store: {
-          listUsers: async () => [adminUser],
-          setQuota: async (_userId, quotaBytes) => {
-            updates.push(quotaBytes);
-            return {
-              ...adminUser,
-              quotaBytes,
-              quotaSource: quotaBytes === null ? "unlimited" : "custom",
-            };
-          },
-        },
-      },
-    });
-
-    expect((await app.request("/api/admin/users")).status).toBe(401);
-    const listed = await app.request("/api/admin/users", {
-      headers: { authorization: "Bearer admin-secret" },
-    });
-    expect(listed.status).toBe(200);
-    expect(await listed.json()).toEqual({ users: [adminUser] });
-
-    // 0 is a real cap (blocks all uploads), not an unlimited sentinel.
-    const blocked = await app.request("/api/admin/users/user-1/quota", {
-      method: "PUT",
-      headers: { authorization: "Bearer admin-secret", "content-type": "application/json" },
-      body: JSON.stringify({ quotaBytes: 0 }),
-    });
-    expect(blocked.status).toBe(200);
-    // -1 and null are the unlimited sentinels.
-    for (const sentinel of [-1, null]) {
-      const unlimited = await app.request("/api/admin/users/user-1/quota", {
-        method: "PUT",
-        headers: { authorization: "Bearer admin-secret", "content-type": "application/json" },
-        body: JSON.stringify({ quotaBytes: sentinel }),
-      });
-      expect(unlimited.status).toBe(200);
-    }
-    expect(updates).toEqual([0, null, null]);
-  });
-
   it("requires authentication", async () => {
     const app = createApp({ layer });
     const unauthorized = await app.request("/api/query", {

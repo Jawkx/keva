@@ -362,38 +362,6 @@ export const UsageResult = Schema.Struct({
 });
 export type UsageResult = typeof UsageResult.Type;
 
-export const AdminQuotaSource = Schema.Literal("default", "custom", "unlimited");
-export type AdminQuotaSource = typeof AdminQuotaSource.Type;
-
-export const AdminUserUsage = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  email: Schema.String,
-  tenantId: Schema.NullOr(Schema.String),
-  usedBytes: Schema.Number,
-  quotaBytes: Schema.NullOr(Schema.Number),
-  quotaSource: AdminQuotaSource,
-});
-export type AdminUserUsage = typeof AdminUserUsage.Type;
-
-export const AdminUsersResult = Schema.Struct({
-  users: Schema.Array(AdminUserUsage),
-});
-export type AdminUsersResult = typeof AdminUsersResult.Type;
-
-export const UpdateAdminQuota = Schema.Union(
-  Schema.Struct({
-    quotaBytes: Schema.NullOr(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(-1))),
-  }),
-  Schema.Struct({ useDefault: Schema.Literal(true) }),
-);
-export type UpdateAdminQuota = typeof UpdateAdminQuota.Type;
-
-export const UpdateAdminQuotaResult = Schema.Struct({
-  user: AdminUserUsage,
-});
-export type UpdateAdminQuotaResult = typeof UpdateAdminQuotaResult.Type;
-
 export const BatchDelete = Schema.Struct({
   ids: Schema.Array(ItemId).pipe(Schema.minItems(1), Schema.maxItems(1000)),
 });

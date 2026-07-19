@@ -1,5 +1,4 @@
 import type { AppServiceOptions } from "./app.js";
-import { makeAdminStore } from "./admin.js";
 import {
   betterAuthSessionResolver,
   createBetterAuth,
@@ -28,7 +27,6 @@ export interface ServerOptionsConfig {
   readonly betterAuthUrl?: string;
   readonly trustedOrigins?: ReadonlyArray<string>;
   readonly emailVerification?: EmailVerificationConfig;
-  readonly adminToken?: string;
   readonly polar?: BillingConfig & {
     readonly accessToken: string;
     readonly webhookSecret: string;
@@ -113,9 +111,6 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
           authHandler: auth.handler,
           ...(auth.billing && auth.polar
             ? { billing: { store: auth.billing, polar: auth.polar } }
-            : {}),
-          ...(config.adminToken
-            ? { admin: { token: config.adminToken, store: makeAdminStore(database.sql) } }
             : {}),
           mcp: {
             mcpUrl: `${(config.betterAuthUrl ?? config.baseUrl).replace(/\/$/, "")}/mcp`,

@@ -58,7 +58,6 @@ const appOptions = createServerOptions({
         betterAuthUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:5173",
       }
     : {}),
-  ...(process.env.KEVA_ADMIN_TOKEN ? { adminToken: process.env.KEVA_ADMIN_TOKEN } : {}),
   ...(emailVerification ? { emailVerification } : {}),
   ...(polar ? { polar } : {}),
   trustedOrigins,

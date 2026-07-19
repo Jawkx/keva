@@ -1,4 +1,4 @@
-import { BlobStore, DEFAULT_STORAGE_QUOTA_BYTES, makeKevaEngine, MetadataStore } from "@keva/core";
+import { BlobStore, makeKevaEngine, MetadataStore } from "@keva/core";
 import {
   CreateAccountShare,
   BillingOverview,
@@ -6,7 +6,6 @@ import {
   ChangeBillingPlan,
   Conflict,
   ItemPatch,
-  UpdateAdminQuota,
   BatchDelete,
   CreateShareGrant,
   CreateView,
@@ -35,7 +34,6 @@ import {
   requireAdminSession,
   requireStorageManagement,
 } from "./auth.js";
-import type { AdminStore } from "./admin.js";
 import { defectTypes, failureOrElse } from "./effect-failure.js";
 import { mountMcp, type McpDeps } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
@@ -138,7 +136,6 @@ const redactItem = (principal: Principal, item: KevaItem) =>
 export interface AppServiceOptions {
   readonly layer: Layer.Layer<AppServices>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
-  readonly admin?: { readonly token: string; readonly store: AdminStore };
   readonly billing?: {
     readonly store: BillingStore;
     readonly polar: Polar;
@@ -158,7 +155,6 @@ export type CreateAppOptions =
 interface ResolvedServices {
   readonly runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
-  readonly admin?: { readonly token: string; readonly store: AdminStore };
   readonly billing?: AppServiceOptions["billing"];
   readonly mcp?: McpDeps;
   readonly dispose?: () => Promise<void>;
@@ -176,7 +172,6 @@ const makeServices = (options: AppServiceOptions): ResolvedServices => ({
     Layer.merge(options.layer, BillingMeterLive(options.billing?.store)),
   ),
   ...(options.authHandler ? { authHandler: options.authHandler } : {}),
-  ...(options.admin ? { admin: options.admin } : {}),
   ...(options.billing ? { billing: options.billing } : {}),
   ...(options.mcp ? { mcp: options.mcp } : {}),
   ...(options.dispose ? { dispose: options.dispose } : {}),
@@ -256,42 +251,6 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         reportServiceFailure(context, failureFrom(ready.cause));
       }
       return context.json({ ok: false, service: "keva" }, 503);
-    }),
-  );
-
-  const withAdmin = (
-    context: Context,
-    handler: (admin: NonNullable<ResolvedServices["admin"]>) => Response | Promise<Response>,
-  ) =>
-    withServices(context, ({ admin }) => {
-      if (!admin) return context.notFound();
-      const authorization = context.req.header("authorization") ?? "";
-      if (authorization !== `Bearer ${admin.token}`) {
-        return context.json({ message: "Invalid admin token" }, 401);
-      }
-      return handler(admin);
-    });
-
-  app.get("/api/admin/users", (context) =>
-    withAdmin(context, async ({ store }) =>
-      context.json({ users: await store.listUsers(context.req.query("search") ?? "") }),
-    ),
-  );
-
-  app.put("/api/admin/users/:id/quota", async (context) =>
-    withAdmin(context, async ({ store }) => {
-      const body = await context.req.json().catch(() => null);
-      const decoded = Schema.decodeUnknownEither(UpdateAdminQuota)(body);
-      if (decoded._tag === "Left") return context.json({ message: "Invalid quota update" }, 400);
-      const requestedQuota =
-        "useDefault" in decoded.right ? DEFAULT_STORAGE_QUOTA_BYTES : decoded.right.quotaBytes;
-      // null and -1 are the unlimited sentinels; a non-negative value is a real
-      // byte cap (0 blocks all uploads). Do not fold 0 into unlimited.
-      const quotaBytes = requestedQuota === null || requestedQuota === -1 ? null : requestedQuota;
-      const user = await store.setQuota(context.req.param("id"), quotaBytes);
-      return user
-        ? context.json({ user })
-        : context.json({ message: "User has no storage account" }, 404);
     }),
   );
 

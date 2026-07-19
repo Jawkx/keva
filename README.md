@@ -93,14 +93,6 @@ curl --fail-with-body --request PUT \
   'https://presigned-storage-url.example/...'
 ```
 
-## Local admin console
-
-The quota console is a local operator tool. Start the Node API with persistent
-database/S3 settings and a short-lived `KEVA_ADMIN_TOKEN`; it binds only to
-loopback. In another terminal run `pnpm --filter @keva/admin dev`, open
-`http://127.0.0.1:5174`, enter the runtime token, and stop both processes when
-finished. Never deploy the admin app or expose the admin API beyond loopback.
-
 ## Database
 
 Set `DATABASE_URL`, then run `pnpm db:migrate`. The checked-in migrations include
