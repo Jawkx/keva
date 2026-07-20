@@ -111,9 +111,7 @@ export function useUploadQueue({
         onSuccess: (item) => {
           cacheConfirmedItemUpload(queryClient, item, {
             listQueryKey: itemsQueryKey(activeSearch, activeWhere, order),
-            refetchLists: Boolean(
-              order !== "created_at_desc" || activeSearch.trim() || activeWhere.length > 0,
-            ),
+            refetchLists: true,
           });
           setUploads((prev) => prev.filter((row) => row.id !== id));
         },

@@ -20,8 +20,7 @@ import { ShareShell } from "./ShareShell";
 import { ShareUnavailable } from "./ShareUnavailable";
 import { ShareUploadButton, ShareUploadProgress, ShareUploadZone } from "./ShareUploadZone";
 import { useShareUpload } from "./use-share-upload";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { FileBrowserFrame } from "../../components/file-browser/FileBrowserFrame";
 import { Spinner } from "@/components/ui/spinner";
 
 export function ShareReadView({ canWrite }: { canWrite: boolean }) {
@@ -48,42 +47,24 @@ export function ShareReadView({ canWrite }: { canWrite: boolean }) {
   );
 
   return (
-    <div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
-      {splitOpen ? (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 w-full min-w-0 flex-1">
-          <ResizablePanel defaultSize={58} minSize={35} className="min-w-0">
-            {list}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={42} minSize={28} className="min-w-0">
-            <ShareFileDetail
-              key={selectedId}
-              itemId={selectedId!}
-              onClose={() => setSelectedId(null)}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">{list}</div>
-      )}
-
-      <Sheet
-        open={Boolean(selectedId) && !isWide}
-        onOpenChange={(open) => {
+    <div className="flex min-h-0 flex-1 p-3 md:p-4">
+      <FileBrowserFrame
+        list={list}
+        detailOpen={Boolean(selectedId)}
+        onDetailOpenChange={(open) => {
           if (!open) setSelectedId(null);
         }}
-      >
-        <SheetContent side="bottom" showCloseButton={false} className="h-[85vh] p-0">
-          <SheetTitle className="sr-only">File details</SheetTitle>
-          {selectedId && (
+        detailTitle="Shared file details"
+        detail={
+          selectedId ? (
             <ShareFileDetail
               key={selectedId}
               itemId={selectedId}
               onClose={() => setSelectedId(null)}
             />
-          )}
-        </SheetContent>
-      </Sheet>
+          ) : null
+        }
+      />
     </div>
   );
 }

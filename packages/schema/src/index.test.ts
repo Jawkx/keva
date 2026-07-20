@@ -171,6 +171,19 @@ describe("schema", () => {
     expect(() => Schema.decodeUnknownSync(Query)({ order: "name_desc" })).toThrow();
   });
 
+  it("validates offset pagination independently of cursors", () => {
+    expect(Schema.decodeUnknownSync(Query)({ offset: 0 })).toMatchObject({ offset: 0 });
+    expect(Schema.decodeUnknownSync(Query)({ offset: Number.MAX_SAFE_INTEGER })).toMatchObject({
+      offset: Number.MAX_SAFE_INTEGER,
+    });
+    expect(() => Schema.decodeUnknownSync(Query)({ offset: -1 })).toThrow();
+    expect(() => Schema.decodeUnknownSync(Query)({ offset: 1.5 })).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(Query)({ offset: Number.MAX_SAFE_INTEGER + 1 }),
+    ).toThrow();
+    expect(() => Schema.decodeUnknownSync(Query)({ cursor: "cursor", offset: 0 })).toThrow();
+  });
+
   it("round-trips timestamp and numeric cursors", () => {
     const id = "00000000-0000-0000-0000-000000000000";
     expect(decodeCursor(encodeCursor(["2026-01-01T00:00:00.000Z", id]))).toEqual([

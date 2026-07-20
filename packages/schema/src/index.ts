@@ -289,15 +289,25 @@ export const Query = Schema.Struct({
     default: () => 100,
   }),
   cursor: Schema.optional(Schema.String),
+  offset: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.between(0, Number.MAX_SAFE_INTEGER)),
+  ),
   order: Schema.optionalWith(QueryOrder, {
     default: () => "created_at_asc",
   }),
-});
+}).pipe(
+  Schema.filter((query) => query.cursor === undefined || query.offset === undefined, {
+    message: () => "Query cursor and offset are mutually exclusive",
+  }),
+);
 export type Query = typeof Query.Type;
 
 export const QueryResult = Schema.Struct({
   items: Schema.Array(KevaItem),
   nextCursor: Schema.optional(Schema.String),
+  totalCount: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.between(0, Number.MAX_SAFE_INTEGER)),
+  ),
 });
 export type QueryResult = typeof QueryResult.Type;
 
@@ -703,12 +713,18 @@ export const toOwnerItem = (item: KevaItem): OwnerItem => toSharedItem(item);
 export const SharedQueryResult = Schema.Struct({
   items: Schema.Array(SharedItem),
   nextCursor: Schema.optional(Schema.String),
+  totalCount: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.between(0, Number.MAX_SAFE_INTEGER)),
+  ),
 });
 export type SharedQueryResult = typeof SharedQueryResult.Type;
 
 export const OwnerQueryResult = Schema.Struct({
   items: Schema.Array(OwnerItem),
   nextCursor: Schema.optional(Schema.String),
+  totalCount: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.between(0, Number.MAX_SAFE_INTEGER)),
+  ),
 });
 export type OwnerQueryResult = typeof OwnerQueryResult.Type;
 

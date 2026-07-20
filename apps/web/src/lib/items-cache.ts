@@ -37,7 +37,8 @@ export const itemsQueryKey = (
   search: string,
   where: readonly QueryCondition[],
   order: QueryOrder,
-) => ["items", { search, where, order }] as const;
+  offset?: number,
+) => ["items", { search, where, order, offset }] as const;
 
 export function removeItemsFromPages(data: ItemsCache, ids: Iterable<string>): ItemsCache {
   const drop = new Set(ids);

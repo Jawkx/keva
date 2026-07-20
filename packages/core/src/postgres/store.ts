@@ -797,11 +797,34 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           sql`(name ilike ${pattern} escape '\' or content_type ilike ${pattern} escape '\')`,
         );
       }
+      const orderSql = queryOrder(sql, order);
+      if (query.offset !== undefined) {
+        const offset = query.offset;
+        const where = predicates.reduce((left, right) => sql`${left} and ${right}`);
+        const rows = yield* attempt(
+          async () =>
+            await sql<{ items: ItemRow[]; total_count: string }[]>`
+              with matched as materialized (
+                select * from items where ${where}
+              ), page as (
+                select * from matched
+                order by ${orderSql.by}
+                limit ${query.limit} offset ${offset}
+              )
+              select coalesce(json_agg(page order by ${orderSql.by}), '[]'::json) as items,
+                     (select count(*)::bigint from matched) as total_count
+              from page
+            `,
+        );
+        return {
+          items: rows[0]!.items.map(mapRow),
+          totalCount: Number(rows[0]!.total_count),
+        };
+      }
       if (query.cursor) {
         const cursor = yield* decodeQueryCursor(query.cursor, order);
         predicates.push(queryOrder(sql, order).afterCursor(cursor));
       }
-      const orderSql = queryOrder(sql, order);
       const where = predicates.reduce((left, right) => sql`${left} and ${right}`);
       const rows = yield* attempt(
         () =>

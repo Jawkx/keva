@@ -735,9 +735,12 @@ describe("server share subsystem", () => {
     const queried = await app.request(`/api/shared-views/${grant.id}/query`, {
       method: "POST",
       headers: { cookie: RECIPIENT_COOKIE, "content-type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ offset: 0 }),
     });
-    expect(await queried.json()).toMatchObject({ items: [{ id: initiated.item.id }] });
+    expect(await queried.json()).toMatchObject({
+      items: [{ id: initiated.item.id }],
+      totalCount: 1,
+    });
 
     const revoked = await app.request(`/api/account-shares/${grant.id}`, {
       method: "DELETE",

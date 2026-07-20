@@ -1,8 +1,6 @@
 import {
   ArrowDown,
   ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
   CloudUpload,
   EllipsisVertical,
   Files,
@@ -18,7 +16,7 @@ import {
 import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
@@ -32,6 +30,8 @@ import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, QueryOrder, UpdateView } from "@keva/schema";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
+import { FileBrowserFrame } from "../components/file-browser/FileBrowserFrame";
+import { NumberedPagination } from "../components/file-browser/NumberedPagination";
 import { FilterBar, FilterMenuButton } from "../components/FilterBar";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
@@ -46,7 +46,12 @@ import {
   type FileSortColumn,
 } from "../lib/file-order";
 import { formatPropertyValue, formatBytes, formatRelative } from "../lib/format";
-import { decodeFilterParam, draftFromConditions } from "../lib/item-filters";
+import {
+  buildFilterWhere,
+  decodeFilterParam,
+  draftFromConditions,
+  type KindId,
+} from "../lib/item-filters";
 import { removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { listShares, sharesQueryKey } from "../lib/shares";
@@ -61,7 +66,6 @@ import {
   viewQueryKey,
   viewsQueryKey,
 } from "../lib/views";
-import { useMediaQuery } from "../lib/useMediaQuery";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -103,8 +107,6 @@ import {
 } from "@/components/ui/empty";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -147,6 +149,13 @@ const uploadStampDescription = (
 };
 
 const PAGE_SIZE = 50;
+const QUICK_KINDS: ReadonlyArray<{ id: KindId | "all"; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "document", label: "Document" },
+  { id: "image", label: "Photo" },
+  { id: "video", label: "Video" },
+  { id: "audio", label: "Audio" },
+];
 const plural = (n: number) => (n === 1 ? "item" : "items");
 
 const canonCondition = (c: QueryCondition) => JSON.stringify([c.key, c.op, c.value ?? null]);
@@ -162,6 +171,12 @@ const columnHelper = createColumnHelper<FileRow>();
 
 const selectModeOf = (meta: unknown) =>
   Boolean((meta as { selectMode?: boolean } | undefined)?.selectMode);
+
+const responsiveColumnClass = (columnId: string) => {
+  if (columnId === "updatedAt") return "hidden sm:table-cell";
+  if (columnId === "properties") return "hidden lg:table-cell";
+  return undefined;
+};
 
 const columns = [
   columnHelper.display({
@@ -247,18 +262,11 @@ const columns = [
       </span>
     ),
   }),
-  columnHelper.accessor((o) => new Date(o.createdAt).getTime(), {
-    id: "createdAt",
-    header: ({ table }) => (
-      <SortButton
-        label="Created"
-        column="createdAt"
-        order={table.options.meta!.order}
-        onSort={table.options.meta!.onSort}
-      />
-    ),
+  columnHelper.accessor((o) => new Date(o.updatedAt).getTime(), {
+    id: "updatedAt",
+    header: "Updated",
     cell: (ctx) => (
-      <span className="text-muted-foreground">{formatRelative(ctx.row.original.createdAt)}</span>
+      <span className="text-muted-foreground">{formatRelative(ctx.row.original.updatedAt)}</span>
     ),
   }),
   columnHelper.display({
@@ -342,7 +350,6 @@ function FilesPageContent({
   const { id: selectedId, viewId } = useParams<{ id: string; viewId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const isWide = useMediaQuery("(min-width: 1024px)");
   const headerSlot = useAppHeaderSlot();
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -352,7 +359,6 @@ function FilesPageContent({
     setPagination({ identity: "", pageIndex: 0 });
   }, []);
   const {
-    search,
     activeSearch,
     activeWhere,
     setActiveWhere,
@@ -360,7 +366,6 @@ function FilesPageContent({
     setFilterDraft,
     applyWhere,
     filterByProperty,
-    onSearchChange,
     clearFilters,
   } = useFileFilters({ viewId, initialWhere, onQueryChange: resetQueryState });
   const order = fileOrderFromParam(searchParams.get("sort"));
@@ -442,29 +447,27 @@ function FilesPageContent({
     onError: (err) => toast.error(errorMessage(err)),
   });
 
-  const itemsQuery = useInfiniteQuery({
-    queryKey: itemsQueryKey(activeSearch, activeWhere, order),
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+  const itemsQuery = useQuery({
+    queryKey: itemsQueryKey(activeSearch, activeWhere, order, pageIndex * PAGE_SIZE),
+    queryFn: () =>
       keva.query({
         where: activeWhere,
         ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
         order,
         limit: PAGE_SIZE,
-        ...(pageParam ? { cursor: pageParam } : {}),
+        offset: pageIndex * PAGE_SIZE,
       }),
-    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: (previous) => previous,
   });
 
   const loading = itemsQuery.isLoading;
   const error = itemsQuery.error ? errorMessage(itemsQuery.error) : null;
-  const pages = itemsQuery.data?.pages;
-  const serverItems = pages?.[pageIndex]?.items ?? EMPTY_FILE_ROWS;
+  const serverItems = itemsQuery.data?.items ?? EMPTY_FILE_ROWS;
+  const totalItems = itemsQuery.data?.totalCount ?? serverItems.length;
 
-  const splitOpen = Boolean(selectedId) && isWide;
   const columnVisibility: VisibilityState = {
-    createdAt: !splitOpen,
-    properties: !splitOpen,
+    updatedAt: !selectedId,
+    properties: !selectedId,
   };
 
   const selectMode = Object.values(rowSelection).some(Boolean);
@@ -585,22 +588,9 @@ function FilesPageContent({
     updateViewMutation.mutate({ icon: key });
   };
 
-  const loadedNextPage = Boolean(pages?.[pageIndex + 1]);
-  const canGoNext =
-    loadedNextPage || (pageIndex === (pages?.length ?? 0) - 1 && itemsQuery.hasNextPage);
-  const goToPreviousPage = () => {
-    if (pageIndex === 0) return;
+  const goToPage = (nextPage: number) => {
     setRowSelection({});
-    setPagination({ identity: queryIdentity, pageIndex: pageIndex - 1 });
-  };
-  const goToNextPage = async () => {
-    if (!canGoNext) return;
-    if (!loadedNextPage) {
-      const result = await itemsQuery.fetchNextPage();
-      if (!result.data?.pages[pageIndex + 1]) return;
-    }
-    setRowSelection({});
-    setPagination({ identity: queryIdentity, pageIndex: pageIndex + 1 });
+    setPagination({ identity: queryIdentity, pageIndex: nextPage - 1 });
   };
 
   const tableInner = (
@@ -611,7 +601,10 @@ function FilesPageContent({
             {group.headers.map((header) => (
               <TableHead
                 key={header.id}
-                className={header.column.id === "select" ? "w-10" : undefined}
+                className={cn(
+                  header.column.id === "select" && "w-10",
+                  responsiveColumnClass(header.column.id),
+                )}
                 aria-sort={
                   fileSortColumn(order) === header.column.id ? fileSortDirection(order) : undefined
                 }
@@ -629,7 +622,10 @@ function FilesPageContent({
           ? Array.from({ length: 8 }).map((_, i) => (
               <TableRow key={`skeleton-${i}`}>
                 {table.getVisibleLeafColumns().map((col) => (
-                  <TableCell key={col.id} className={col.id === "select" ? "w-10" : undefined}>
+                  <TableCell
+                    key={col.id}
+                    className={cn(col.id === "select" && "w-10", responsiveColumnClass(col.id))}
+                  >
                     {col.id !== "select" && <Skeleton className="h-5 w-full" />}
                   </TableCell>
                 ))}
@@ -650,7 +646,10 @@ function FilesPageContent({
                 {row.getVisibleCells().map((cell) => (
                   <TableCell
                     key={cell.id}
-                    className={cell.column.id === "select" ? "w-10" : undefined}
+                    className={cn(
+                      cell.column.id === "select" && "w-10",
+                      responsiveColumnClass(cell.column.id),
+                    )}
                     onClick={cell.column.id === "select" ? (e) => e.stopPropagation() : undefined}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -662,89 +661,29 @@ function FilesPageContent({
     </Table>
   );
 
-  const pageControls = (pageIndex > 0 || canGoNext) && (
-    <div className="flex items-center justify-between border-t px-3 py-3">
-      <span className="text-sm text-muted-foreground tabular-nums">Page {pageIndex + 1}</span>
-      <div className="flex items-center gap-1">
-        <Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={goToPreviousPage}>
-          <ChevronLeft data-icon="inline-start" />
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!canGoNext || itemsQuery.isFetchingNextPage}
-          onClick={() => void goToNextPage()}
-        >
-          {itemsQuery.isFetchingNextPage ? "Loading…" : "Next"}
-          {!itemsQuery.isFetchingNextPage && <ChevronRight data-icon="inline-end" />}
-        </Button>
-      </div>
-    </div>
+  const pageControls = (
+    <NumberedPagination
+      page={pageIndex + 1}
+      totalItems={totalItems}
+      pageSize={PAGE_SIZE}
+      disabled={itemsQuery.isFetching}
+      onPageChange={goToPage}
+    />
   );
 
-  const hasItems = uploads.length > 0 || Boolean(pages?.some((page) => page.items.length > 0));
-  const emptyPage = pageIndex > 0 || canGoNext;
+  const hasItems = uploads.length > 0 || totalItems > 0;
+  const emptyPage = pageIndex > 0;
 
   const leftPane = (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-3 p-3">
-        {selectMode ? (
-          <>
-            <span className="text-sm font-medium">{selectedCount} selected</span>
-            <Button variant="ghost" onClick={() => setRowSelection({})}>
-              Clear
-            </Button>
-            <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
-              <AlertDialogTrigger
-                render={
-                  <Button
-                    variant="destructive"
-                    className="ml-auto"
-                    disabled={bulkDeleteMutation.isPending}
-                  />
-                }
-              >
-                <Trash2 data-icon="inline-start" />
-                Delete
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Delete {selectedCount} {plural(selectedCount)}?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This permanently removes the selected {plural(selectedCount)} and their
-                    properties. This cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    onClick={() => {
-                      setBulkConfirmOpen(false);
-                      onBulkDelete();
-                    }}
-                  >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </>
-        ) : (
-          <>
-            <div className="relative w-full min-w-0 sm:w-72">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by name or type…"
-                className="pl-8"
-                value={search}
-                onChange={onSearchChange}
-              />
-            </div>
-            <div className="flex items-center gap-3 sm:ml-auto">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-3">
+      <div className="flex shrink-0 flex-col gap-3 px-1">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Files className="size-5 shrink-0 text-muted-foreground" />
+            <h1 className="truncate font-heading text-xl font-semibold">{view?.name ?? "All"}</h1>
+          </div>
+          {!selectMode && (
+            <div className="flex items-center gap-2">
               <FilterMenuButton
                 draft={filterDraft}
                 onDraftChange={setFilterDraft}
@@ -755,11 +694,92 @@ function FilesPageContent({
                 Upload
               </Button>
             </div>
-          </>
+          )}
+        </div>
+        {!selectMode && (
+          <div
+            className="flex w-fit max-w-full flex-wrap items-center rounded-lg border border-border bg-muted/70 p-1"
+            aria-label="File type"
+          >
+            {QUICK_KINDS.map((kind) => {
+              const active =
+                kind.id === "all"
+                  ? filterDraft.kinds.length === 0
+                  : filterDraft.kinds[0] === kind.id && filterDraft.kinds.length === 1;
+              return (
+                <Button
+                  key={kind.id}
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={active}
+                  className={cn(
+                    "rounded-md px-4 text-muted-foreground shadow-none hover:text-foreground",
+                    active &&
+                      "bg-background text-foreground hover:bg-background hover:text-foreground",
+                  )}
+                  onClick={() => {
+                    const nextDraft = {
+                      ...filterDraft,
+                      kinds: kind.id === "all" ? [] : [kind.id],
+                    };
+                    setFilterDraft(nextDraft);
+                    applyWhere(buildFilterWhere(nextDraft));
+                  }}
+                >
+                  {kind.label}
+                </Button>
+              );
+            })}
+          </div>
         )}
       </div>
+      {selectMode && (
+        <div className="flex shrink-0 flex-wrap items-center gap-3 px-1">
+          <span className="text-sm font-medium">{selectedCount} selected</span>
+          <Button variant="ghost" onClick={() => setRowSelection({})}>
+            Clear
+          </Button>
+          <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+            <AlertDialogTrigger
+              render={
+                <Button
+                  variant="destructive"
+                  className="ml-auto"
+                  disabled={bulkDeleteMutation.isPending}
+                />
+              }
+            >
+              <Trash2 data-icon="inline-start" />
+              Delete
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Delete {selectedCount} {plural(selectedCount)}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently removes the selected {plural(selectedCount)} and their
+                  properties. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={() => {
+                    setBulkConfirmOpen(false);
+                    onBulkDelete();
+                  }}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
       {!selectMode && showFilterRow && (
-        <div className="mx-3 mb-2 flex shrink-0 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1">
           <FilterBar
             draft={filterDraft}
             onDraftChange={setFilterDraft}
@@ -818,13 +838,13 @@ function FilesPageContent({
         </div>
       )}
       {!selectMode && uploadStampEntries.length > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1">
           <span className="text-xs text-muted-foreground">
             {uploadStampDescription(uploadStampEntries)}
           </span>
         </div>
       )}
-      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto rounded-xl border">
         {!loading && rows.length === 0 ? (
           <>
             <Empty className="py-16">
@@ -959,9 +979,9 @@ function FilesPageContent({
         if (dragDepth.current === 0) setPageDragging(false);
       }}
       onDrop={onPageDrop}
-      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden"
+      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden p-3 md:p-4"
     >
-      {headerSlot && createPortal(headerControls, headerSlot)}
+      {headerSlot && viewId && createPortal(headerControls, headerSlot)}
 
       {pageDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
@@ -986,43 +1006,24 @@ function FilesPageContent({
         </div>
       )}
 
-      {splitOpen ? (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 w-full min-w-0 flex-1">
-          <ResizablePanel defaultSize={58} minSize={35} className="min-w-0">
-            {leftPane}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={42} minSize={28} className="min-w-0">
-            <FileDetail
-              key={selectedId}
-              itemId={selectedId!}
-              onClose={closeDetail}
-              onDeleted={onDeleted}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">{leftPane}</div>
-      )}
-
-      <Sheet
-        open={Boolean(selectedId) && !isWide}
-        onOpenChange={(open) => {
+      <FileBrowserFrame
+        list={leftPane}
+        detailOpen={Boolean(selectedId)}
+        onDetailOpenChange={(open) => {
           if (!open) closeDetail();
         }}
-      >
-        <SheetContent side="bottom" showCloseButton={false} className="h-[85vh] p-0">
-          <SheetTitle className="sr-only">File details</SheetTitle>
-          {selectedId && (
+        detailTitle="File details"
+        detail={
+          selectedId ? (
             <FileDetail
               key={selectedId}
               itemId={selectedId}
               onClose={closeDetail}
               onDeleted={onDeleted}
             />
-          )}
-        </SheetContent>
-      </Sheet>
+          ) : null
+        }
+      />
 
       <input
         ref={uploadInputRef}

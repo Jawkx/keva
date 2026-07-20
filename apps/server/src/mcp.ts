@@ -43,6 +43,11 @@ import { BillingMeter } from "./billing.js";
 import { ShareGrantStore } from "./shares.js";
 import { ViewStore } from "./views.js";
 
+const McpOwnerQueryResult = Schema.Struct({
+  ...OwnerQueryResult.fields,
+  items: OwnerQueryResult.fields.items.pipe(Schema.mutable),
+});
+
 type AppRuntime = ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
 
 const McpItemContentResult = Schema.Struct({
@@ -125,7 +130,7 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
           const result = yield* engine.query(query);
           return { ...result, items: result.items.map(toOwnerItem) };
         }),
-        OwnerQueryResult,
+        McpOwnerQueryResult,
       ),
     getItem: (id) =>
       runValidated(

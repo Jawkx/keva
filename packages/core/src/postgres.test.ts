@@ -171,6 +171,30 @@ describe("Postgres metadata store", () => {
     expect(found.other.items).toHaveLength(0);
   });
 
+  it("returns offset pages with an exact filtered total", async () => {
+    const tenant = crypto.randomUUID();
+    const result = await run(
+      Effect.gen(function* () {
+        const p = principal(tenant);
+        yield* createReady(p, "numbered-1.txt", "a");
+        yield* createReady(p, "excluded.txt", "b");
+        yield* createReady(p, "numbered-2.txt", "c");
+        yield* createReady(p, "numbered-3.txt", "d");
+        return yield* makeKevaEngine(p).query({
+          where: [],
+          search: "numbered-",
+          limit: 1,
+          offset: 1,
+          order: "created_at_asc",
+        });
+      }),
+    );
+
+    expect(result.items.map((item) => item.name)).toEqual(["numbered-2.txt"]);
+    expect(result.totalCount).toBe(3);
+    expect(result.nextCursor).toBeUndefined();
+  });
+
   it("resolves a concurrent confirm-vs-reaper race to exactly one winner", async () => {
     const tenant = crypto.randomUUID();
     const p = principal(tenant);

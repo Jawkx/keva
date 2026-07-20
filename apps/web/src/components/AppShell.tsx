@@ -1,13 +1,4 @@
-import {
-  ChevronsUpDown,
-  Database,
-  Files,
-  Inbox,
-  LogOut,
-  PanelLeft,
-  Plug,
-  Settings,
-} from "lucide-react";
+import { Database, Files, Inbox, LogOut, PanelLeft, Plug, Search, Settings } from "lucide-react";
 import { type MouseEvent, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,7 +36,6 @@ import {
 } from "@/components/ui/sidebar";
 
 function AppSidebar() {
-  const { data } = authClient.useSession();
   const { data: usage } = useUsage();
   const { data: views } = useQuery({ queryKey: viewsQueryKey, queryFn: listViews });
   const { data: receivedShares } = useQuery({
@@ -53,24 +43,8 @@ function AppSidebar() {
     queryFn: listReceivedShares,
     refetchInterval: 60_000,
   });
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const location = useLocation();
   const { state, toggleSidebar, setOpen } = useSidebar();
-  const [signingOut, setSigningOut] = useState(false);
-
-  const onSignOut = async () => {
-    setSigningOut(true);
-    try {
-      await authClient.signOut();
-    } finally {
-      queryClient.clear();
-      navigate("/login", { replace: true });
-    }
-  };
-
-  const email = data?.user?.email ?? "";
-  const name = data?.user?.name || email;
   const acceptedShares = (receivedShares ?? []).filter((share) => share.status === "accepted");
   const pendingShareCount = (receivedShares ?? []).filter(
     (share) => share.status === "pending",
@@ -201,6 +175,16 @@ function AppSidebar() {
               <span>Connection</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={isActive("/settings", false)}
+              tooltip="Settings"
+              render={<Link to="/settings" />}
+            >
+              <Settings />
+              <span>Settings</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
         {usage && usage.itemCount > 0 && (
           <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
@@ -214,47 +198,57 @@ function AppSidebar() {
             </span>
           </div>
         )}
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent" />
-                }
-              >
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted text-sm font-medium uppercase">
-                  {(name || "?").charAt(0)}
-                </div>
-                <div className="flex flex-1 flex-col gap-0.5 text-left leading-none">
-                  <span className="truncate text-sm font-medium">{name}</span>
-                  <span className="truncate text-xs text-muted-foreground">{email}</span>
-                </div>
-                <ChevronsUpDown className="ml-auto size-4 text-muted-foreground" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="start" className="min-w-56">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{email}</DropdownMenuLabel>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuItem render={<Link to="/settings" />}>
-                    <Settings />
-                    Settings
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuItem variant="destructive" disabled={signingOut} onClick={onSignOut}>
-                    <LogOut />
-                    {signingOut ? "Signing out…" : "Sign out"}
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+function HeaderAccount() {
+  const { data } = authClient.useSession();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [signingOut, setSigningOut] = useState(false);
+  const email = data?.user?.email ?? "";
+  const name = data?.user?.name || email;
+
+  const onSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await authClient.signOut();
+    } finally {
+      queryClient.clear();
+      navigate("/login", { replace: true });
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground uppercase">
+          {(name || "?").charAt(0)}
+        </div>
+        <span className="hidden max-w-36 truncate text-sm font-medium lg:block">{name}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{email}</DropdownMenuLabel>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem render={<Link to="/settings" />}>
+            <Settings />
+            Settings
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem variant="destructive" disabled={signingOut} onClick={onSignOut}>
+            <LogOut />
+            {signingOut ? "Signing out…" : "Sign out"}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -273,9 +267,22 @@ export function AppShell() {
       <AppSidebar />
 
       <SidebarInset className="h-svh min-w-0 overflow-hidden">
-        <header className="flex h-14 shrink-0 items-center gap-2 px-4">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b px-4">
           <SidebarTrigger className="-ml-1 md:hidden" />
-          <div ref={setHeaderSlot} className="flex min-w-0 flex-1 items-center gap-2" />
+          <div className="relative hidden w-full max-w-xl sm:block">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              disabled
+              aria-label="Global search coming soon"
+              placeholder="Search everything (coming soon)"
+              className="h-9 w-full rounded-lg border bg-muted/40 pr-3 pl-9 text-sm text-muted-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-80"
+            />
+          </div>
+          <div
+            ref={setHeaderSlot}
+            className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end"
+          />
+          <HeaderAccount />
         </header>
         <AppHeaderSlotContext.Provider value={headerSlot}>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

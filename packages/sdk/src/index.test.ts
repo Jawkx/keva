@@ -62,6 +62,23 @@ describe("KevaClient", () => {
     await expect(client.get("bad")).rejects.toBeInstanceOf(KevaProtocolError);
   });
 
+  it("sends offset pagination and decodes the total count", async () => {
+    let body: unknown;
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body));
+        return Response.json({ items: [item], totalCount: 7 });
+      },
+    });
+
+    await expect(
+      client.query({ where: [], limit: 2, offset: 4, order: "created_at_desc" }),
+    ).resolves.toMatchObject({ totalCount: 7 });
+    expect(body).toMatchObject({ offset: 4 });
+  });
+
   it("exposes typed failures through Effect methods", async () => {
     const client = new KevaClient({
       baseUrl: "https://keva.invalid",
@@ -482,6 +499,7 @@ describe("ShareClient", () => {
 
   it("sends the share bearer token and decodes redacted items", async () => {
     const authHeaders: unknown[] = [];
+    let queryBody: unknown;
     const client = shareClient("https://keva.invalid/api", "keva_sh_abc_def");
     const withFetch = new ShareClient({
       baseUrl: "https://keva.invalid/api",
@@ -489,7 +507,10 @@ describe("ShareClient", () => {
       fetch: async (input, init) => {
         const url = String(input);
         authHeaders.push((init?.headers as Record<string, string>)?.authorization);
-        if (url.endsWith("/query")) return Response.json({ items: [sharedItem] });
+        if (url.endsWith("/query")) {
+          queryBody = JSON.parse(String(init?.body));
+          return Response.json({ items: [sharedItem], totalCount: 3 });
+        }
         if (url.endsWith("/shares/self"))
           return Response.json({ name: "Alpha", scopes: ["read"], expiresAt: null, upload: null });
         throw new Error(`unexpected ${url}`);
@@ -497,8 +518,15 @@ describe("ShareClient", () => {
     });
     expect(client).toBeInstanceOf(ShareClient);
 
-    const result = await withFetch.query();
+    const result = await withFetch.query({
+      where: [],
+      limit: 1,
+      offset: 1,
+      order: "created_at_desc",
+    });
     expect(result.items[0]!.name).toBe("shared.txt");
+    expect(result.totalCount).toBe(3);
+    expect(queryBody).toMatchObject({ offset: 1 });
     expect(result.items[0]).not.toHaveProperty("storageKey");
     await withFetch.self();
     expect(authHeaders).toEqual(["Bearer keva_sh_abc_def", "Bearer keva_sh_abc_def"]);
@@ -565,12 +593,19 @@ describe("SharedViewClient", () => {
             },
           });
         }
+        if (url.endsWith("/shared-views/grant-account/query")) {
+          expect(JSON.parse(String(init?.body))).toMatchObject({ offset: 0 });
+          return Response.json({ items: [], totalCount: 0 });
+        }
         throw new Error(`unexpected ${url}`);
       },
     });
 
     await expect(client.self()).resolves.toMatchObject({ name: "Client drop" });
-    expect(headers).toEqual([{}]);
-    expect(credentials).toEqual(["include"]);
+    await expect(
+      client.query({ where: [], limit: 10, offset: 0, order: "created_at_desc" }),
+    ).resolves.toMatchObject({ totalCount: 0 });
+    expect(headers).toEqual([{}, { "content-type": "application/json" }]);
+    expect(credentials).toEqual(["include", "include"]);
   });
 });

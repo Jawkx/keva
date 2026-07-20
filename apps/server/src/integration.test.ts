@@ -97,11 +97,13 @@ describe("server integration — HTTP roundtrip", () => {
       headers: { ...auth, "content-type": "application/json" },
       body: JSON.stringify({
         where: [{ key: "tags", op: "has_value", value: "brown" }],
+        offset: 0,
       }),
     });
     expect(queried.status).toBe(200);
-    const queryBody = (await queried.json()) as { items: { id: string }[] };
+    const queryBody = (await queried.json()) as { items: { id: string }[]; totalCount: number };
     expect(queryBody.items.map((o) => o.id)).toContain(initiated.item.id);
+    expect(queryBody.totalCount).toBe(1);
 
     const contentResponse = await app.request(`/api/items/${initiated.item.id}/content`, {
       method: "GET",
