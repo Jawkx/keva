@@ -35,8 +35,11 @@ describe("worker entry", () => {
       S3_ENDPOINT: "https://storage.worker.test/path",
     });
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
-    expect(response.headers.get("Content-Security-Policy")).toContain(
-      "connect-src 'self' https://storage.worker.test https://cdn.jsdelivr.net",
+    const contentSecurityPolicy = response.headers.get("Content-Security-Policy");
+    expect(contentSecurityPolicy).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(contentSecurityPolicy).toContain("style-src-attr 'unsafe-inline'");
+    expect(contentSecurityPolicy).toContain(
+      "connect-src 'self' https://storage.worker.test https://cdn.jsdelivr.net blob:",
     );
   });
 
