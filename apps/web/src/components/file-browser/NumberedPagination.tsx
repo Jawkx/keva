@@ -45,7 +45,7 @@ export function NumberedPagination({
   const nextDisabled = disabled || page >= totalPages;
 
   return (
-    <Pagination className="justify-start border-t px-3 py-3">
+    <Pagination className="justify-start px-3 py-3">
       <PaginationContent>
         <PaginationItem>
           <PaginationPrevious
