@@ -32,6 +32,7 @@ import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
 import { FileBrowserFrame } from "../components/file-browser/FileBrowserFrame";
 import { NumberedPagination } from "../components/file-browser/NumberedPagination";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { FilterBar, FilterMenuButton } from "../components/FilterBar";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
@@ -594,8 +595,11 @@ function FilesPageContent({
   };
 
   const tableInner = (
-    <Table className="[&_td]:px-3 [&_td]:py-3.5 [&_th]:px-3 [&_tr]:border-0">
-      <TableHeader>
+    <Table
+      containerClassName="overflow-visible"
+      className="[&_td]:px-3 [&_td]:py-3.5 [&_th]:px-3 [&_tr]:border-0"
+    >
+      <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id} className="group">
             {group.headers.map((header) => (
@@ -848,8 +852,8 @@ function FilesPageContent({
   );
 
   const tablePane = (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl border">
+      <ScrollArea className="h-auto min-h-0 flex-1">
         {!loading && rows.length === 0 ? (
           <Empty className="py-16">
             <EmptyHeader>
@@ -881,8 +885,13 @@ function FilesPageContent({
         ) : (
           tableInner
         )}
+      </ScrollArea>
+      <div className="flex shrink-0 items-center border-t">
+        {pageControls}
+        <span className="shrink-0 pr-3 text-sm text-muted-foreground tabular-nums">
+          {totalItems} {plural(totalItems)}
+        </span>
       </div>
-      <div className="shrink-0">{pageControls}</div>
     </div>
   );
 
