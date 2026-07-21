@@ -696,6 +696,7 @@ describe("KevaEngine share access", () => {
     const perFile = Effect.gen(function* () {
       const p = sharePrincipal("tenant-a", {
         scopes: ["read", "write"],
+        grantId: "grant-per-file",
         writeStamp: stamp,
         limits: { maxItemBytes: 3, maxTotalBytes: null, maxItems: null },
       });
@@ -713,6 +714,7 @@ describe("KevaEngine share access", () => {
     const itemCount = Effect.gen(function* () {
       const p = sharePrincipal("tenant-a", {
         scopes: ["read", "write"],
+        grantId: "grant-item-count",
         writeStamp: stamp,
         limits: { maxItemBytes: null, maxTotalBytes: null, maxItems: 1 },
       });
@@ -738,6 +740,7 @@ describe("KevaEngine share access", () => {
     const totalBytes = Effect.gen(function* () {
       const p = sharePrincipal("tenant-a", {
         scopes: ["read", "write"],
+        grantId: "grant-total-bytes",
         writeStamp: stamp,
         limits: { maxItemBytes: null, maxTotalBytes: 5, maxItems: null },
       });
