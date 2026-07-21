@@ -674,8 +674,8 @@ function FilesPageContent({
   const hasItems = uploads.length > 0 || totalItems > 0;
   const emptyPage = pageIndex > 0;
 
-  const leftPane = (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-3">
+  const browserControls = (
+    <div className="flex w-full min-w-0 shrink-0 flex-col gap-3">
       <div className="flex shrink-0 flex-col gap-3 px-1">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -844,45 +844,48 @@ function FilesPageContent({
           </span>
         </div>
       )}
-      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto rounded-xl border">
-        {!loading && rows.length === 0 ? (
-          <>
-            <Empty className="py-16">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  {!filtered && !hasItems ? <Files /> : <Search />}
-                </EmptyMedia>
-                <EmptyTitle>
-                  {emptyPage
-                    ? "No items on this page"
-                    : !filtered && !hasItems
-                      ? "No items yet"
-                      : "No matches"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {emptyPage
-                    ? "Items on this page may have been deleted. Use the pagination controls to continue browsing."
-                    : !filtered && !hasItems
-                      ? "Upload your first file, or drop one anywhere on this page."
-                      : "No items match your search and filters."}
-                </EmptyDescription>
-              </EmptyHeader>
-              {!filtered && !hasItems && (
-                <Button onClick={() => uploadInputRef.current?.click()}>
-                  <Upload data-icon="inline-start" />
-                  Upload
-                </Button>
-              )}
-            </Empty>
-            {pageControls}
-          </>
-        ) : (
-          <>
-            {tableInner}
-            {pageControls}
-          </>
-        )}
-      </div>
+    </div>
+  );
+
+  const tablePane = (
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto rounded-xl border">
+      {!loading && rows.length === 0 ? (
+        <>
+          <Empty className="py-16">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                {!filtered && !hasItems ? <Files /> : <Search />}
+              </EmptyMedia>
+              <EmptyTitle>
+                {emptyPage
+                  ? "No items on this page"
+                  : !filtered && !hasItems
+                    ? "No items yet"
+                    : "No matches"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {emptyPage
+                  ? "Items on this page may have been deleted. Use the pagination controls to continue browsing."
+                  : !filtered && !hasItems
+                    ? "Upload your first file, or drop one anywhere on this page."
+                    : "No items match your search and filters."}
+              </EmptyDescription>
+            </EmptyHeader>
+            {!filtered && !hasItems && (
+              <Button onClick={() => uploadInputRef.current?.click()}>
+                <Upload data-icon="inline-start" />
+                Upload
+              </Button>
+            )}
+          </Empty>
+          {pageControls}
+        </>
+      ) : (
+        <>
+          {tableInner}
+          {pageControls}
+        </>
+      )}
     </div>
   );
 
@@ -979,7 +982,7 @@ function FilesPageContent({
         if (dragDepth.current === 0) setPageDragging(false);
       }}
       onDrop={onPageDrop}
-      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden p-3 md:p-4"
+      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 overflow-hidden p-3 md:p-4"
     >
       {headerSlot && viewId && createPortal(headerControls, headerSlot)}
 
@@ -1006,8 +1009,10 @@ function FilesPageContent({
         </div>
       )}
 
+      {browserControls}
+
       <FileBrowserFrame
-        list={leftPane}
+        list={tablePane}
         detailOpen={Boolean(selectedId)}
         onDetailOpenChange={(open) => {
           if (!open) closeDetail();
