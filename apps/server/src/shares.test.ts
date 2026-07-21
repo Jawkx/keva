@@ -16,6 +16,7 @@ import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
 
 const STATIC = "static-token";
+const SCOPED_TOKEN = "keva_sk_scoped_token";
 const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
 const RECIPIENT_COOKIE = "keva_session=recipient";
@@ -70,7 +71,7 @@ const makeApp = (scopedTokenScopes?: ReadonlyArray<Scope>) => {
     ...emptyTokenStore,
     resolve: (token: string) =>
       Effect.succeed(
-        token === "scoped-token" && scopedTokenScopes
+        token === SCOPED_TOKEN && scopedTokenScopes
           ? { tenantId: TENANT, scopes: [...scopedTokenScopes], via: "token" as const }
           : null,
       ),
@@ -98,7 +99,7 @@ const admin = { cookie: ADMIN_COOKIE, "content-type": "application/json" };
 const staticAuth = { authorization: `Bearer ${STATIC}`, "content-type": "application/json" };
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 const scopedAuth = {
-  authorization: "Bearer scoped-token",
+  authorization: `Bearer ${SCOPED_TOKEN}`,
   "content-type": "application/json",
 };
 

@@ -101,17 +101,18 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
       }),
     );
     const { id } = initiated.item;
+    const { stagingKey } = initiated.item;
 
-    expect(initiated.uploadUrl).toContain(`staging/t1/${id}`);
+    expect(initiated.uploadUrl).toContain(stagingKey);
     await putToPresigned(initiated.uploadUrl, bytes, "application/octet-stream");
-    expect(mock.store.has(`staging/t1/${id}`)).toBe(true);
+    expect(mock.store.has(stagingKey)).toBe(true);
 
     const confirmed = await runtime.runPromise(engine.confirm(id));
     expect(confirmed.status).toBe("ready");
     expect(confirmed.storageKey).toBe(`items/t1/${id}`);
 
     expect(mock.store.has(`items/t1/${id}`)).toBe(true);
-    expect(mock.store.has(`staging/t1/${id}`)).toBe(false);
+    expect(mock.store.has(stagingKey)).toBe(false);
 
     const dl = await runtime.runPromise(engine.download(id));
     expect(dl.url).toContain(`items/t1/${id}`);
