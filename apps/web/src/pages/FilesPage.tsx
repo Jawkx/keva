@@ -848,9 +848,9 @@ function FilesPageContent({
   );
 
   const tablePane = (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto rounded-xl border">
-      {!loading && rows.length === 0 ? (
-        <>
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border">
+        {!loading && rows.length === 0 ? (
           <Empty className="py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -878,14 +878,11 @@ function FilesPageContent({
               </Button>
             )}
           </Empty>
-          {pageControls}
-        </>
-      ) : (
-        <>
-          {tableInner}
-          {pageControls}
-        </>
-      )}
+        ) : (
+          tableInner
+        )}
+      </div>
+      <div className="shrink-0">{pageControls}</div>
     </div>
   );
 
