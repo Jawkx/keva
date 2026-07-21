@@ -94,7 +94,11 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
       }),
     presignDownload: (key) => presign(key, "GET", config.downloadTtlSeconds ?? 300),
     head: (key) =>
-      request(key, { method: "HEAD" }, (response) => response.ok || response.status === 404).pipe(
+      request(
+        key,
+        { method: "HEAD", headers: { "accept-encoding": "identity" } },
+        (response) => response.ok || response.status === 404,
+      ).pipe(
         Effect.flatMap((response) => {
           if (response.status === 404) return Effect.succeed(null);
           const contentLength = response.headers.get("content-length");

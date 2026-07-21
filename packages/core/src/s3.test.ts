@@ -30,23 +30,29 @@ describe("S3BlobStore", () => {
     });
   });
 
-  it("reads metadata from a successful HEAD response", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, {
+  it("requests identity encoding and reads metadata from a successful HEAD response", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const request = input as Request;
+      return new Response(null, {
         status: 200,
-        headers: {
-          "content-length": "42",
-          "content-type": "text/plain",
-          etag: '"object-etag"',
-        },
-      }),
-    );
+        headers:
+          request.headers.get("accept-encoding") === "identity"
+            ? {
+                "content-length": "42",
+                "content-type": "text/plain",
+                etag: '"object-etag"',
+              }
+            : { "content-encoding": "gzip" },
+      });
+    });
 
     await expect(Effect.runPromise(store.head("objects/item"))).resolves.toEqual({
       size: 42,
       etag: "object-etag",
       contentType: "text/plain",
     });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.headers.get("accept-encoding")).toBe("identity");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
