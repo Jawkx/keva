@@ -113,6 +113,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -147,19 +148,22 @@ const propertyChipLabel = (key: string, value: PropertyValue): string => {
   return `${key}:${formatPropertyValue(value)}`;
 };
 
-const uploadStampDescription = (
-  entries: readonly (readonly [string, PropertyValue])[],
-  subject = "New uploads will",
-): string => {
-  const tags = entries.filter(([, value]) => value === null).map(([key]) => key);
-  const values = entries
-    .filter((entry): entry is readonly [string, Exclude<PropertyValue, null>] => entry[1] !== null)
-    .map(([key, value]) => `${key}: ${formatPropertyValue(value)}`);
-  if (tags.length > 0 && values.length > 0)
-    return `${subject} be tagged ${tags.join(", ")} and receive ${values.join(", ")}`;
-  if (tags.length > 0) return `${subject} be tagged ${tags.join(", ")}`;
-  return `${subject} receive ${values.join(", ")}`;
-};
+function UploadPropertyBadges({
+  entries,
+}: {
+  entries: readonly (readonly [string, PropertyValue])[];
+}) {
+  return (
+    <div className="flex flex-wrap justify-center gap-1.5">
+      {entries.map(([key, value]) => (
+        <Badge key={key} variant="secondary">
+          {key}
+          {value !== null && `: ${formatPropertyValue(value)}`}
+        </Badge>
+      ))}
+    </div>
+  );
+}
 
 const PAGE_SIZE = 50;
 const QUICK_KINDS: ReadonlyArray<{ id: KindId | "all"; label: string }> = [
@@ -887,10 +891,31 @@ function FilesPageContent({
                 onDraftChange={setFilterDraft}
                 onApply={applyWhere}
               />
-              <Button onClick={() => uploadInputRef.current?.click()}>
-                <Upload data-icon="inline-start" />
-                Upload
-              </Button>
+              {uploadStampEntries.length > 0 ? (
+                <HoverCard>
+                  <HoverCardTrigger
+                    delay={100}
+                    closeDelay={100}
+                    render={<Button onClick={() => uploadInputRef.current?.click()} />}
+                  >
+                    <Upload data-icon="inline-start" />
+                    Upload
+                  </HoverCardTrigger>
+                  <HoverCardContent side="bottom" className="w-80">
+                    <div className="flex flex-col gap-2 py-1">
+                      <p className="text-muted-foreground">
+                        These properties will be added to every file you upload
+                      </p>
+                      <UploadPropertyBadges entries={uploadStampEntries} />
+                    </div>
+                  </HoverCardContent>
+                </HoverCard>
+              ) : (
+                <Button onClick={() => uploadInputRef.current?.click()}>
+                  <Upload data-icon="inline-start" />
+                  Upload
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -1037,13 +1062,6 @@ function FilesPageContent({
           </AlertDialog>
         </div>
       )}
-      {!selectMode && uploadStampEntries.length > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1">
-          <span className="text-xs text-muted-foreground">
-            {uploadStampDescription(uploadStampEntries)}
-          </span>
-        </div>
-      )}
     </div>
   );
 
@@ -1110,13 +1128,16 @@ function FilesPageContent({
     >
       {pageDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8 text-center">
-            <CloudUpload className="size-7 text-primary" />
-            <p className="font-medium">Drop to upload</p>
+          <div className="flex max-w-lg flex-col items-center gap-4 rounded-xl border-2 border-dashed border-primary px-12 py-10 text-center">
+            <CloudUpload className="size-10 text-primary" />
+            <p className="font-heading text-4xl font-semibold tracking-tight">Drop to upload</p>
             {uploadStampEntries.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {uploadStampDescription(uploadStampEntries, "Files will")}
-              </p>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-sm text-muted-foreground">
+                  These properties will be added to every file you drop:
+                </p>
+                <UploadPropertyBadges entries={uploadStampEntries} />
+              </div>
             )}
           </div>
         </div>
