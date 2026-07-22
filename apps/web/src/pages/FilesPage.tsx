@@ -13,7 +13,7 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -53,7 +53,7 @@ import {
   draftFromConditions,
   type KindId,
 } from "../lib/item-filters";
-import { removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
+import { cachePatchedItem, removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { listShares, sharesQueryKey } from "../lib/shares";
 import { uploadStampFrom } from "../lib/upload-stamp";
@@ -83,6 +83,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogClose,
@@ -125,6 +133,12 @@ declare module "@tanstack/react-table" {
     onRetryUpload: (row: FileRow) => void;
     onFilterByProperty: (key: string, value: PropertyValue) => void;
     onOpenItem: (itemId: string) => void;
+    renamingId: string | null;
+    renameDraft: string;
+    renameInputRef: (node: HTMLInputElement | null) => void;
+    onRenameDraftChange: (value: string) => void;
+    onCommitRename: (item: FileRow) => void;
+    onCancelRename: () => void;
     order: QueryOrder;
     onSort: (column: FileSortColumn) => void;
   }
@@ -158,6 +172,10 @@ const QUICK_KINDS: ReadonlyArray<{ id: KindId | "all"; label: string }> = [
   { id: "audio", label: "Audio" },
 ];
 const plural = (n: number) => (n === 1 ? "item" : "items");
+const extensionStart = (name: string): number => {
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? name.length : dot;
+};
 
 const canonCondition = (c: QueryCondition) => JSON.stringify([c.key, c.op, c.value ?? null]);
 const sameConditions = (a: readonly QueryCondition[], b: readonly QueryCondition[]): boolean =>
@@ -234,18 +252,44 @@ const columns = [
   }),
   columnHelper.accessor("name", {
     header: "Name",
-    cell: ({ getValue, row, table }) => (
-      <button
-        type="button"
-        className="block max-w-full truncate text-left text-muted-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={(event) => {
-          event.stopPropagation();
-          table.options.meta?.onOpenItem(row.original.id);
-        }}
-      >
-        {getValue()}
-      </button>
-    ),
+    cell: ({ getValue, row, table }) => {
+      const meta = table.options.meta;
+      if (meta?.renamingId === row.original.id) {
+        return (
+          <Input
+            ref={meta.renameInputRef}
+            value={meta.renameDraft}
+            aria-label={`Rename ${getValue()}`}
+            className="h-7 w-full min-w-0 px-2 py-0"
+            onChange={(event) => meta.onRenameDraftChange(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            onBlur={() => meta.onCommitRename(row.original)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                meta.onCancelRename();
+              }
+            }}
+          />
+        );
+      }
+      return (
+        <button
+          type="button"
+          className="block max-w-full truncate text-left text-muted-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={(event) => {
+            event.stopPropagation();
+            meta?.onOpenItem(row.original.id);
+          }}
+        >
+          {getValue()}
+        </button>
+      );
+    },
   }),
   columnHelper.accessor((o) => o.size ?? 0, {
     id: "size",
@@ -373,6 +417,15 @@ function FilesPageContent({
   const queryIdentity = JSON.stringify([activeSearch, activeWhere, order]);
   const pageIndex = pagination.identity === queryIdentity ? pagination.pageIndex : 0;
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [renameItem, setRenameItem] = useState<{ id: string; draft: string } | null>(null);
+  const [deleteItem, setDeleteItem] = useState<FileRow | null>(null);
+
+  const renameInputRef = (node: HTMLInputElement | null) => {
+    if (node) {
+      node.focus();
+      node.setSelectionRange(0, extensionStart(node.value));
+    }
+  };
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -491,6 +544,26 @@ function FilesPageContent({
     [pageIndex, serverItems, uploads],
   );
 
+  const renameMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      keva.patch(id, { set: { name }, unset: [] }),
+    onSuccess: (updated) => cachePatchedItem(queryClient, updated),
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  const commitRename = async (item: FileRow) => {
+    if (renameItem?.id !== item.id) return;
+    const next = renameItem.draft.trim();
+    if (!next || next === item.name) {
+      setRenameItem(null);
+      return;
+    }
+    try {
+      await renameMutation.mutateAsync({ id: item.id, name: next });
+      setRenameItem(null);
+    } catch {}
+  };
+
   const table = useReactTable({
     data: tableData,
     columns,
@@ -504,6 +577,13 @@ function FilesPageContent({
       onRetryUpload: retryUpload,
       onFilterByProperty: filterByProperty,
       onOpenItem: (itemId) => navigate(itemId === selectedId ? listPath : itemPath(itemId)),
+      renamingId: renameItem?.id ?? null,
+      renameDraft: renameItem?.draft ?? "",
+      renameInputRef,
+      onRenameDraftChange: (draft) =>
+        setRenameItem((current) => (current ? { ...current, draft } : current)),
+      onCommitRename: (item) => void commitRename(item),
+      onCancelRename: () => setRenameItem(null),
       order,
       onSort: (column) => {
         const nextOrder = nextFileOrder(order, column);
@@ -649,32 +729,66 @@ function FilesPageContent({
                 ))}
               </TableRow>
             ))
-          : rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={
-                  row.getIsSelected() || row.original.id === selectedId ? "selected" : undefined
-                }
-                className={cn("group", !row.original.upload && "cursor-pointer")}
-                onClick={() => {
-                  if (row.original.upload) return;
-                  navigate(row.original.id === selectedId ? listPath : itemPath(row.original.id));
-                }}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cn(
-                      cell.column.id === "select" && "w-10",
-                      responsiveColumnClass(cell.column.id),
-                    )}
-                    onClick={cell.column.id === "select" ? (e) => e.stopPropagation() : undefined}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+          : rows.map((row) => {
+              const tableRow = (
+                <TableRow
+                  data-state={
+                    row.getIsSelected() || row.original.id === selectedId ? "selected" : undefined
+                  }
+                  className={cn("group", !row.original.upload && "cursor-pointer")}
+                  onContextMenu={() => {
+                    if (!row.original.upload) row.toggleSelected(true);
+                  }}
+                  onClick={() => {
+                    if (row.original.upload) return;
+                    navigate(row.original.id === selectedId ? listPath : itemPath(row.original.id));
+                  }}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell
+                      key={cell.id}
+                      className={cn(
+                        cell.column.id === "select" && "w-10",
+                        responsiveColumnClass(cell.column.id),
+                      )}
+                      onClick={cell.column.id === "select" ? (e) => e.stopPropagation() : undefined}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              );
+
+              if (row.original.upload) return <Fragment key={row.id}>{tableRow}</Fragment>;
+
+              return (
+                <ContextMenu key={row.id}>
+                  <ContextMenuTrigger render={tableRow} />
+                  <ContextMenuContent>
+                    <ContextMenuGroup>
+                      <ContextMenuItem
+                        onClick={() =>
+                          setRenameItem({ id: row.original.id, draft: row.original.name })
+                        }
+                      >
+                        <Pencil />
+                        Rename
+                      </ContextMenuItem>
+                    </ContextMenuGroup>
+                    <ContextMenuSeparator />
+                    <ContextMenuGroup>
+                      <ContextMenuItem
+                        variant="destructive"
+                        onClick={() => setDeleteItem(row.original)}
+                      >
+                        <Trash2 />
+                        Delete
+                      </ContextMenuItem>
+                    </ContextMenuGroup>
+                  </ContextMenuContent>
+                </ContextMenu>
+              );
+            })}
       </TableBody>
     </Table>
   );
@@ -1051,6 +1165,36 @@ function FilesPageContent({
           ) : null
         }
       />
+
+      <AlertDialog
+        open={Boolean(deleteItem)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteItem(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{deleteItem?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the item and its properties. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() => {
+                if (!deleteItem) return;
+                bulkDeleteMutation.mutate([deleteItem.id]);
+                setDeleteItem(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <input
         ref={uploadInputRef}
