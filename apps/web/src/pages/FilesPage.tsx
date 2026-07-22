@@ -534,20 +534,34 @@ function FilesPageContent({
   };
 
   const closeDetail = () => navigate(listPath);
-  const onDeleted = () => navigate(listPath);
+  const navigateAfterDeletion = (deletedIds: Iterable<string>) => {
+    const deleted = new Set(deletedIds);
+    const selectedIndex = rows.findIndex((row) => row.original.id === selectedId);
+    const nextRow =
+      rows.slice(selectedIndex + 1).find((row) => !row.original.upload && !deleted.has(row.id)) ??
+      rows
+        .slice(0, Math.max(0, selectedIndex))
+        .reverse()
+        .find((row) => !row.original.upload && !deleted.has(row.id));
+
+    navigate(nextRow ? itemPath(nextRow.original.id) : listPath, { replace: true });
+  };
+  const onDeleted = () => navigateAfterDeletion(selectedId ? [selectedId] : []);
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => keva.deleteMany(ids),
-    onSuccess: (result, ids) => {
+    onSuccess: (result) => {
       if (result.deleted.length > 0) {
         toast.success(`Deleted ${result.deleted.length} ${plural(result.deleted.length)}`);
       }
       if (result.failed.length > 0) {
         toast.error(`Failed to delete ${result.failed.length} ${plural(result.failed.length)}`);
       }
-      removeDeletedItemsFromCache(queryClient, result.deleted);
       setRowSelection({});
-      if (selectedId && ids.includes(selectedId)) navigate(listPath);
+      removeDeletedItemsFromCache(queryClient, result.deleted);
+      if (selectedId && result.deleted.includes(selectedId)) {
+        navigateAfterDeletion(result.deleted);
+      }
     },
     onError: (err) => toast.error(errorMessage(err)),
   });

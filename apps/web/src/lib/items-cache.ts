@@ -1,9 +1,9 @@
-import type { InfiniteData, QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import type { QueryCondition, QueryOrder } from "@keva/schema";
 import type { KevaItem, QueryResult } from "@keva/sdk";
 import { revokeObjectUrl } from "./object-url-cache";
 
-export type ItemsCache = InfiniteData<QueryResult, string | undefined>;
+export type ItemsCache = QueryResult;
 
 export const itemListsQueryKey = ["items"] as const;
 
@@ -42,31 +42,29 @@ export const itemsQueryKey = (
 
 export function removeItemsFromPages(data: ItemsCache, ids: Iterable<string>): ItemsCache {
   const drop = new Set(ids);
+  const items = data.items.filter((item) => !drop.has(item.id));
+  const removedCount = data.items.length - items.length;
   return {
     ...data,
-    pages: data.pages.map((page) => ({
-      ...page,
-      items: page.items.filter((item) => !drop.has(item.id)),
-    })),
+    items,
+    ...(data.totalCount === undefined
+      ? {}
+      : { totalCount: Math.max(0, data.totalCount - removedCount) }),
   };
 }
 
 export function replaceItemInPages(data: ItemsCache, item: KevaItem): ItemsCache {
   return {
     ...data,
-    pages: data.pages.map((page) => ({
-      ...page,
-      items: page.items.map((existing) => (existing.id === item.id ? item : existing)),
-    })),
+    items: data.items.map((existing) => (existing.id === item.id ? item : existing)),
   };
 }
 
 export function prependItemToPages(data: ItemsCache, item: KevaItem): ItemsCache {
-  const [first, ...rest] = data.pages;
-  if (!first) return data;
   return {
     ...data,
-    pages: [{ ...first, items: [item, ...first.items] }, ...rest],
+    items: [item, ...data.items],
+    ...(data.totalCount === undefined ? {} : { totalCount: data.totalCount + 1 }),
   };
 }
 
@@ -125,6 +123,7 @@ export function removeDeletedItemsFromCache(queryClient: QueryClient, ids: Itera
     queryClient.removeQueries({ queryKey: itemEventsQueryKey(itemId), exact: true });
     revokeObjectUrl("owner", itemId);
   }
+  void queryClient.invalidateQueries({ queryKey: itemListsQueryKey });
   void queryClient.invalidateQueries({ queryKey: usageQueryKey });
   invalidatePropertyDiscovery(queryClient);
 }
