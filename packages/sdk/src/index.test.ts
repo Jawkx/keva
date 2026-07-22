@@ -479,6 +479,45 @@ describe("KevaClient", () => {
     expect(() => client.patch(item.id, { set: { rating: 5 as never }, unset: [] })).toThrow();
     expect(called).toBe(false);
   });
+
+  it("sends bulk patches with optional per-item revisions", async () => {
+    const secondId = "22222222-2222-4222-8222-222222222222";
+    let request: { url: string; method: string | undefined; body: unknown } | undefined;
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async (input, init) => {
+        request = {
+          url: String(input),
+          method: init?.method,
+          body: JSON.parse(String(init?.body)),
+        };
+        return Response.json({
+          updated: [{ id: item.id, revision: 2 }],
+          failed: [{ id: secondId, error: { _tag: "Conflict", message: "Item revision changed" } }],
+        });
+      },
+    });
+
+    await expect(
+      client.patchMany([{ id: item.id }, { id: secondId, expectedRevision: 4 }], {
+        set: { reviewed: null },
+        unset: ["draft"],
+      }),
+    ).resolves.toMatchObject({
+      updated: [{ id: item.id, revision: 2 }],
+      failed: [{ id: secondId, error: { _tag: "Conflict" } }],
+    });
+    expect(request).toEqual({
+      url: "https://keva.invalid/api/items/patch",
+      method: "POST",
+      body: {
+        items: [{ id: item.id }, { id: secondId, expectedRevision: 4 }],
+        set: { reviewed: null },
+        unset: ["draft"],
+      },
+    });
+  });
 });
 
 describe("ShareClient", () => {

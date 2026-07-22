@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   BatchDelete,
+  BatchPatch,
   CreateAccountShare,
   CreateShareGrant,
   CreateView,
@@ -202,6 +203,27 @@ describe("schema", () => {
     );
     expect(() => Schema.decodeUnknownSync(ItemId)("not-a-uuid")).toThrow();
     expect(() => Schema.decodeUnknownSync(BatchDelete)({ ids: ["not-a-uuid"] })).toThrow();
+  });
+
+  it("validates bulk patches and applies patch defaults", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    expect(
+      Schema.decodeUnknownSync(BatchPatch)({
+        items: [{ id, expectedRevision: 3 }],
+        set: { reviewed: null },
+      }),
+    ).toEqual({
+      items: [{ id, expectedRevision: 3 }],
+      set: { reviewed: null },
+      unset: [],
+    });
+    expect(() => Schema.decodeUnknownSync(BatchPatch)({ items: [{ id }] })).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(BatchPatch)({
+        items: [{ id }, { id, expectedRevision: 2 }],
+        unset: ["draft"],
+      }),
+    ).toThrow();
   });
 
   it("round-trips a usage result", () => {

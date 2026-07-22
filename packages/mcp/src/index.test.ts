@@ -50,6 +50,10 @@ const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
   completeUpload: async () => item,
   uploadContent: async () => item,
   setProperties: async () => item,
+  setPropertiesBulk: async (input) => ({
+    updated: input.items.map(({ id }) => ({ id, revision: 2 })),
+    failed: [],
+  }),
   deleteItem: async () => {},
   deleteItems: async (ids) => ({ deleted: [...ids], failed: [] }),
   createView: async (input) => ({
@@ -128,8 +132,9 @@ describe("createKevaMcpServer tool registration", () => {
     ]);
   });
 
-  it("adds set_properties when write is granted", async () => {
+  it("adds property mutation tools when write is granted", async () => {
     expect(await toolNames(["read", "write"])).toContain("set_properties");
+    expect(await toolNames(["read", "write"])).toContain("set_properties_bulk");
   });
 
   it("adds delete_item only when delete is granted", async () => {
@@ -142,6 +147,7 @@ describe("createKevaMcpServer tool registration", () => {
       "begin_upload",
       "complete_upload",
       "set_properties",
+      "set_properties_bulk",
       "upload_content",
     ]);
     expect(await toolNames(["views"])).toEqual([
@@ -260,6 +266,36 @@ describe("createKevaMcpServer tool execution", () => {
       id: item.id,
       set: { tag: "x" },
       unset: ["old"],
+    });
+    await close();
+  });
+
+  it("delegates set_properties_bulk with per-item revisions", async () => {
+    const secondId = "00000000-0000-4000-8000-000000000002";
+    const setPropertiesBulk = vi.fn(stubEngine().setPropertiesBulk);
+    const { client, close } = await connect(stubEngine({ setPropertiesBulk }), ["write"]);
+
+    const result = await client.callTool({
+      name: "set_properties_bulk",
+      arguments: {
+        items: [{ id: item.id, expectedRevision: 1 }, { id: secondId }],
+        set: { reviewed: null },
+        unset: ["draft"],
+      },
+    });
+
+    expect(setPropertiesBulk).toHaveBeenCalledWith({
+      items: [{ id: item.id, expectedRevision: 1 }, { id: secondId }],
+      set: { reviewed: null },
+      unset: ["draft"],
+    });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(textOf(result as never))).toMatchObject({
+      updated: [
+        { id: item.id, revision: 2 },
+        { id: secondId, revision: 2 },
+      ],
+      failed: [],
     });
     await close();
   });

@@ -421,6 +421,31 @@ export const ItemPatch = Schema.Struct({
 });
 export type ItemPatch = typeof ItemPatch.Type;
 
+export const BatchPatchItem = Schema.Struct({
+  id: ItemId,
+  expectedRevision: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
+  ),
+});
+export type BatchPatchItem = typeof BatchPatchItem.Type;
+
+export const BatchPatch = Schema.Struct({
+  items: Schema.Array(BatchPatchItem).pipe(
+    Schema.minItems(1),
+    Schema.maxItems(1000),
+    Schema.filter((items) => new Set(items.map((item) => item.id)).size === items.length, {
+      message: () => "Item ids must be unique",
+    }),
+  ),
+  set: ItemPatch.fields.set,
+  unset: ItemPatch.fields.unset,
+}).pipe(
+  Schema.filter((batch) => Object.keys(batch.set).length > 0 || batch.unset.length > 0, {
+    message: () => "At least one field must be set or unset",
+  }),
+);
+export type BatchPatch = typeof BatchPatch.Type;
+
 export const DownloadResult = Schema.Struct({
   url: Schema.String,
   expiresAt: Schema.String,
@@ -784,6 +809,17 @@ export const KevaError = Schema.Union(
   Internal,
 );
 export type KevaError = typeof KevaError.Type;
+
+export const BatchPatchResult = Schema.Struct({
+  updated: Schema.Array(
+    Schema.Struct({
+      id: ItemId,
+      revision: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
+    }),
+  ),
+  failed: Schema.Array(Schema.Struct({ id: ItemId, error: KevaError })),
+});
+export type BatchPatchResult = typeof BatchPatchResult.Type;
 
 export const statusFor = (error: KevaError): number => {
   switch (error._tag) {

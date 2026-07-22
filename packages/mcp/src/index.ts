@@ -3,6 +3,7 @@ import { ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotoc
 import { FIELD_BY_KEY, ITEM_ID_PATTERN, isIsoInstant, isPropertyKey } from "@keva/schema";
 import type {
   BatchDeleteResult,
+  BatchPatchResult,
   CreateShareGrant,
   CreateShareGrantResult,
   CreateView,
@@ -211,6 +212,36 @@ const setPropertiesArgs = z
     "At least one property must be set or unset",
   );
 
+const setPropertiesBulkArgs = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          id: z.string().regex(ITEM_ID_PATTERN).describe("The item id."),
+          expectedRevision: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Reject this item's edit if it no longer has this revision."),
+        }),
+      )
+      .min(1)
+      .max(1000)
+      .refine((items) => new Set(items.map((item) => item.id)).size === items.length, {
+        message: "Item ids must be unique",
+      }),
+    set: z.record(z.string(), propertyValue).optional(),
+    unset: z
+      .array(z.string().min(1))
+      .refine((values) => new Set(values).size === values.length, "Keys must be unique")
+      .optional(),
+  })
+  .refine(
+    (input) => Object.keys(input.set ?? {}).length > 0 || (input.unset?.length ?? 0) > 0,
+    "At least one property must be set or unset",
+  );
+
 const uploadArgs = z.object({
   name: nonEmptyString.describe("File name."),
   contentType: nonEmptyString.describe("MIME content type."),
@@ -299,6 +330,7 @@ export type SetPropertiesToolInput = {
   readonly unset?: ItemPatch["unset"] | undefined;
   readonly expectedRevision?: number | undefined;
 };
+export type SetPropertiesBulkToolInput = z.infer<typeof setPropertiesBulkArgs>;
 export type ItemEventsToolInput = {
   readonly id: string;
   readonly limit?: number | undefined;
@@ -324,6 +356,7 @@ export interface McpEngine {
   readonly completeUpload: (id: string) => Promise<OwnerItem>;
   readonly uploadContent: (input: UploadContentToolInput) => Promise<OwnerItem>;
   readonly setProperties: (input: SetPropertiesToolInput) => Promise<OwnerItem>;
+  readonly setPropertiesBulk: (input: SetPropertiesBulkToolInput) => Promise<BatchPatchResult>;
   readonly deleteItem: (id: string) => Promise<void>;
   readonly deleteItems: (ids: readonly string[]) => Promise<BatchDeleteResult>;
   readonly createView: (input: CreateView) => Promise<ViewRecord>;
@@ -566,6 +599,18 @@ export const createKevaMcpServer = (
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) => run(() => engine.setProperties(input)),
+    );
+
+    server.registerTool(
+      "set_properties_bulk",
+      {
+        title: "Set properties on multiple items",
+        description:
+          "Apply the same set/unset patch to up to 1000 items. Each item may include an expected revision for optimistic concurrency. Returns separate updated and failed results; one item failure does not stop the others. Setting null creates a bare tag, while 'unset' deletes a property.",
+        inputSchema: setPropertiesBulkArgs.shape,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      (input) => run(() => engine.setPropertiesBulk(input)),
     );
   }
 

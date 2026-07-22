@@ -186,6 +186,48 @@ describe("server integration — HTTP roundtrip", () => {
     }
   });
 
+  it("bulk patches valid items and reports per-item revision and missing failures", async () => {
+    const app = makeApp();
+    const a = await makeReadyItem(app, "bulk-a.txt");
+    const b = await makeReadyItem(app, "bulk-b.txt");
+    const unknown = "00000000-0000-4000-8000-000000000099";
+    const currentA = (await (await app.request(`/api/items/${a}`, { headers: auth })).json()) as {
+      revision: number;
+    };
+    const currentB = (await (await app.request(`/api/items/${b}`, { headers: auth })).json()) as {
+      revision: number;
+    };
+
+    const response = await app.request("/api/items/patch", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        items: [
+          { id: a, expectedRevision: currentA.revision },
+          { id: b, expectedRevision: currentB.revision + 1 },
+          { id: unknown },
+        ],
+        set: { reviewed: null, project: "bulk" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      updated: { id: string; revision: number }[];
+      failed: { id: string; error: { _tag: string } }[];
+    };
+    expect(body.updated).toEqual([{ id: a, revision: currentA.revision + 1 }]);
+    expect(body.failed).toEqual([
+      { id: b, error: { _tag: "Conflict", message: "Item revision changed" } },
+      { id: unknown, error: { _tag: "NotFound", message: "Item not found" } },
+    ]);
+
+    const patchedA = await (await app.request(`/api/items/${a}`, { headers: auth })).json();
+    const unchangedB = await (await app.request(`/api/items/${b}`, { headers: auth })).json();
+    expect(patchedA).toMatchObject({ properties: { reviewed: null, project: "bulk" } });
+    expect(unchangedB).toMatchObject({ properties: {} });
+  });
+
   it("rejects an empty batch delete with a typed ValidationError (400)", async () => {
     const app = makeApp();
     const response = await app.request("/api/items/delete", {

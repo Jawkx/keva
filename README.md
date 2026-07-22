@@ -69,6 +69,28 @@ different details returns a conflict. Metadata responses include `revision`;
 patches may include `expectedRevision` to reject stale edits, while omitting it
 keeps last-writer-wins behavior.
 
+Apply one property patch to multiple items with `patchMany`. Bulk patches accept
+up to 1,000 unique items and report successes and typed failures separately, so
+one missing or stale item does not prevent the others from updating:
+
+```ts
+await keva.patchMany([firstId, secondId], {
+  set: { project: "alpha", reviewed: null },
+  unset: ["draft"],
+});
+
+await keva.patchMany(
+  [
+    { id: firstId, expectedRevision: 3 },
+    { id: secondId, expectedRevision: 8 },
+  ],
+  { set: { status: "approved" } },
+);
+```
+
+The equivalent MCP tool is `set_properties_bulk` and requires the `keva:write`
+scope.
+
 ## MCP uploads
 
 MCP clients authorized with `keva:write` have two upload paths:

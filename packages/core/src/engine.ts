@@ -10,6 +10,8 @@ import {
   routePatch,
   type ItemEventAction,
   type ItemEventPayload,
+  type BatchPatchItem,
+  type BatchPatchResult,
   type ItemPatch,
   type InitiateUpload,
   type KevaError,
@@ -77,6 +79,57 @@ const eventFor = (
   payload,
   createdAt: now(),
 });
+
+const patchItem = (principal: Principal, id: string, patch: ItemPatch) =>
+  Effect.gen(function* () {
+    const metadata = yield* MetadataStore;
+    const routed = routePatch(patch.set, patch.unset);
+    if (!routed.ok) {
+      return yield* new ValidationError({
+        message: `Cannot patch '${routed.error.key}': ${routed.error.reason}`,
+      });
+    }
+    const patched = yield* metadata.patchWithEvent(
+      principal.tenantId,
+      id,
+      routed.routed,
+      now(),
+      patch.expectedRevision,
+      (previous, updated) => {
+        const changedSet: Record<string, PropertyValue> = {};
+        const previousValues: Record<string, PropertyValue> = {};
+        for (const [key, value] of Object.entries(updated.properties)) {
+          if (propertyValuesEqual(previous.properties[key], value)) continue;
+          changedSet[key] = value;
+          if (key in previous.properties) previousValues[key] = previous.properties[key]!;
+        }
+        const removed = Object.keys(previous.properties).filter(
+          (key) => !(key in updated.properties),
+        );
+        for (const key of removed) previousValues[key] = previous.properties[key]!;
+        const nameChanged = previous.name !== updated.name;
+        const propertiesChanged = Object.keys(changedSet).length > 0 || removed.length > 0;
+        return nameChanged || propertiesChanged
+          ? eventFor(principal, updated, "updated", {
+              ...(nameChanged ? { name: { from: previous.name, to: updated.name } } : {}),
+              ...(propertiesChanged
+                ? {
+                    properties: {
+                      ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
+                      ...(Object.keys(previousValues).length > 0
+                        ? { previous: previousValues }
+                        : {}),
+                      ...(removed.length > 0 ? { unset: removed } : {}),
+                    },
+                  }
+                : {}),
+            })
+          : null;
+      },
+    );
+    if (!patched) return yield* new NotFound({ message: "Item not found" });
+    return patched.updated;
+  });
 
 export const makeKevaEngine = (principal: Principal) => ({
   initiate: (input: InitiateUpload, retryKey?: string) =>
@@ -305,53 +358,34 @@ export const makeKevaEngine = (principal: Principal) => ({
     Effect.gen(function* () {
       yield* forbidShare(principal, "modify items");
       yield* requireScope(principal, "write");
-      const metadata = yield* MetadataStore;
-      const routed = routePatch(patch.set, patch.unset);
-      if (!routed.ok) {
-        return yield* new ValidationError({
-          message: `Cannot patch '${routed.error.key}': ${routed.error.reason}`,
-        });
-      }
-      const patched = yield* metadata.patchWithEvent(
-        principal.tenantId,
-        id,
-        routed.routed,
-        now(),
-        patch.expectedRevision,
-        (previous, updated) => {
-          const changedSet: Record<string, PropertyValue> = {};
-          const previousValues: Record<string, PropertyValue> = {};
-          for (const [key, value] of Object.entries(updated.properties)) {
-            if (propertyValuesEqual(previous.properties[key], value)) continue;
-            changedSet[key] = value;
-            if (key in previous.properties) previousValues[key] = previous.properties[key]!;
-          }
-          const removed = Object.keys(previous.properties).filter(
-            (key) => !(key in updated.properties),
-          );
-          for (const key of removed) previousValues[key] = previous.properties[key]!;
-          const nameChanged = previous.name !== updated.name;
-          const propertiesChanged = Object.keys(changedSet).length > 0 || removed.length > 0;
-          return nameChanged || propertiesChanged
-            ? eventFor(principal, updated, "updated", {
-                ...(nameChanged ? { name: { from: previous.name, to: updated.name } } : {}),
-                ...(propertiesChanged
-                  ? {
-                      properties: {
-                        ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
-                        ...(Object.keys(previousValues).length > 0
-                          ? { previous: previousValues }
-                          : {}),
-                        ...(removed.length > 0 ? { unset: removed } : {}),
-                      },
-                    }
-                  : {}),
-              })
-            : null;
-        },
+      return yield* patchItem(principal, id, patch);
+    }),
+
+  patchMany: (items: readonly BatchPatchItem[], patch: Pick<ItemPatch, "set" | "unset">) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "modify items");
+      yield* requireScope(principal, "write");
+      const results = yield* Effect.forEach(
+        items,
+        ({ id, expectedRevision }) =>
+          patchItem(principal, id, { ...patch, expectedRevision }).pipe(
+            Effect.map((item) => ({
+              status: "updated" as const,
+              id,
+              revision: item.revision,
+            })),
+            Effect.catchAll((error) => Effect.succeed({ status: "failed" as const, id, error })),
+          ),
+        { concurrency: 8 },
       );
-      if (!patched) return yield* new NotFound({ message: "Item not found" });
-      return patched.updated;
+      return {
+        updated: results
+          .filter((result) => result.status === "updated")
+          .map(({ id, revision }) => ({ id, revision })),
+        failed: results
+          .filter((result) => result.status === "failed")
+          .map(({ id, error }) => ({ id, error })),
+      } satisfies BatchPatchResult;
     }),
 
   // Events outlive deletion, so this does not require the item to exist.

@@ -1,6 +1,8 @@
 import { makeKevaEngine } from "@keva/core";
 import { ClientSafeToolError, createKevaMcpServer, type McpEngine } from "@keva/mcp";
 import {
+  BatchPatch,
+  BatchPatchResult,
   ItemId,
   ItemPatch,
   ItemEventsResult,
@@ -248,6 +250,15 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
           return toOwnerItem(yield* engine.patch(itemId, patch));
         }),
         OwnerItem,
+      ),
+    setPropertiesBulk: (input) =>
+      runValidated(
+        runtime,
+        Effect.gen(function* () {
+          const { items, set, unset } = yield* decode(BatchPatch, input);
+          return yield* engine.patchMany(items, { set, unset });
+        }),
+        BatchPatchResult,
       ),
     deleteItem: (id) =>
       runEngine(

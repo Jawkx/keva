@@ -1,6 +1,8 @@
 import {
   AccountShareRecord,
   AccountShareSelf,
+  BatchPatch,
+  BatchPatchResult,
   ItemPatch,
   BatchDelete,
   BatchDeleteResult,
@@ -38,6 +40,8 @@ import {
   type PropertyValue as PropertyValueType,
   type PropertySummary as PropertySummaryType,
   type QueryCondition as QueryConditionType,
+  type BatchPatchItem as BatchPatchItemType,
+  type BatchPatchResult as BatchPatchResultType,
   type ItemPatch as ItemPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
   type CreateShareGrant as CreateShareGrantType,
@@ -69,6 +73,8 @@ export type {
   CreateAccountShareType as CreateAccountShare,
   ReceivedShareType as ReceivedShare,
   ItemPatchType as ItemPatch,
+  BatchPatchItemType as BatchPatchItem,
+  BatchPatchResultType as BatchPatchResult,
   BatchDeleteResultType as BatchDeleteResult,
   CreateShareGrantType as CreateShareGrant,
   CreateShareGrantResultType as CreateShareGrantResult,
@@ -94,6 +100,11 @@ export type {
   SharedItemType as SharedItem,
   SharedQueryResultType as SharedQueryResult,
   UsageResultType as UsageResult,
+};
+
+export type BatchPatchChanges = {
+  readonly set?: ItemPatchType["set"];
+  readonly unset?: ItemPatchType["unset"];
 };
 
 export const SHARE_TOKEN_PREFIX = "keva_sh_";
@@ -428,6 +439,24 @@ export class KevaClient {
       `/items/${encodeURIComponent(id)}`,
       OwnerItem,
       decode(ItemPatch, patch),
+    );
+  }
+
+  patchMany(ids: readonly string[], patch: BatchPatchChanges): Promise<BatchPatchResultType>;
+  patchMany(
+    items: readonly BatchPatchItemType[],
+    patch: BatchPatchChanges,
+  ): Promise<BatchPatchResultType>;
+  patchMany(
+    targets: readonly (string | BatchPatchItemType)[],
+    patch: BatchPatchChanges,
+  ): Promise<BatchPatchResultType> {
+    const items = targets.map((target) => (typeof target === "string" ? { id: target } : target));
+    return this.#request(
+      "POST",
+      "/items/patch",
+      BatchPatchResult,
+      decode(BatchPatch, { items, ...patch }),
     );
   }
 

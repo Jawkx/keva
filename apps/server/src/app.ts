@@ -5,6 +5,7 @@ import {
   BILLING_PLANS,
   ChangeBillingPlan,
   Conflict,
+  BatchPatch,
   ItemPatch,
   BatchDelete,
   CreateShareGrant,
@@ -415,6 +416,17 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         const id = yield* itemIdParam(context);
         const body = yield* decode(ItemPatch, yield* jsonBody(context));
         return redactItem(principal, yield* makeKevaEngine(principal).patch(id, body));
+      }),
+    ),
+  );
+
+  app.post("/api/items/patch", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const { items, set, unset } = yield* decode(BatchPatch, yield* jsonBody(context));
+        return yield* makeKevaEngine(principal).patchMany(items, { set, unset });
       }),
     ),
   );
