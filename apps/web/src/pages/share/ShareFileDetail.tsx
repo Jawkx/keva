@@ -6,6 +6,7 @@ import { CopyButton } from "../../components/CopyButton";
 import { propertyListClass } from "../../components/PropertiesEditor";
 import { CsvPreviewViewer } from "../../components/viewers/CsvPreviewViewer";
 import { PdfPreviewViewer } from "../../components/viewers/PdfPreviewViewer";
+import { FilePreviewSkeleton } from "../../components/viewers/FilePreviewSkeleton";
 import { errorMessage } from "../../lib/errors";
 import { formatBytes, formatDate, formatPropertyValue, formatRelative } from "../../lib/format";
 import { shareContentQueryKey, shareItemQueryKey } from "../../lib/items-cache";
@@ -114,14 +115,20 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <header className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
-            {item?.name ?? "…"}
-          </h2>
-          {item && (
+          {loading ? (
+            <Skeleton className="h-5 w-40 max-w-full" />
+          ) : (
+            <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
+              {item?.name ?? "…"}
+            </h2>
+          )}
+          {loading ? (
+            <Skeleton className="mt-1 h-5 w-32" />
+          ) : item ? (
             <p className="truncate text-sm text-muted-foreground">
               {item.contentType} · {formatBytes(item.size)}
             </p>
-          )}
+          ) : null}
         </div>
         <div className="flex items-center gap-1">
           <Tooltip>
@@ -172,10 +179,7 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
 
       <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-4">
         {loading ? (
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-40 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
+          <FilePreviewSkeleton />
         ) : error && !item ? (
           <Alert variant="destructive">
             <TriangleAlert />
@@ -187,9 +191,11 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {previewLoading ? (
               isImage(item) ? (
-                <Skeleton className="aspect-video w-full max-w-full rounded-md" />
+                <FilePreviewSkeleton variant="image" />
+              ) : isPdf(item) || isCsv(item) ? (
+                <FilePreviewSkeleton variant="viewer" />
               ) : (
-                <Skeleton className="min-h-0 w-full flex-1" />
+                <FilePreviewSkeleton />
               )
             ) : preview?.kind === "image" ? (
               <div
@@ -204,7 +210,7 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
                 />
               </div>
             ) : preview?.kind === "pdf" ? (
-              <Suspense fallback={<Skeleton className="min-h-0 w-full flex-1" />}>
+              <Suspense fallback={<FilePreviewSkeleton variant="viewer" />}>
                 <PdfPreviewViewer
                   src={preview.url}
                   fileName={item.name}
@@ -212,7 +218,7 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
                 />
               </Suspense>
             ) : preview?.kind === "csv" ? (
-              <Suspense fallback={<Skeleton className="min-h-0 w-full flex-1" />}>
+              <Suspense fallback={<FilePreviewSkeleton variant="viewer" />}>
                 <CsvPreviewViewer
                   data={preview.text}
                   className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"

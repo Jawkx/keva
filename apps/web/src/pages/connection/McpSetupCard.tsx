@@ -79,7 +79,10 @@ export function McpSetupCard() {
                   <CopyButton value={mcpUrl} label="Copy MCP URL" />
                 </div>
               ) : (
-                <Skeleton className="h-8 w-full" />
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-7 min-w-0 flex-1" />
+                  <Skeleton className="size-7 shrink-0" />
+                </div>
               )}
             </div>
 

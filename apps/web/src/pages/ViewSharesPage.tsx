@@ -145,10 +145,25 @@ export function ViewSharesPage() {
             <AlertTitle>{error}</AlertTitle>
           </Alert>
         ) : sharesQuery.isLoading || peopleQuery.isLoading ? (
-          <div className="flex flex-col gap-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
+          <div className="flex flex-col gap-8">
+            <section className="flex flex-col gap-3">
+              <div>
+                <h2 className="font-heading text-base font-medium">People</h2>
+                <p className="text-sm text-muted-foreground">
+                  Account-bound access appears in the recipient’s Keva after they accept.
+                </p>
+              </div>
+              <ShareTableSkeleton columns={["Person", "Access", "Status", "Invited"]} />
+            </section>
+            <section className="flex flex-col gap-3">
+              <div>
+                <h2 className="font-heading text-base font-medium">Secret links</h2>
+                <p className="text-sm text-muted-foreground">
+                  Anyone with a link can use its granted access without a Keva account.
+                </p>
+              </div>
+              <ShareTableSkeleton columns={["Name", "Access", "Expires", "Last used"]} />
+            </section>
           </div>
         ) : (
           <div className="flex flex-col gap-8">
@@ -315,5 +330,36 @@ export function ViewSharesPage() {
         {inviteDialog}
       </div>
     </div>
+  );
+}
+
+function ShareTableSkeleton({ columns }: { readonly columns: readonly string[] }) {
+  return (
+    <Card className="overflow-hidden p-0">
+      <Table className="select-text">
+        <TableHeader className="bg-muted/50">
+          <TableRow className="hover:bg-transparent">
+            {columns.map((column) => (
+              <TableHead key={column}>{column}</TableHead>
+            ))}
+            <TableHead className="w-0" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: 2 }).map((_, row) => (
+            <TableRow key={row} className="hover:bg-transparent">
+              {columns.map((column, index) => (
+                <TableCell key={column}>
+                  <Skeleton className={index === 0 ? "h-5 w-28" : "h-5 w-20"} />
+                </TableCell>
+              ))}
+              <TableCell>
+                <Skeleton className="size-7" />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
   );
 }

@@ -72,8 +72,18 @@ export function SharedWithMePage() {
         </Alert>
       ) : sharesQuery.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Skeleton className="h-36" />
-          <Skeleton className="h-36" />
+          {Array.from({ length: 2 }).map((_, index) => (
+            <Card key={index} className="flex h-full items-center gap-2 p-2">
+              <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-2">
+                <Skeleton className="size-10 shrink-0 rounded-lg" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-5 w-32 max-w-full" />
+                  <Skeleton className="h-4 w-48 max-w-full" />
+                </div>
+              </div>
+              <Skeleton className="h-8 w-16 shrink-0" />
+            </Card>
+          ))}
         </div>
       ) : shares.length === 0 ? (
         <Empty>

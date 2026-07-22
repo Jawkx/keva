@@ -61,9 +61,38 @@ export function StorageUsageCard() {
       <CardContent>
         {isPending ? (
           <div className="flex flex-col gap-4">
-            <Skeleton className="h-9 w-40" />
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="space-y-2">
+                <Skeleton className="h-9 w-40" />
+                <Skeleton className="h-5 w-28" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="ml-auto h-5 w-24" />
+                <Skeleton className="ml-auto h-5 w-28" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-2.5 w-full rounded-full" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">
+              {Array.from({ length: 2 }).map((_, index) => (
+                <div key={index} className="space-y-2">
+                  <Skeleton className="h-3 w-28" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+              ))}
+            </div>
             <Skeleton className="h-2.5 w-full rounded-full" />
-            <Skeleton className="h-10 w-full" />
+            <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Skeleton className="size-2.5 shrink-0 rounded-full" />
+                  <Skeleton className="h-5 flex-1" />
+                  <Skeleton className="h-5 w-16" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : isError ? (
           <p className="text-sm text-muted-foreground">Couldn't load storage usage.</p>

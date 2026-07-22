@@ -78,7 +78,22 @@ export function ConnectedAppsSection() {
       {connectionsQuery.isLoading ? (
         <div className="grid gap-3 md:grid-cols-2">
           {Array.from({ length: 2 }).map((_, index) => (
-            <Skeleton key={index} className="h-32 w-full" />
+            <Card key={index} size="sm">
+              <CardHeader>
+                <Skeleton className="h-5 w-36" />
+                <Skeleton className="h-4 w-full max-w-64" />
+                <CardAction>
+                  <Skeleton className="h-5 w-20 rounded-full" />
+                </CardAction>
+              </CardHeader>
+              <CardContent className="flex items-end justify-between gap-3">
+                <div className="flex gap-1">
+                  <Skeleton className="h-5 w-12 rounded-full" />
+                  <Skeleton className="h-5 w-14 rounded-full" />
+                </div>
+                <Skeleton className="size-7 shrink-0" />
+              </CardContent>
+            </Card>
           ))}
         </div>
       ) : connectionsQuery.isError ? (

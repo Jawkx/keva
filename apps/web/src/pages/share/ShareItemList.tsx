@@ -145,9 +145,25 @@ export function ShareItemList({
                 {loading
                   ? Array.from({ length: 8 }).map((_, i) => (
                       <TableRow key={`skeleton-${i}`}>
-                        <TableCell colSpan={collapsed ? 2 : 5}>
-                          <Skeleton className="h-5 w-full" />
+                        <TableCell>
+                          <Skeleton className="h-5 w-full max-w-52" />
                         </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-5 w-16" />
+                        </TableCell>
+                        {!collapsed && (
+                          <>
+                            <TableCell className="hidden sm:table-cell">
+                              <Skeleton className="h-5 w-20" />
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell">
+                              <Skeleton className="h-5 w-20" />
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell">
+                              <Skeleton className="h-5 w-28 rounded-full" />
+                            </TableCell>
+                          </>
+                        )}
                       </TableRow>
                     ))
                   : items.map((item) => {

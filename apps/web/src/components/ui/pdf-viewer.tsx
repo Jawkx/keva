@@ -450,6 +450,24 @@ function PDFViewerLoadingSkeleton({
   );
 }
 
+function PDFViewerToolbarSkeleton({ action }: { action?: React.ReactNode }) {
+  return (
+    <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
+      <div aria-hidden="true" className="flex items-center gap-2">
+        <div className="size-7 animate-pulse rounded-md bg-muted" />
+        <div className="h-7 w-20 animate-pulse rounded-md bg-muted" />
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-1">
+        <div aria-hidden="true" className="size-7 animate-pulse rounded-md bg-muted" />
+        <div aria-hidden="true" className="h-7 w-[84px] animate-pulse rounded-md bg-muted" />
+        <div aria-hidden="true" className="size-7 animate-pulse rounded-md bg-muted" />
+        <div aria-hidden="true" className="size-7 animate-pulse rounded-md bg-muted" />
+        {action}
+      </div>
+    </div>
+  );
+}
+
 function PDFViewerFallbackShell({
   className,
   showToolbar,
@@ -474,11 +492,13 @@ function PDFViewerFallbackShell({
       )}
     >
       {showToolbar ? (
-        <div className="flex min-h-12 flex-wrap items-center justify-end gap-2 border-b bg-background px-3 py-2">
-          {showUpload && onUploadFile ? (
-            <PDFViewerFileActionsMenu onUploadFile={onUploadFile} showUpload />
-          ) : null}
-        </div>
+        <PDFViewerToolbarSkeleton
+          action={
+            showUpload && onUploadFile ? (
+              <PDFViewerFileActionsMenu onUploadFile={onUploadFile} showUpload />
+            ) : undefined
+          }
+        />
       ) : null}
       <div className="relative flex min-h-0 flex-1 overflow-hidden bg-muted/30">
         {state === "loading" ? (
@@ -2538,7 +2558,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
           className,
         )}
       >
-        {showToolbar ? <div className="min-h-12 border-b bg-background" /> : null}
+        {showToolbar ? <PDFViewerToolbarSkeleton /> : null}
         <div className="relative min-h-0 flex-1">
           <PDFViewerLoadingSkeleton sidebarInline sidebarOpen={false} />
         </div>

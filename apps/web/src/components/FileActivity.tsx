@@ -76,11 +76,17 @@ export function FileActivity({ itemId }: { readonly itemId: string }) {
 
   if (eventsQuery.isLoading) {
     return (
-      <div className="flex flex-col gap-3">
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-3/4" />
-      </div>
+      <ul className="flex flex-col">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <li
+            key={index}
+            className="flex items-center justify-between gap-3 border-b border-border/50 py-2.5 last:border-b-0"
+          >
+            <Skeleton className="h-5 flex-1" />
+            <Skeleton className="h-4 w-16 shrink-0" />
+          </li>
+        ))}
+      </ul>
     );
   }
 

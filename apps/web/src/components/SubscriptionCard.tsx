@@ -26,10 +26,8 @@ const statusLabel = {
   canceled: "Canceled",
 } as const;
 
-const dateLabel = (value: string | null) =>
-  value
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value))
-    : null;
+const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+const dateLabel = (value: string | null) => (value ? dateFormatter.format(new Date(value)) : null);
 
 export function SubscriptionCard() {
   const handleError = useApiError();
@@ -61,7 +59,36 @@ export function SubscriptionCard() {
     if (result.error) toast.error(result.error.message ?? "Could not open billing.");
   };
 
-  if (billingQuery.isPending) return <Skeleton className="h-80 w-full" />;
+  if (billingQuery.isPending) {
+    return (
+      <Card className="relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-muted" />
+        <CardHeader>
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-5 w-full max-w-md" />
+          <CardAction>
+            <Skeleton className="h-5 w-16 rounded-full" />
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="flex min-h-52 flex-col rounded-lg border p-4">
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="mt-2 h-7 w-28" />
+                <div className="mt-5 space-y-2">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+                <Skeleton className="mt-auto h-8 w-full" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
   if (billingQuery.isError) {
     return (
       <Alert variant="destructive">

@@ -103,14 +103,21 @@ export function DocumentViewerSidebarSkeleton({
   className?: string;
   inline: boolean;
 }) {
-  if (!inline) return null;
-
   return (
-    <div className={cn("w-40 shrink-0 border-r bg-sidebar p-4", className)}>
-      <div className="mx-auto h-28 w-20 overflow-hidden rounded-md bg-background shadow-xs">
-        <div className="h-full animate-pulse bg-muted" />
+    <DocumentViewerThumbnailSidebar
+      {...(className ? { className } : {})}
+      inline={inline}
+      open
+      widthClassName="w-40"
+    >
+      <div className="flex flex-col items-center py-4">
+        <div className="h-32 w-[108px] overflow-hidden rounded-md bg-background p-2 shadow-xs">
+          <div className="h-full animate-pulse rounded-sm bg-muted" />
+        </div>
+        <div className="flex h-6 items-center justify-center">
+          <div className="h-3 w-10 rounded-full bg-muted" />
+        </div>
       </div>
-      <div className="mx-auto mt-3 h-3 w-10 rounded-full bg-muted" />
-    </div>
+    </DocumentViewerThumbnailSidebar>
   );
 }
