@@ -715,39 +715,100 @@ function FilesPageContent({
           )}
         </div>
         {!selectMode && (
-          <div
-            className="flex w-fit max-w-full flex-wrap items-center rounded-lg border border-border bg-muted/70 p-1"
-            aria-label="File type"
-          >
-            {QUICK_KINDS.map((kind) => {
-              const active =
-                kind.id === "all"
-                  ? filterDraft.kinds.length === 0
-                  : filterDraft.kinds[0] === kind.id && filterDraft.kinds.length === 1;
-              return (
-                <Button
-                  key={kind.id}
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={active}
-                  className={cn(
-                    "rounded-md px-4 text-muted-foreground shadow-none hover:text-foreground",
-                    active &&
-                      "bg-background text-foreground hover:bg-background hover:text-foreground",
+          <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
+            <div
+              className="flex w-fit max-w-full flex-wrap items-center rounded-lg border border-border bg-muted/70 p-1"
+              aria-label="File type"
+            >
+              {QUICK_KINDS.map((kind) => {
+                const active =
+                  kind.id === "all"
+                    ? filterDraft.kinds.length === 0
+                    : filterDraft.kinds[0] === kind.id && filterDraft.kinds.length === 1;
+                return (
+                  <Button
+                    key={kind.id}
+                    variant="ghost"
+                    size="sm"
+                    aria-pressed={active}
+                    className={cn(
+                      "rounded-md px-4 text-muted-foreground shadow-none hover:text-foreground",
+                      active &&
+                        "bg-background text-foreground hover:bg-background hover:text-foreground",
+                    )}
+                    onClick={() => {
+                      const nextDraft = {
+                        ...filterDraft,
+                        kinds: kind.id === "all" ? [] : [kind.id],
+                      };
+                      setFilterDraft(nextDraft);
+                      applyWhere(buildFilterWhere(nextDraft));
+                    }}
+                  >
+                    {kind.label}
+                  </Button>
+                );
+              })}
+            </div>
+            {showFilterRow && (
+              <>
+                <FilterBar
+                  draft={filterDraft}
+                  onDraftChange={setFilterDraft}
+                  onApply={applyWhere}
+                  onClear={clearFilters}
+                />
+                <div className="ml-auto flex items-center gap-1.5">
+                  {filtered && <ApiSnippetsPopover search={activeSearch} where={activeWhere} />}
+                  {viewId ? (
+                    viewEdited && (
+                      <>
+                        <Badge variant="secondary">Edited</Badge>
+                        <Button variant="ghost" size="sm" onClick={discardViewEdits}>
+                          Discard
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={saveViewEdits}
+                          disabled={updateViewMutation.isPending}
+                        >
+                          <Save data-icon="inline-start" />
+                          Save
+                        </Button>
+                      </>
+                    )
+                  ) : (
+                    <Button variant="ghost" size="sm" onClick={() => setSaveViewOpen(true)}>
+                      <Save data-icon="inline-start" />
+                      Save as view
+                    </Button>
                   )}
-                  onClick={() => {
-                    const nextDraft = {
-                      ...filterDraft,
-                      kinds: kind.id === "all" ? [] : [kind.id],
-                    };
-                    setFilterDraft(nextDraft);
-                    applyWhere(buildFilterWhere(nextDraft));
-                  }}
-                >
-                  {kind.label}
-                </Button>
-              );
-            })}
+                  <ButtonGroup>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => (viewId ? navigate(`/v/${viewId}/shares`) : openShare())}
+                    >
+                      <Share2 data-icon="inline-start" />
+                      Share
+                    </Button>
+                    {viewShares.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        nativeButton={false}
+                        render={<Link to={`/v/${viewId}/shares`} />}
+                        aria-label={`View ${viewShares.length} share ${viewShares.length === 1 ? "link" : "links"} for this view`}
+                        title="Share links for this view"
+                      >
+                        <span className="tabular-nums">{viewShares.length}</span>
+                      </Button>
+                    )}
+                  </ButtonGroup>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -794,65 +855,6 @@ function FilesPageContent({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        </div>
-      )}
-      {!selectMode && showFilterRow && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1">
-          <FilterBar
-            draft={filterDraft}
-            onDraftChange={setFilterDraft}
-            onApply={applyWhere}
-            onClear={clearFilters}
-          />
-          <div className="ml-auto flex items-center gap-1.5">
-            {filtered && <ApiSnippetsPopover search={activeSearch} where={activeWhere} />}
-            {viewId ? (
-              viewEdited && (
-                <>
-                  <Badge variant="secondary">Edited</Badge>
-                  <Button variant="ghost" size="sm" onClick={discardViewEdits}>
-                    Discard
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={saveViewEdits}
-                    disabled={updateViewMutation.isPending}
-                  >
-                    <Save data-icon="inline-start" />
-                    Save
-                  </Button>
-                </>
-              )
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setSaveViewOpen(true)}>
-                <Save data-icon="inline-start" />
-                Save as view
-              </Button>
-            )}
-            <ButtonGroup>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => (viewId ? navigate(`/v/${viewId}/shares`) : openShare())}
-              >
-                <Share2 data-icon="inline-start" />
-                Share
-              </Button>
-              {viewShares.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  nativeButton={false}
-                  render={<Link to={`/v/${viewId}/shares`} />}
-                  aria-label={`View ${viewShares.length} share ${viewShares.length === 1 ? "link" : "links"} for this view`}
-                  title="Share links for this view"
-                >
-                  <span className="tabular-nums">{viewShares.length}</span>
-                </Button>
-              )}
-            </ButtonGroup>
-          </div>
         </div>
       )}
       {!selectMode && uploadStampEntries.length > 0 && (
