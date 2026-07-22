@@ -14,7 +14,6 @@ import {
   Upload,
 } from "lucide-react";
 import { Fragment, useCallback, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,7 +35,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { FilterBar, FilterMenuButton } from "../components/FilterBar";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
-import { useAppHeaderSlot } from "../lib/app-header-slot";
 import { errorMessage } from "../lib/errors";
 import {
   DEFAULT_FILE_ORDER,
@@ -395,7 +393,6 @@ function FilesPageContent({
   const { id: selectedId, viewId } = useParams<{ id: string; viewId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const headerSlot = useAppHeaderSlot();
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [pagination, setPagination] = useState({ identity: "", pageIndex: 0 });
@@ -805,15 +802,84 @@ function FilesPageContent({
 
   const hasItems = uploads.length > 0 || totalItems > 0;
   const emptyPage = pageIndex > 0;
+  const HeaderViewIcon = viewIcon(view?.icon);
 
   const browserControls = (
     <div className="flex w-full min-w-0 shrink-0 flex-col gap-3">
       <div className="flex shrink-0 flex-col gap-3 px-1">
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Files className="size-5 shrink-0 text-muted-foreground" />
-            <h1 className="truncate font-heading text-xl font-semibold">{view?.name ?? "All"}</h1>
-          </div>
+          {viewId && view ? (
+            <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
+              <ViewIconPicker
+                value={view.icon}
+                onChange={changeIcon}
+                trigger={
+                  <button
+                    type="button"
+                    title="Change icon"
+                    aria-label="Change view icon"
+                    className="group/vicon relative flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-muted"
+                  >
+                    <HeaderViewIcon className="size-6" />
+                    <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vicon:opacity-100">
+                      <Pencil className="size-3.5" />
+                    </span>
+                  </button>
+                }
+              />
+              {nameEditing ? (
+                <Input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onBlur={commitName}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitName();
+                    else if (e.key === "Escape") setNameEditing(false);
+                  }}
+                  className="h-9 w-56 text-[21px] font-medium"
+                />
+              ) : (
+                <button
+                  type="button"
+                  title="Rename view"
+                  aria-label="Rename view"
+                  onClick={startNameEdit}
+                  className="group/vname relative flex min-w-0 items-center rounded-md text-left"
+                >
+                  <span className="truncate px-1 text-[21px] leading-none font-medium">
+                    {view.name}
+                  </span>
+                  <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 text-muted-foreground opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vname:opacity-100 group-focus-visible/vname:opacity-100">
+                    <Pencil className="size-4" />
+                  </span>
+                </button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<Button variant="ghost" size="icon" aria-label="View options" />}
+                >
+                  <EllipsisVertical />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={startNameEdit}>
+                    <Pencil />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => setDeleteViewOpen(true)}>
+                    <Trash2 />
+                    Delete view
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2">
+              <Files className="size-5 shrink-0 text-muted-foreground" />
+              <h1 className="truncate font-heading text-xl font-semibold">All</h1>
+            </div>
+          )}
           {!selectMode && (
             <div className="flex items-center gap-2">
               <FilterMenuButton
@@ -1025,84 +1091,6 @@ function FilesPageContent({
     </div>
   );
 
-  const HeaderViewIcon = viewIcon(view?.icon);
-  const headerControls = (
-    <>
-      {viewId && view ? (
-        <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
-          <ViewIconPicker
-            value={view.icon}
-            onChange={changeIcon}
-            trigger={
-              <button
-                type="button"
-                title="Change icon"
-                aria-label="Change view icon"
-                className="group/vicon relative flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-muted"
-              >
-                <HeaderViewIcon className="size-6" />
-                <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vicon:opacity-100">
-                  <Pencil className="size-3.5" />
-                </span>
-              </button>
-            }
-          />
-          {nameEditing ? (
-            <Input
-              autoFocus
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitName();
-                else if (e.key === "Escape") setNameEditing(false);
-              }}
-              className="h-9 w-56 text-[21px] font-medium"
-            />
-          ) : (
-            <div className="group/vname flex min-w-0 items-center gap-1">
-              <span className="truncate px-1 text-[21px] leading-none font-medium">
-                {view.name}
-              </span>
-              <button
-                type="button"
-                title="Rename view"
-                aria-label="Rename view"
-                onClick={startNameEdit}
-                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/vname:opacity-100 focus-visible:opacity-100"
-              >
-                <Pencil className="size-4" />
-              </button>
-            </div>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="ghost" size="icon" aria-label="View options" />}
-            >
-              <EllipsisVertical />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={startNameEdit}>
-                <Pencil />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onClick={() => setDeleteViewOpen(true)}>
-                <Trash2 />
-                Delete view
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ) : (
-        <span className="flex items-center gap-2.5 px-2.5 py-1.5 text-[21px] leading-none font-medium">
-          <Files className="size-6 shrink-0" />
-          All
-        </span>
-      )}
-    </>
-  );
-
   return (
     <div
       onDragEnter={(e) => {
@@ -1120,8 +1108,6 @@ function FilesPageContent({
       onDrop={onPageDrop}
       className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 overflow-hidden p-3 md:p-4"
     >
-      {headerSlot && viewId && createPortal(headerControls, headerSlot)}
-
       {pageDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8 text-center">
