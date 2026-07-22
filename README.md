@@ -18,6 +18,28 @@ The server always uses Postgres for metadata and S3-compatible storage for blobs
 It fails to start when either configuration is incomplete. See
 [`apps/server/.env.example`](./apps/server/.env.example).
 
+### Local billing
+
+Development and staging share the Polar sandbox catalog but use separate access
+tokens and webhook secrets. Create a sandbox organization access token, configure
+all `POLAR_*` values shown in `apps/server/.env.example`, then start the webhook
+listener:
+
+```sh
+pnpm polar:listen
+```
+
+Select **Sandbox** and the Keva sandbox organization when prompted by the
+listener. Copy its generated secret to `POLAR_WEBHOOK_SECRET` in
+`apps/server/.env`, then start the app in another terminal with `pnpm dev:app`.
+The listener forwards events to
+`http://localhost:8787/api/auth/polar/webhooks`.
+
+Polar customer emails are unique within an organization. Use distinct aliases
+for each environment, such as `name+dev@example.com` and
+`name+staging@example.com`. Sandbox checkout accepts Stripe test card
+`4242 4242 4242 4242` with any future expiration date and CVC.
+
 ## Storage lifecycle
 
 Production cleanup runs every five minutes: abandoned pending uploads and

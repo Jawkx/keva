@@ -34,6 +34,9 @@ describe("billingConfigFor", () => {
     expect(() => billingConfigFor({ POLAR_ACCESS_TOKEN: "token" })).toThrow(
       "Polar billing configuration is incomplete",
     );
+    expect(() => billingConfigFor({ ...complete, POLAR_SERVER: undefined })).toThrow(
+      "Polar billing configuration is incomplete",
+    );
     expect(() => billingConfigFor({ ...complete, POLAR_SERVER: "other" })).toThrow("POLAR_SERVER");
   });
 });

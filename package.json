@@ -7,6 +7,7 @@
     "dev:app": "turbo dev --filter=@keva/server --filter=@keva/web --ui=stream",
     "dev:server": "pnpm --filter @keva/server dev",
     "dev:web": "pnpm --filter @keva/web dev",
+    "polar:listen": "polar listen http://localhost:8787/api/auth/polar/webhooks",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "lint": "turbo lint && pnpm lint:ox && pnpm lint:no-direct-use-effect",

@@ -12,6 +12,7 @@ interface BillingEnv {
 
 export const billingConfigFor = (env: BillingEnv): ServerOptionsConfig["polar"] => {
   const values = [
+    env.POLAR_SERVER,
     env.POLAR_ACCESS_TOKEN,
     env.POLAR_WEBHOOK_SECRET,
     env.POLAR_PRODUCT_100GB_ID,
@@ -21,7 +22,7 @@ export const billingConfigFor = (env: BillingEnv): ServerOptionsConfig["polar"] 
   ];
   if (values.every((value) => !value)) return undefined;
   if (values.some((value) => !value)) throw new Error("Polar billing configuration is incomplete");
-  const server = env.POLAR_SERVER ?? "production";
+  const server = env.POLAR_SERVER;
   if (server !== "sandbox" && server !== "production") {
     throw new Error("POLAR_SERVER must be 'sandbox' or 'production'");
   }

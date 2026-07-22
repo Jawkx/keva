@@ -196,8 +196,8 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
               use: [
                 checkout({
                   products: [...config.polar.products],
-                  successUrl: "/settings?checkout=complete",
-                  returnUrl: "/settings",
+                  successUrl: `${config.baseURL.replace(/\/$/, "")}/settings?checkout=complete`,
+                  returnUrl: `${config.baseURL.replace(/\/$/, "")}/settings`,
                   authenticatedUsersOnly: true,
                 }),
                 portal({ returnUrl: `${config.baseURL.replace(/\/$/, "")}/settings` }),

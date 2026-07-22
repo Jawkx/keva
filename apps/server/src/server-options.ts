@@ -64,9 +64,9 @@ const databaseAuth = (config: ServerOptionsConfig, database: DatabaseUnit) => {
             })),
             onSubscription: async (subscription, eventAt) => {
               const userId = subscription.customer.externalId;
-              if (!userId) throw new Error("Polar subscription customer has no external ID");
+              if (!userId) return;
               const tenantId = await resolvePersonalOrganization(database.db, userId, userId);
-              if (!tenantId) throw new Error("Could not resolve subscription tenant");
+              if (!tenantId) return;
               await billing.syncSubscription(userId, tenantId, subscription, eventAt);
             },
           },
