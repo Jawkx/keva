@@ -2,7 +2,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { useTheme } from "next-themes";
 import { useMountEffect } from "../lib/useMountEffect";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const OPTIONS = [
@@ -18,13 +18,14 @@ export function AppearanceCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Appearance</CardTitle>
-        <CardDescription>Choose how Keva looks on this device.</CardDescription>
-      </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid gap-1">
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>Choose how Keva looks on this device.</CardDescription>
+        </div>
         <ToggleGroup
           variant="outline"
+          className="w-full sm:w-fit"
           value={mounted && theme ? [theme] : []}
           onValueChange={(value) => {
             const next = value[0];

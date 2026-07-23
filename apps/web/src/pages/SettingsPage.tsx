@@ -74,78 +74,80 @@ export function SettingsPage() {
 
         <AppearanceCard />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Profile</CardTitle>
-            <CardDescription>Your display name and email.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={onSaveProfile}>
-              <FieldGroup>
-                <Field className="max-w-sm">
-                  <FieldLabel htmlFor="name">Name</FieldLabel>
-                  <Input
-                    id="name"
-                    value={name}
-                    autoComplete="name"
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </Field>
-                <Field className="max-w-sm">
-                  <FieldLabel htmlFor="email">Email</FieldLabel>
-                  <Input id="email" value={email} disabled readOnly />
-                </Field>
-                <Button type="submit" className="w-fit" disabled={savingName || !name.trim()}>
-                  {savingName && <Spinner data-icon="inline-start" />}
-                  Save
-                </Button>
-              </FieldGroup>
-            </form>
-          </CardContent>
-        </Card>
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Profile</CardTitle>
+              <CardDescription>Your display name and email.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={onSaveProfile}>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="name">Name</FieldLabel>
+                    <Input
+                      id="name"
+                      value={name}
+                      autoComplete="name"
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="email">Email</FieldLabel>
+                    <Input id="email" value={email} disabled readOnly />
+                  </Field>
+                  <Button type="submit" className="w-fit" disabled={savingName || !name.trim()}>
+                    {savingName && <Spinner data-icon="inline-start" />}
+                    Save
+                  </Button>
+                </FieldGroup>
+              </form>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Change password</CardTitle>
-            <CardDescription>
-              Other sessions are signed out when you change your password.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={onChangePassword}>
-              <FieldGroup>
-                <Field className="max-w-sm">
-                  <FieldLabel htmlFor="current-password">Current password</FieldLabel>
-                  <PasswordInput
-                    id="current-password"
-                    value={currentPassword}
-                    autoComplete="current-password"
-                    required
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                  />
-                </Field>
-                <Field className="max-w-sm">
-                  <FieldLabel htmlFor="new-password">New password</FieldLabel>
-                  <PasswordInput
-                    id="new-password"
-                    value={newPassword}
-                    autoComplete="new-password"
-                    required
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
-                </Field>
-                <Button
-                  type="submit"
-                  className="w-fit"
-                  disabled={savingPassword || !currentPassword || !newPassword}
-                >
-                  {savingPassword && <Spinner data-icon="inline-start" />}
-                  Update password
-                </Button>
-              </FieldGroup>
-            </form>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Change password</CardTitle>
+              <CardDescription>
+                Other sessions are signed out when you change your password.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={onChangePassword}>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="current-password">Current password</FieldLabel>
+                    <PasswordInput
+                      id="current-password"
+                      value={currentPassword}
+                      autoComplete="current-password"
+                      required
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="new-password">New password</FieldLabel>
+                    <PasswordInput
+                      id="new-password"
+                      value={newPassword}
+                      autoComplete="new-password"
+                      required
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                  </Field>
+                  <Button
+                    type="submit"
+                    className="w-fit"
+                    disabled={savingPassword || !currentPassword || !newPassword}
+                  >
+                    {savingPassword && <Spinner data-icon="inline-start" />}
+                    Update password
+                  </Button>
+                </FieldGroup>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
