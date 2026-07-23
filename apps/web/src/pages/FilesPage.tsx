@@ -3,7 +3,12 @@ import {
   ArrowUpDown,
   CloudUpload,
   EllipsisVertical,
+  File,
+  FileAudio,
   Files,
+  FileText,
+  FileVideo,
+  Image,
   LoaderCircle,
   Pencil,
   Save,
@@ -12,6 +17,7 @@ import {
   Trash2,
   TriangleAlert,
   Upload,
+  type LucideIcon,
 } from "lucide-react";
 import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -179,6 +185,23 @@ const extensionStart = (name: string): number => {
   return dot <= 0 ? name.length : dot;
 };
 
+const fileKindIcon = (contentType: string): LucideIcon => {
+  if (contentType.startsWith("image/")) return Image;
+  if (contentType.startsWith("video/")) return FileVideo;
+  if (contentType.startsWith("audio/")) return FileAudio;
+  if (
+    contentType.startsWith("text/") ||
+    contentType === "application/pdf" ||
+    contentType === "application/json" ||
+    contentType.includes("word") ||
+    contentType.includes("document") ||
+    contentType.includes("rtf")
+  ) {
+    return FileText;
+  }
+  return File;
+};
+
 const canonCondition = (c: QueryCondition) => JSON.stringify([c.key, c.op, c.value ?? null]);
 const sameConditions = (a: readonly QueryCondition[], b: readonly QueryCondition[]): boolean =>
   a.length === b.length &&
@@ -279,17 +302,21 @@ const columns = [
           />
         );
       }
+      const KindIcon = fileKindIcon(row.original.contentType);
       return (
-        <button
-          type="button"
-          className="block max-w-full truncate text-left text-muted-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={(event) => {
-            event.stopPropagation();
-            meta?.onOpenItem(row.original.id);
-          }}
-        >
-          {getValue()}
-        </button>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <KindIcon className="size-4 shrink-0 text-muted-foreground" />
+          <button
+            type="button"
+            className="block min-w-0 truncate text-left text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={(event) => {
+              event.stopPropagation();
+              meta?.onOpenItem(row.original.id);
+            }}
+          >
+            {getValue()}
+          </button>
+        </div>
       );
     },
   }),
@@ -692,7 +719,7 @@ function FilesPageContent({
   const tableInner = (
     <Table
       containerClassName="overflow-visible"
-      className="[&_td]:px-3 [&_td]:py-3.5 [&_th]:px-3 [&_tr]:border-0"
+      className="[&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_tr]:border-0"
     >
       <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
         {table.getHeaderGroups().map((group) => (
