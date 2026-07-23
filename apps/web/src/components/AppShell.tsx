@@ -224,7 +224,7 @@ function HeaderAccount() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground uppercase">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground uppercase">
           {(name || "?").charAt(0)}
         </div>
         <span className="hidden max-w-36 truncate text-sm font-medium lg:block">{name}</span>

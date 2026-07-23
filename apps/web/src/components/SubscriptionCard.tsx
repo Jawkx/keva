@@ -182,7 +182,7 @@ export function SubscriptionCard() {
                 <Button
                   className="mt-auto"
                   size="sm"
-                  variant={selected ? "outline" : "default"}
+                  variant={selected || downgrade ? "outline" : "default"}
                   disabled={selected || changeMutation.isPending}
                   onClick={() =>
                     status.subscriptionId
