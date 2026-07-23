@@ -38,6 +38,7 @@ import {
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -399,9 +400,9 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                 />
               </Suspense>
             ) : preview?.kind === "text" ? (
-              <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md bg-muted/50">
+              <ScrollArea className="min-h-0 w-full min-w-0 flex-1 rounded-md bg-muted/50">
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>
-              </div>
+              </ScrollArea>
             ) : (
               <p className="text-sm text-muted-foreground">Preview unavailable.</p>
             )}
