@@ -5,6 +5,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.base-ui-disable-scrollbar {
+  scrollbar-width: none;
+}
+
+.base-ui-disable-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 :root {
   --radius: 0.625rem;
   --background: oklch(0.975 0.008 85);
