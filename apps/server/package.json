@@ -10,7 +10,7 @@
     "start": "node dist/node.js",
     "jobs": "tsx src/jobs.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run src",
+    "test": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run src",
     "lint": "tsc -p tsconfig.json --noEmit",
     "auth:generate": "auth generate --config src/better-auth-cli.ts --output src/auth-schema.ts --yes"
   },
