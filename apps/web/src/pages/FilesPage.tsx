@@ -134,7 +134,6 @@ import { cn } from "@/lib/utils";
 
 declare module "@tanstack/react-table" {
   interface TableMeta<TData extends RowData> {
-    selectMode: boolean;
     onRetryUpload: (row: FileRow) => void;
     onFilterByProperty: (key: string, value: PropertyValue) => void;
     onOpenItem: (itemId: string) => void;
@@ -213,9 +212,6 @@ const EMPTY_FILE_ROWS: FileRow[] = [];
 
 const columnHelper = createColumnHelper<FileRow>();
 
-const selectModeOf = (meta: unknown) =>
-  Boolean((meta as { selectMode?: boolean } | undefined)?.selectMode);
-
 const responsiveColumnClass = (columnId: string) => {
   if (columnId === "updatedAt") return "hidden sm:table-cell";
   if (columnId === "properties") return "hidden lg:table-cell";
@@ -231,10 +227,7 @@ const columns = [
         checked={table.getIsAllRowsSelected()}
         indeterminate={table.getIsSomeRowsSelected()}
         onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
-        className={cn(
-          "transition-opacity",
-          selectModeOf(table.options.meta) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-        )}
+        className="opacity-0 transition-opacity group-hover:opacity-100"
       />
     ),
     cell: ({ row, table }) => {
@@ -267,9 +260,7 @@ const columns = [
           onCheckedChange={(checked) => row.toggleSelected(checked)}
           className={cn(
             "transition-opacity",
-            row.getIsSelected() || selectModeOf(table.options.meta)
-              ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100",
+            row.getIsSelected() ? "opacity-100" : "opacity-0 group-hover:opacity-100",
           )}
         />
       );
@@ -601,7 +592,6 @@ function FilesPageContent({
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     meta: {
-      selectMode,
       onRetryUpload: retryUpload,
       onFilterByProperty: filterByProperty,
       onOpenItem: (itemId) => navigate(itemId === selectedId ? listPath : itemPath(itemId)),
