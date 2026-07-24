@@ -896,9 +896,11 @@ function FilesPageContent({
               </DropdownMenu>
             </div>
           ) : (
-            <div className="flex min-w-0 items-center gap-2">
-              <Files className="size-5 shrink-0 text-muted-foreground" />
-              <h1 className="truncate font-heading text-xl font-semibold">All</h1>
+            <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
+              <div className="flex size-9 shrink-0 items-center justify-center">
+                <Files className="size-6" />
+              </div>
+              <h1 className="truncate px-1 text-[21px] leading-none font-medium">All</h1>
             </div>
           )}
           {!selectMode && (
