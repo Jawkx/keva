@@ -1,3 +1,47 @@
+const THEME_KEY = "keva-theme";
+const THEME_COLOR = { light: "#fafafa", dark: "#1b1b1d" } as const;
+
+const toggle = document.querySelector<HTMLButtonElement>("[data-theme-toggle]");
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+if (toggle) {
+  const stored = (() => {
+    try {
+      const value = localStorage.getItem(THEME_KEY);
+      return value === "light" || value === "dark" ? value : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  // The theme is only pinned once the visitor picks one; until then it follows the
+  // OS, which plain CSS already handles via light-dark().
+  let override: "light" | "dark" | null = stored;
+
+  const sync = () => {
+    const resolved = override ?? (systemDark.matches ? "dark" : "light");
+    if (override) document.documentElement.dataset.theme = override;
+    else delete document.documentElement.dataset.theme;
+    toggle.setAttribute(
+      "aria-label",
+      resolved === "dark" ? "Switch to light theme" : "Switch to dark theme",
+    );
+    for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+      meta.content = override ? THEME_COLOR[override] : THEME_COLOR[resolved];
+    }
+  };
+
+  sync();
+  systemDark.addEventListener("change", sync);
+  toggle.addEventListener("click", () => {
+    override = (override ?? (systemDark.matches ? "dark" : "light")) === "dark" ? "light" : "dark";
+    try {
+      localStorage.setItem(THEME_KEY, override);
+    } catch {}
+    sync();
+  });
+}
+
 const header = document.querySelector<HTMLElement>("[data-header]");
 
 if (header) {

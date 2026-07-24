@@ -3,12 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
       content="Keva is a simple file store you structure yourself — one clean list, your own tags and properties, and first-class MCP access for your agents."
     />
-    <meta name="theme-color" content="#fafafa" />
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://usekeva.com/" />
     <meta property="og:title" content="Keva — your files, structured" />
@@ -26,6 +27,12 @@
     <title>Keva — your files, structured</title>
     <script>
       document.documentElement.classList.add("js");
+      try {
+        var storedTheme = localStorage.getItem("keva-theme");
+        if (storedTheme === "light" || storedTheme === "dark") {
+          document.documentElement.dataset.theme = storedTheme;
+        }
+      } catch (error) {}
     </script>
   </head>
   <body>
@@ -163,6 +170,20 @@
         <rect width="14" height="20" x="5" y="2" rx="2" />
         <path d="M12 18h.01" />
       </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="m4.93 4.93 1.41 1.41" />
+        <path d="m17.66 17.66 1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="m6.34 17.66-1.41 1.41" />
+        <path d="m19.07 4.93-1.41 1.41" />
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24">
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+      </symbol>
       <symbol id="i-arrow" viewBox="0 0 24 24">
         <path d="M7 7h10v10" />
         <path d="M7 17 17 7" />
@@ -190,6 +211,10 @@
           <span>Keva</span>
         </a>
         <nav class="site-nav" aria-label="Account">
+          <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme">
+            <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon" /></svg>
+            <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
+          </button>
           <a class="nav-link" href="https://app.usekeva.com/login">Sign in</a>
           <a class="btn btn-primary" href="https://app.usekeva.com/signup">Get started</a>
         </nav>
