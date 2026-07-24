@@ -3,380 +3,817 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
     <meta
       name="description"
-      content="Keva is metadata-rich object storage for people, applications, and agents."
+      content="Keva is a simple file store you structure yourself — one clean list, your own tags and properties, and first-class MCP access for your agents."
     />
-    <meta name="theme-color" content="#f7f7f8" />
-    <meta property="og:title" content="Keva — files with context" />
+    <meta name="theme-color" content="#fafafa" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://usekeva.com/" />
+    <meta property="og:title" content="Keva — your files, structured" />
     <meta
       property="og:description"
-      content="Keep every object, detail, and relationship in one durable place."
+      content="One clean list. Your own tags and properties. Open to you, and to your agents."
     />
     <meta property="og:image" content="/main-icon.png" />
+    <meta name="twitter:card" content="summary" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/src/styles.css" />
-    <title>Keva — files with context</title>
+    <title>Keva — your files, structured</title>
     <script>
       document.documentElement.classList.add("js");
     </script>
   </head>
   <body>
-    <div class="page-shell">
-      <header class="site-header">
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-files" viewBox="0 0 24 24">
+        <path d="M20 7h-3a2 2 0 0 1-2-2V2" />
+        <path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v12a2 2 0 0 1-2 2Z" />
+        <path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8" />
+      </symbol>
+      <symbol id="i-file-text" viewBox="0 0 24 24">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+        <path d="M16 13H8" />
+        <path d="M16 17H8" />
+      </symbol>
+      <symbol id="i-file-code" viewBox="0 0 24 24">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+        <path d="m10 12-2 2 2 2" />
+        <path d="m14 12 2 2-2 2" />
+      </symbol>
+      <symbol id="i-file-sheet" viewBox="0 0 24 24">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+        <path d="M8 13h8" />
+        <path d="M8 17h8" />
+        <path d="M12 13v4" />
+      </symbol>
+      <symbol id="i-image" viewBox="0 0 24 24">
+        <rect width="18" height="18" x="3" y="3" rx="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+      </symbol>
+      <symbol id="i-video" viewBox="0 0 24 24">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+        <path d="m10 12.5 4 2.5-4 2.5Z" />
+      </symbol>
+      <symbol id="i-book" viewBox="0 0 24 24">
+        <path d="M12 7v14" />
+        <path
+          d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+        />
+      </symbol>
+      <symbol id="i-inbox" viewBox="0 0 24 24">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+        <path
+          d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"
+        />
+      </symbol>
+      <symbol id="i-database" viewBox="0 0 24 24">
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+        <path d="M3 12a9 3 0 0 0 18 0" />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="8" />
+        <path d="m21 21-4.3-4.3" />
+      </symbol>
+      <symbol id="i-filter" viewBox="0 0 24 24">
+        <path d="M22 3H2l8 9.46V19l4 2v-8.54Z" />
+      </symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <path d="m17 8-5-5-5 5" />
+        <path d="M12 3v12" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M12 15V3" />
+      </symbol>
+      <symbol id="i-share" viewBox="0 0 24 24">
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <path d="m8.6 13.5 6.8 4" />
+        <path d="m15.4 6.5-6.8 4" />
+      </symbol>
+      <symbol id="i-tag" viewBox="0 0 24 24">
+        <path
+          d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"
+        />
+        <path d="M7.5 7.5h.01" />
+      </symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24">
+        <circle cx="12" cy="16" r="1" />
+        <rect width="18" height="12" x="3" y="10" rx="2" />
+        <path d="M7 10V7a5 5 0 0 1 10 0v3" />
+      </symbol>
+      <symbol id="i-type" viewBox="0 0 24 24">
+        <path d="M4 7V4h16v3" />
+        <path d="M9 20h6" />
+        <path d="M12 4v16" />
+      </symbol>
+      <symbol id="i-hash" viewBox="0 0 24 24">
+        <path d="M4 9h16" />
+        <path d="M4 15h16" />
+        <path d="M10 3 8 21" />
+        <path d="M16 3l-2 18" />
+      </symbol>
+      <symbol id="i-rows" viewBox="0 0 24 24">
+        <rect width="18" height="18" x="3" y="3" rx="2" />
+        <path d="M3 9h18" />
+        <path d="M3 15h18" />
+      </symbol>
+      <symbol id="i-toggle" viewBox="0 0 24 24">
+        <rect width="20" height="12" x="2" y="6" rx="6" />
+        <circle cx="16" cy="12" r="2" />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect width="14" height="14" x="8" y="8" rx="2" />
+        <path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M5 12h14" />
+        <path d="M12 5v14" />
+      </symbol>
+      <symbol id="i-save" viewBox="0 0 24 24">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+        <path d="M17 21v-8H7v8" />
+        <path d="M7 3v5h8" />
+      </symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24">
+        <rect width="20" height="14" x="2" y="3" rx="2" />
+        <path d="M8 21h8" />
+        <path d="M12 17v4" />
+      </symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24">
+        <rect width="14" height="20" x="5" y="2" rx="2" />
+        <path d="M12 18h.01" />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24">
+        <path d="M7 7h10v10" />
+        <path d="M7 17 17 7" />
+      </symbol>
+      <symbol id="i-sort" viewBox="0 0 24 24">
+        <path d="m3 16 4 4 4-4" />
+        <path d="M7 20V4" />
+        <path d="m21 8-4-4-4 4" />
+        <path d="M17 4v16" />
+      </symbol>
+      <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+      <symbol id="i-keyhole" viewBox="0 0 100 132">
+        <circle cx="50" cy="42" r="30" stroke-width="6" />
+        <path d="M40 66 L31 116 Q30 124 38 124 L62 124 Q70 124 69 116 L60 66" stroke-width="6" />
+      </symbol>
+    </svg>
+
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <div class="wrap site-header-inner">
         <a class="wordmark" href="/" aria-label="Keva home">
-          <img class="wordmark-mark" src="/main-icon.png" alt="" aria-hidden="true" />
-          <span>keva</span>
+          <img src="/main-icon.png" alt="" width="32" height="32" />
+          <span>Keva</span>
         </a>
-        <a class="header-link" href="https://app.usekeva.com/login">Sign in</a>
-      </header>
+        <nav class="site-nav" aria-label="Account">
+          <a class="nav-link" href="https://app.usekeva.com/login">Sign in</a>
+          <a class="btn btn-primary" href="https://app.usekeva.com/signup">Get started</a>
+        </nav>
+      </div>
+    </header>
 
-      <main>
-        <section class="hero" aria-labelledby="hero-title">
-          <div class="hero-copy">
-            <p class="eyebrow"><span></span> Metadata-rich object storage</p>
-            <h1 id="hero-title">Files are rarely<br />just files.</h1>
-            <p class="lede">
-              Keva keeps every object, detail, and relationship in one durable place, ready for
-              people, applications, and agents.
-            </p>
-            <div class="actions">
-              <a class="button button-primary" href="https://app.usekeva.com/signup">
-                Start storing <span aria-hidden="true">↗</span>
-              </a>
-              <a class="button button-secondary" href="https://app.usekeva.com"> Open Keva </a>
-            </div>
+    <main id="main">
+      <section class="hero">
+        <div class="wrap hero-inner">
+          <h1 class="hero-title reveal" style="--d: 1">
+            Your files,<br />
+            <span class="underlined">structured.</span>
+          </h1>
+          <p class="lede hero-lede reveal" style="--d: 2">
+            One clean list. Your own tags and properties. Open to you, and to your agents.
+          </p>
+          <div class="hero-actions reveal" style="--d: 3">
+            <a class="btn btn-primary btn-lg" href="https://app.usekeva.com/signup">
+              Start for free
+              <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
+            </a>
+            <a class="btn btn-outline btn-lg" href="https://app.usekeva.com">Open Keva</a>
           </div>
+          <p class="hero-note reveal" style="--d: 4">On the web today. Mobile apps coming soon.</p>
+        </div>
+      </section>
 
-          <div class="object-stage" aria-label="An example Keva object and its metadata">
-            <div class="orbit orbit-one"></div>
-            <div class="orbit orbit-two"></div>
-            <article class="object-card">
-              <div class="object-card-topline">
-                <span>OBJECT / 01</span>
-                <span class="status"><i></i> STORED</span>
-              </div>
-              <div class="file-row">
-                <div class="file-glyph" aria-hidden="true">
-                  <span>PDF</span>
-                </div>
-                <div>
-                  <p class="file-name">field-notes.pdf</p>
-                  <p class="file-size">12.4 MB · application/pdf</p>
-                </div>
-              </div>
-              <dl class="metadata">
-                <div>
-                  <dt>project</dt>
-                  <dd>north-star</dd>
-                </div>
-                <div>
-                  <dt>captured</dt>
-                  <dd>2026-07-17</dd>
-                </div>
-                <div>
-                  <dt>source</dt>
-                  <dd>research-agent</dd>
-                </div>
-                <div>
-                  <dt>status</dt>
-                  <dd>reviewed</dd>
-                </div>
-              </dl>
-              <div class="tag-row" aria-label="Object tags">
-                <span>research</span><span>fieldwork</span><span>v2</span>
-              </div>
-            </article>
-            <p class="stage-note note-left">The object</p>
-            <p class="stage-note note-right">The context</p>
-          </div>
-        </section>
-
-        <section class="principles" aria-label="Keva principles">
-          <p>One object.</p>
-          <p>Any metadata.</p>
-          <p>Every workflow.</p>
-        </section>
-
-        <section class="features" aria-labelledby="features-title">
-          <div class="section-head" data-reveal>
-            <p class="eyebrow"><span></span> Everything, in context</p>
-            <h2 id="features-title">A file, and everything<br />you know about it.</h2>
-          </div>
-
-          <article class="feature" data-reveal>
-            <div class="feature-copy">
-              <p class="feature-index">01 — Metadata</p>
-              <h3>Tag anything.</h3>
-              <p>
-                Attach typed properties to any object — strings, numbers, booleans, dates. They
-                render as tags you edit inline, and every value is queryable later.
-              </p>
-            </div>
-            <div class="feature-visual">
-              <div class="mock mock-tags">
-                <div class="mock-file">
-                  <span class="mock-glyph">PDF</span>
-                  <div>
-                    <p class="mock-name">q2-invoice.pdf</p>
-                    <p class="mock-sub">88 KB · application/pdf</p>
-                  </div>
-                </div>
-                <div class="chips">
-                  <span class="chip chip-ink">status = paid</span>
-                  <span class="chip">vendor = acme</span>
-                  <span class="chip">amount = 4200</span>
-                  <span class="chip">due = 2026-06-30</span>
-                  <span class="chip chip-add">+ property</span>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <article class="feature reverse" data-reveal>
-            <div class="feature-copy">
-              <p class="feature-index">02 — Retrieval</p>
-              <h3>Query it. Save the view.</h3>
-              <p>
-                Filter across metadata the way you think — then pin the result as a first-class view
-                in your sidebar. Your archive organises itself.
-              </p>
-            </div>
-            <div class="feature-visual">
-              <div class="mock mock-views">
-                <aside class="mock-side">
-                  <p class="mock-side-title">Views</p>
-                  <ul>
-                    <li>All files</li>
-                    <li class="active">Finance · 2026</li>
-                    <li>Shared with me</li>
-                    <li>Images</li>
-                  </ul>
-                </aside>
-                <div class="mock-main">
-                  <div class="mock-filterbar">
-                    <span class="filter-chip">category = finance</span>
-                    <span class="filter-chip">type = pdf</span>
-                    <span class="filter-add">+ filter</span>
-                  </div>
-                  <ul class="mock-results">
-                    <li><span class="dot"></span> q2-invoice.pdf <em>status=paid</em></li>
-                    <li><span class="dot"></span> q1-invoice.pdf <em>status=paid</em></li>
-                    <li><span class="dot"></span> budget.xlsx <em>status=final</em></li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <article class="feature" data-reveal>
-            <div class="feature-copy">
-              <p class="feature-index">03 — Sharing</p>
-              <h3>Share a slice, not the vault.</h3>
-              <p>
-                Publish any view behind a link. Recipients see exactly the objects that match — and
-                can drop new uploads straight into it, no account required.
-              </p>
-            </div>
-            <div class="feature-visual">
-              <div class="mock mock-share">
-                <div class="share-head">
-                  <p>Share “Finance · 2026”</p>
-                  <span class="pill pill-on">Link on</span>
-                </div>
-                <div class="share-url">
-                  <span>usekeva.com/s/9f3a71c…</span>
-                  <button type="button">Copy</button>
-                </div>
-                <ul class="share-perms">
-                  <li><span class="check">✓</span> Anyone with the link can view</li>
-                  <li><span class="check">✓</span> Uploads allowed into this view</li>
-                </ul>
-              </div>
-            </div>
-          </article>
-
-          <article class="feature reverse" data-reveal>
-            <div class="feature-copy">
-              <p class="feature-index">04 — Provenance</p>
-              <h3>Every change, on the record.</h3>
-              <p>
-                Each object keeps a full history with who did what — people and agents alike. When
-                an assistant acts for you, the trail shows both.
-              </p>
-            </div>
-            <div class="feature-visual">
-              <div class="mock mock-log">
-                <p class="log-title">field-notes.pdf · history</p>
-                <ol>
-                  <li>
-                    <span class="log-when">09:24</span>
-                    <span
-                      ><b>Claude</b> <span class="via">via kaixuan</span> tagged
-                      <em>review = true</em></span
-                    >
-                  </li>
-                  <li>
-                    <span class="log-when">09:24</span>
-                    <span
-                      ><b>Claude</b> <span class="via">via kaixuan</span> set
-                      <em>status = paid</em></span
-                    >
-                  </li>
-                  <li>
-                    <span class="log-when">08:03</span>
-                    <span><b>kaixuan</b> uploaded the object</span>
-                  </li>
-                </ol>
-              </div>
-            </div>
-          </article>
-        </section>
-
-        <section class="agent" aria-labelledby="agent-title">
-          <div class="section-head" data-reveal>
-            <p class="eyebrow"><span></span> For people, applications &amp; agents</p>
-            <h2 id="agent-title">Hand it to an agent.</h2>
-            <p class="agent-lede">
-              Keva speaks MCP, so an assistant can search, tag, and organise your objects the same
-              way you do — from Claude, Cursor, or any MCP client.
-            </p>
-          </div>
-
-          <div
-            class="chat"
-            data-reveal
+      <section class="showcase" aria-labelledby="showcase-title">
+        <div class="wrap wrap-wide">
+          <figure
+            class="window reveal"
+            data-demo="list"
             role="img"
-            aria-label="A chat where an assistant searches Keva for unpaid invoices and tags them for review"
+            aria-label="The Keva file list: files in one sortable list with name, size, updated time and property tags such as client:acme and type:contract."
           >
-            <div class="chat-head">
-              <span class="chat-mark"><img src="/main-icon.png" alt="" /></span>
-              <span class="chat-title">keva · assistant</span>
-              <span class="chat-conn"><i></i> MCP connected</span>
-            </div>
-            <div class="chat-body">
-              <div class="msg msg-user" data-reveal style="--i: 0">
-                <p>
-                  Find last quarter’s invoices that aren’t marked paid, and tag them for review.
-                </p>
-              </div>
-
-              <div class="msg msg-bot" data-reveal style="--i: 1">
-                <div class="tool">
-                  <div class="tool-head">
-                    <span class="tool-name">keva.search</span>
-                    <span class="tool-state">done</span>
-                  </div>
-                  <pre>{ type: "invoice", status: { not: "paid" }, period: "Q1-2026" }</pre>
-                  <div class="tool-result">→ 3 objects</div>
+            <div class="window-inner" aria-hidden="true">
+              <aside class="app-sidebar">
+                <div class="app-brand">Keva</div>
+                <div class="app-group">
+                  <p class="app-group-label">Views</p>
+                  <span class="app-nav is-active">
+                    <svg class="icon"><use href="#i-files" /></svg>All
+                  </span>
+                  <span class="app-nav">
+                    <svg class="icon"><use href="#i-image" /></svg>Images
+                  </span>
+                  <span class="app-nav">
+                    <svg class="icon"><use href="#i-book" /></svg>Contracts
+                  </span>
                 </div>
-                <ul class="chat-files">
-                  <li><span class="cf-glyph">PDF</span> mar-invoice.pdf <em>$4,200</em></li>
-                  <li><span class="cf-glyph">PDF</span> feb-invoice.pdf <em>$1,980</em></li>
-                  <li><span class="cf-glyph">PDF</span> jan-invoice.pdf <em>$3,510</em></li>
-                </ul>
-              </div>
+                <div class="app-group">
+                  <p class="app-group-label">Shared</p>
+                  <span class="app-nav">
+                    <svg class="icon"><use href="#i-inbox" /></svg>Shared with me
+                  </span>
+                </div>
+                <p class="app-usage">
+                  <svg class="icon"><use href="#i-database" /></svg>
+                  <span><strong>16.6 MB</strong> used · 107 items</span>
+                </p>
+              </aside>
 
-              <div class="msg msg-bot" data-reveal style="--i: 2">
-                <div class="tool">
-                  <div class="tool-head">
-                    <span class="tool-name">keva.tag</span>
-                    <span class="tool-state">done</span>
+              <div class="app-main">
+                <div class="app-topbar">
+                  <span class="app-search">
+                    <svg class="icon"><use href="#i-search" /></svg>Search everything
+                  </span>
+                  <span class="app-avatar">J</span>
+                </div>
+
+                <div class="app-body">
+                  <div class="app-toolbar">
+                    <p class="app-title">
+                      <svg class="icon icon-lg"><use href="#i-files" /></svg>All
+                    </p>
+                    <div class="app-actions">
+                      <span class="btn btn-outline btn-sm">
+                        <svg class="icon"><use href="#i-filter" /></svg>Filter
+                      </span>
+                      <span class="btn btn-primary btn-sm">
+                        <svg class="icon"><use href="#i-upload" /></svg>Upload
+                      </span>
+                    </div>
                   </div>
-                  <pre>{ items: 3, set: { review: true } }</pre>
-                  <div class="tool-result">→ tagged 3 objects · review = true</div>
+
+                  <div class="segmented">
+                    <span class="is-active">All</span>
+                    <span>Document</span>
+                    <span>Photo</span>
+                    <span>Video</span>
+                    <span>Audio</span>
+                  </div>
+
+                  <div class="app-table">
+                    <div class="app-row app-head">
+                      <span>Name</span>
+                      <span class="app-sortable">
+                        Size <svg class="icon icon-xs"><use href="#i-sort" /></svg>
+                      </span>
+                      <span>Updated</span>
+                      <span>Properties</span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 1">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-file-text" /></svg>msa-acme.pdf
+                      </span>
+                      <span class="app-num">1.2 MB</span>
+                      <span class="app-dim">2 days ago</span>
+                      <span class="app-chips">
+                        <span class="chip">client:acme</span>
+                        <span class="chip">type:contract</span>
+                      </span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 2">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-image" /></svg>rooftop-terrace.jpg
+                      </span>
+                      <span class="app-num">3.1 MB</span>
+                      <span class="app-dim">2 days ago</span>
+                      <span class="app-chips"><span class="chip">album:travel</span></span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 3">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-file-sheet" /></svg>q2-budget.csv
+                      </span>
+                      <span class="app-num">88 KB</span>
+                      <span class="app-dim">4 days ago</span>
+                      <span class="app-chips">
+                        <span class="chip">quarter:Q2</span>
+                        <span class="chip">status:final</span>
+                      </span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 4">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-file-text" /></svg>onboarding-deck.pdf
+                      </span>
+                      <span class="app-num">6.4 MB</span>
+                      <span class="app-dim">5 days ago</span>
+                      <span class="app-chips"><span class="chip">team:design</span></span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 5">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-file-text" /></svg>invoice-0142.pdf
+                      </span>
+                      <span class="app-num">240 KB</span>
+                      <span class="app-dim">1 week ago</span>
+                      <span class="app-chips"><span class="chip">paid</span></span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 6">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-file-text" /></svg>field-notes.md
+                      </span>
+                      <span class="app-num">4 KB</span>
+                      <span class="app-dim">1 week ago</span>
+                      <span class="app-chips"><span class="chip">pinned</span></span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 7">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-video" /></svg>keynote-cut.mp4
+                      </span>
+                      <span class="app-num">184 MB</span>
+                      <span class="app-dim">2 weeks ago</span>
+                      <span class="app-chips"></span>
+                    </div>
+                    <div class="app-row app-file" style="--d: 8">
+                      <span class="app-name">
+                        <svg class="icon"><use href="#i-file-code" /></svg>brand-logo.svg
+                      </span>
+                      <span class="app-num">12 KB</span>
+                      <span class="app-dim">3 weeks ago</span>
+                      <span class="app-chips"><span class="chip">project:brand</span></span>
+                    </div>
+                  </div>
+
+                  <div class="app-foot">
+                    <span class="app-pages">
+                      <span class="app-page app-page-dim">
+                        <svg class="icon icon-xs"><use href="#i-chevron-left" /></svg>Previous
+                      </span>
+                      <span class="app-page is-active">1</span>
+                      <span class="app-page">2</span>
+                      <span class="app-page">3</span>
+                      <span class="app-page app-page-dim">
+                        Next <svg class="icon icon-xs"><use href="#i-chevron-right" /></svg>
+                      </span>
+                    </span>
+                    <span class="app-dim">107 items</span>
+                  </div>
                 </div>
               </div>
-
-              <div class="msg msg-bot" data-reveal style="--i: 3">
-                <p>
-                  Done — the 3 unpaid invoices from last quarter are now tagged
-                  <b>review = true</b>. Want me to share them with the finance view?
-                </p>
-              </div>
-
-              <div class="msg msg-bot typing" data-reveal style="--i: 4" aria-hidden="true">
-                <span></span><span></span><span></span>
-              </div>
             </div>
-            <div class="chat-input">
-              <span>Message keva…</span>
-              <button type="button" aria-hidden="true" tabindex="-1">↑</button>
-            </div>
-          </div>
+          </figure>
 
-          <p class="agent-clients" data-reveal>Works with Claude · Cursor · Zed · any MCP client</p>
-        </section>
-
-        <section class="pricing" id="pricing" aria-labelledby="pricing-title">
-          <div class="pricing-heading">
-            <p class="eyebrow"><span></span> Simple monthly plans</p>
-            <h2 id="pricing-title">Keep what matters.<br />Pay for the shelf.</h2>
-            <p>
-              Every plan includes structured metadata, API and MCP access, sharing, and free egress.
-              Start with a 14-day trial and move between plans as your archive grows.
+          <div class="showcase-copy">
+            <h2 id="showcase-title" class="reveal">One list.<br />Everything in it.</h2>
+            <p class="body reveal" style="--d: 1">
+              No folder trees to build, no paths to remember. Every file lands in one sortable list
+              — then you narrow it down the moment you need something. Save any filter as a view and
+              it lives in your sidebar.
             </p>
           </div>
-          <div class="price-grid">
-            <article class="price-card">
-              <p class="price-index">01</p>
-              <h3>100 GB</h3>
-              <p class="price"><strong>$12</strong><span>/ month</span></p>
-              <p>100,000 items<br />100,000 monthly uploads</p>
-              <a href="https://app.usekeva.com/signup?plan=100gb">Start trial ↗</a>
-            </article>
-            <article class="price-card featured">
-              <p class="price-index">02 · Most useful</p>
-              <h3>500 GB</h3>
-              <p class="price"><strong>$29</strong><span>/ month</span></p>
-              <p>500,000 items<br />500,000 monthly uploads</p>
-              <a href="https://app.usekeva.com/signup?plan=500gb">Start trial ↗</a>
-            </article>
-            <article class="price-card">
-              <p class="price-index">03</p>
-              <h3>1 TB</h3>
-              <p class="price"><strong>$55</strong><span>/ month</span></p>
-              <p>1 million items<br />1 million monthly uploads</p>
-              <a href="https://app.usekeva.com/signup?plan=1tb">Start trial ↗</a>
-            </article>
-            <article class="price-card">
-              <p class="price-index">04</p>
-              <h3>2 TB</h3>
-              <p class="price"><strong>$99</strong><span>/ month</span></p>
-              <p>2 million items<br />2 million monthly uploads</p>
-              <a href="https://app.usekeva.com/signup?plan=2tb">Start trial ↗</a>
-            </article>
-          </div>
-          <p class="pricing-note">14 days · 1 GB trial storage · Card required · Cancel anytime</p>
-        </section>
-      </main>
+        </div>
+      </section>
 
-      <footer>
-        <p>Keva is taking shape.</p>
-        <p>Built for humans and their agents.</p>
-      </footer>
-    </div>
-    <script type="module">
-      const targets = document.querySelectorAll("[data-reveal]");
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce || !("IntersectionObserver" in window)) {
-        for (const el of targets) el.classList.add("in-view");
-      } else {
-        const io = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (!entry.isIntersecting) continue;
-              entry.target.classList.add("in-view");
-              io.unobserve(entry.target);
-            }
-          },
-          { threshold: 0.18, rootMargin: "0px 0px -8% 0px" },
-        );
-        for (const el of targets) io.observe(el);
-      }
-    </script>
+      <section class="features" aria-labelledby="features-title">
+        <div class="wrap">
+          <h2 id="features-title" class="sr-only">What Keva does</h2>
+
+          <div class="feature reveal">
+            <div class="feature-copy">
+              <p class="kicker">Preview</p>
+              <h3>See what's inside, instantly.</h3>
+              <p class="body">
+                PDFs, images, spreadsheets, text and code open right where they are. No download
+                step, no other app.
+              </p>
+            </div>
+            <figure
+              class="feature-visual"
+              role="img"
+              aria-label="A file detail panel showing msa-acme.pdf with Preview, Properties and Activity tabs, and the document rendered inline."
+            >
+              <div class="detail" aria-hidden="true">
+                <div class="detail-head">
+                  <div class="detail-ident">
+                    <p class="detail-name">msa-acme.pdf</p>
+                    <p class="detail-meta">application/pdf · 1.2 MB</p>
+                  </div>
+                  <div class="detail-tools">
+                    <svg class="icon"><use href="#i-download" /></svg>
+                    <svg class="icon"><use href="#i-x" /></svg>
+                  </div>
+                </div>
+                <div class="segmented segmented-fill">
+                  <span class="is-active">Preview</span>
+                  <span>Properties</span>
+                  <span>Activity</span>
+                </div>
+                <div class="detail-preview">
+                  <div class="page">
+                    <p class="page-kicker"></p>
+                    <p class="page-title"></p>
+                    <p class="page-line"></p>
+                    <p class="page-line"></p>
+                    <p class="page-line short"></p>
+                    <p class="page-line"></p>
+                    <p class="page-line"></p>
+                    <p class="page-line mid"></p>
+                    <p class="page-line"></p>
+                    <p class="page-line short"></p>
+                  </div>
+                </div>
+              </div>
+            </figure>
+          </div>
+
+          <div class="feature feature-flip reveal">
+            <div class="feature-copy">
+              <p class="kicker">Share</p>
+              <h3>Share a link, not a folder.</h3>
+              <p class="body">
+                Any file — or any filtered view of them — becomes a link. Pick the access, set an
+                expiry, revoke it whenever you like.
+              </p>
+            </div>
+            <figure
+              class="feature-visual"
+              data-demo="share"
+              role="img"
+              aria-label="A share dialog with read access enabled, a seven-day expiry, and a share link being copied."
+            >
+              <div class="card mock" aria-hidden="true">
+                <div class="mock-head">
+                  <svg class="icon"><use href="#i-share" /></svg>
+                  <span>Share files</span>
+                  <span class="pill">Q2 contracts</span>
+                </div>
+                <div class="mock-rows">
+                  <div class="mock-row">
+                    <span class="mock-label">Access</span>
+                    <span class="checks">
+                      <span class="check is-on">
+                        <span class="box"
+                          ><svg class="icon"><use href="#i-check" /></svg
+                        ></span>
+                        Can read
+                      </span>
+                      <span class="check">
+                        <span class="box"></span>
+                        Can upload
+                      </span>
+                    </span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">Expires</span>
+                    <span class="select">7 days</span>
+                  </div>
+                </div>
+                <div class="link-row">
+                  <code class="link">usekeva.com/s/8f2ca41b</code>
+                  <span class="icon-btn">
+                    <svg class="icon copy-idle"><use href="#i-copy" /></svg>
+                    <svg class="icon copy-done"><use href="#i-check" /></svg>
+                  </span>
+                </div>
+                <p class="mock-note">Anyone with this link gets the access you picked.</p>
+                <span class="toast">
+                  <svg class="icon"><use href="#i-check" /></svg>Link copied
+                </span>
+              </div>
+            </figure>
+          </div>
+
+          <div class="feature reveal">
+            <div class="feature-copy">
+              <p class="kicker">Collect</p>
+              <h3>Let others send you files.</h3>
+              <p class="body">
+                Turn on upload access and anyone with the link can drop files straight in. They
+                arrive tagged the way you asked — and guests never see anything else.
+              </p>
+            </div>
+            <figure
+              class="feature-visual"
+              data-demo="upload"
+              role="img"
+              aria-label="An upload area where a guest drops scope-of-work.pdf; it uploads and arrives already tagged with source:client and intake:2026."
+            >
+              <div class="card mock" aria-hidden="true">
+                <div class="mock-head">
+                  <svg class="icon"><use href="#i-upload" /></svg>
+                  <span>Client intake</span>
+                  <span class="pill pill-live">Upload link</span>
+                </div>
+                <div class="dropzone">
+                  <p class="dz-hint">Drop files here</p>
+                  <div class="dz-file">
+                    <svg class="icon"><use href="#i-file-text" /></svg>
+                    <span class="dz-name">scope-of-work.pdf</span>
+                    <span class="app-num">420 KB</span>
+                    <span class="dz-bar"><i></i></span>
+                  </div>
+                  <div class="dz-chips">
+                    <span class="chip">source:client</span>
+                    <span class="chip">intake:2026</span>
+                  </div>
+                </div>
+                <p class="mock-note">Stamped on arrival, so nothing lands untagged.</p>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="props" aria-labelledby="props-title">
+        <div class="wrap">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow reveal">Tags · metadata · properties</p>
+              <h2 id="props-title" class="reveal" style="--d: 1">
+                Organize by meaning,<br />not by location.
+              </h2>
+            </div>
+            <p class="lede reveal" style="--d: 2">
+              Put anything on a file: a bare tag, a value, a number, a flag. Then filter on it — and
+              keep the filter if it's one you'll want again.
+            </p>
+          </div>
+
+          <div class="props-grid">
+            <figure
+              class="props-card reveal"
+              data-demo="props"
+              role="img"
+              aria-label="A properties editor where a new property, signed:true, is typed onto a file alongside client:acme and pages:14."
+            >
+              <div class="card mock" aria-hidden="true">
+                <div class="mock-head mock-head-quiet">
+                  <span class="mock-caps">Properties</span>
+                  <span class="toggle">
+                    <span class="is-active"
+                      ><svg class="icon"><use href="#i-rows" /></svg
+                    ></span>
+                    <span class="mono">{}</span>
+                  </span>
+                </div>
+                <div class="prop-rows">
+                  <div class="prop">
+                    <svg class="icon icon-dim"><use href="#i-lock" /></svg>
+                    <span class="prop-key prop-key-sys">Status</span>
+                    <span class="pill">ready</span>
+                  </div>
+                  <div class="prop">
+                    <svg class="icon icon-dim"><use href="#i-lock" /></svg>
+                    <span class="prop-key prop-key-sys">Source</span>
+                    <span class="prop-val">upload</span>
+                  </div>
+                  <div class="prop">
+                    <svg class="icon icon-dim"><use href="#i-type" /></svg>
+                    <span class="prop-key mono">client</span>
+                    <span class="prop-val">acme</span>
+                  </div>
+                  <div class="prop">
+                    <svg class="icon icon-dim"><use href="#i-hash" /></svg>
+                    <span class="prop-key mono">pages</span>
+                    <span class="prop-val app-num">14</span>
+                  </div>
+                  <div class="prop prop-new">
+                    <svg class="icon icon-dim"><use href="#i-toggle" /></svg>
+                    <span class="prop-key mono typed"><span>signed</span></span>
+                    <span class="prop-val prop-val-new">true</span>
+                  </div>
+                  <div class="prop prop-add">
+                    <svg class="icon icon-dim"><use href="#i-tag" /></svg>
+                    <span class="prop-key mono prop-key-ghost">new prop</span>
+                    <svg class="icon icon-dim prop-plus"><use href="#i-plus" /></svg>
+                  </div>
+                </div>
+              </div>
+            </figure>
+
+            <figure
+              class="props-card reveal"
+              style="--d: 1"
+              data-demo="filter"
+              role="img"
+              aria-label="A filter bar with chips client is acme and signed is true, narrowing 107 files down to three, with a save-as-view action."
+            >
+              <div class="card mock" aria-hidden="true">
+                <div class="filter-bar">
+                  <span class="fchip">
+                    <span class="fchip-key">client</span>
+                    <span class="fchip-op">is</span>
+                    <span class="fchip-val">acme</span>
+                  </span>
+                  <span class="fchip fchip-late">
+                    <span class="fchip-key">signed</span>
+                    <span class="fchip-op">is</span>
+                    <span class="fchip-val">true</span>
+                  </span>
+                  <span class="fchip fchip-add">
+                    <svg class="icon icon-xs"><use href="#i-plus" /></svg>Filter
+                  </span>
+                </div>
+                <div class="mini-list">
+                  <div class="mini-row">
+                    <svg class="icon"><use href="#i-file-text" /></svg>
+                    <span class="mini-name">msa-acme.pdf</span>
+                    <span class="chip">signed:true</span>
+                  </div>
+                  <div class="mini-row">
+                    <svg class="icon"><use href="#i-file-text" /></svg>
+                    <span class="mini-name">addendum-02.pdf</span>
+                    <span class="chip">signed:true</span>
+                  </div>
+                  <div class="mini-row mini-row-late">
+                    <svg class="icon"><use href="#i-file-text" /></svg>
+                    <span class="mini-name">nda-acme.pdf</span>
+                    <span class="chip">signed:true</span>
+                  </div>
+                </div>
+                <div class="filter-foot">
+                  <span class="app-dim">3 of 107 items</span>
+                  <span class="btn btn-ghost btn-sm">
+                    <svg class="icon"><use href="#i-save" /></svg>Save as view
+                  </span>
+                </div>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="agents" aria-labelledby="agents-title">
+        <div class="agents-grid" aria-hidden="true"></div>
+        <svg class="agents-keyhole" aria-hidden="true"><use href="#i-keyhole" /></svg>
+        <div class="wrap agents-inner">
+          <div class="agents-copy">
+            <p class="eyebrow eyebrow-invert reveal">Model Context Protocol</p>
+            <h2 id="agents-title" class="reveal" style="--d: 1">Your agents,<br />first class.</h2>
+            <p class="lede lede-invert reveal" style="--d: 2">
+              Keva speaks MCP natively. Connect your client, and your agent can search by property,
+              read a file and write metadata back — inside the access you grant, with every change
+              attributed.
+            </p>
+            <ul class="clients reveal" style="--d: 3">
+              <li>
+                <svg class="brand" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"
+                  />
+                </svg>
+                Cursor
+              </li>
+              <li>
+                <svg class="brand" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"
+                  />
+                </svg>
+                Claude
+              </li>
+              <li>
+                <svg class="brand" viewBox="0 0 40 40" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M32.838 17.282a7.4 7.4 0 0 0-.563-6.094 7.32 7.32 0 0 0-8.155-3.656A7.4 7.4 0 0 0 18.495 5a7.33 7.33 0 0 0-7.22 5.157 7.43 7.43 0 0 0-5.062 3.656 7.38 7.38 0 0 0 .937 8.905 7.4 7.4 0 0 0 .563 6.094 7.32 7.32 0 0 0 8.157 3.657A7.4 7.4 0 0 0 21.495 35a7.33 7.33 0 0 0 7.218-5.156 7.43 7.43 0 0 0 4.97-3.657 7.38 7.38 0 0 0-.845-8.905Zm-11.25 15.748a5.5 5.5 0 0 1-3.656-1.312l6.188-3.563a.84.84 0 0 0 .468-.844v-8.436l2.532 1.5v6.937a5.53 5.53 0 0 1-5.532 5.718ZM9.495 27.875a5.5 5.5 0 0 1-.657-3.75l6.188 3.562a.84.84 0 0 0 .937 0l7.312-4.218v2.906l-6.093 3.562a5.54 5.54 0 0 1-7.687-2.062ZM7.9 14.845a5.5 5.5 0 0 1 2.907-2.439v7.126a.84.84 0 0 0 .468.843l7.313 4.22-2.531 1.5-6-3.47A5.53 5.53 0 0 1 7.9 14.845Zm20.72 4.78-7.313-4.218 2.531-1.5 6 3.468a5.53 5.53 0 0 1-.843 10.125v-7.125a.84.84 0 0 0-.375-.75Zm2.53-3.75-6.187-3.562a.84.84 0 0 0-.938 0l-7.312 4.219v-2.907l6.094-3.562a5.54 5.54 0 0 1 8.343 5.812ZM15.4 21.125l-2.53-1.5v-7.03a5.53 5.53 0 0 1 9.187-4.313l-6.187 3.562a.84.84 0 0 0-.47.844v8.437Zm1.313-3 3.282-1.875 3.28 1.875v3.75l-3.28 1.875-3.282-1.875v-3.75Z"
+                  />
+                </svg>
+                Codex
+              </li>
+              <li>
+                <svg class="brand" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M22 24H2V0h20zM17 4.8H7v14.4h10z" />
+                </svg>
+                OpenCode
+              </li>
+              <li class="clients-more">…and any MCP client</li>
+            </ul>
+            <div class="code-line reveal" style="--d: 4">
+              <code>claude mcp add --transport http keva https://app.usekeva.com/mcp</code>
+              <span class="icon-btn icon-btn-invert">
+                <svg class="icon"><use href="#i-copy" /></svg>
+              </span>
+            </div>
+          </div>
+
+          <figure
+            class="terminal reveal"
+            style="--d: 2"
+            data-demo="agent"
+            role="img"
+            aria-label="An agent session: the agent searches Keva for signed Acme contracts, gets three files back, then patches invoice-0142.pdf to set status paid."
+          >
+            <div class="terminal-bar" aria-hidden="true">
+              <span class="terminal-dot"></span>
+              <span>agent session</span>
+            </div>
+            <div class="terminal-body" aria-hidden="true">
+              <p class="t-line t-user" style="--d: 0">
+                <span class="t-caret">&gt;</span> Find the signed Acme contracts and mark the
+                invoice paid.
+              </p>
+              <p class="t-line t-call" style="--d: 1">
+                <span class="t-bullet">⏺</span> keva<span class="t-dim">.search</span>
+              </p>
+              <p class="t-line t-args" style="--d: 2">
+                where <span class="t-key">client</span>:acme <span class="t-dim">·</span>
+                <span class="t-key">signed</span>:true
+              </p>
+              <p class="t-line t-result" style="--d: 3">→ 3 items</p>
+              <p class="t-line t-item" style="--d: 4">
+                <span class="t-name">msa-acme.pdf</span><span class="t-size">1.2 MB</span>
+              </p>
+              <p class="t-line t-item" style="--d: 5">
+                <span class="t-name">addendum-02.pdf</span><span class="t-size">240 KB</span>
+              </p>
+              <p class="t-line t-item" style="--d: 6">
+                <span class="t-name">invoice-0142.pdf</span><span class="t-size">88 KB</span>
+              </p>
+              <p class="t-line t-call" style="--d: 7">
+                <span class="t-bullet">⏺</span> keva<span class="t-dim">.patch</span>
+                <span class="t-name">invoice-0142.pdf</span>
+              </p>
+              <p class="t-line t-args" style="--d: 8">set <span class="t-key">status</span>:paid</p>
+              <p class="t-line t-ok" style="--d: 9">✓ updated · 1 property</p>
+              <p class="t-line t-cursor" style="--d: 10"><span class="blink"></span></p>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="platforms" aria-labelledby="platforms-title">
+        <div class="wrap">
+          <h2 id="platforms-title" class="reveal">Where Keva runs</h2>
+          <div class="plat-grid">
+            <div class="plat reveal">
+              <svg class="icon icon-lg"><use href="#i-monitor" /></svg>
+              <h3>Web</h3>
+              <p class="body">Any modern browser. Nothing to install, nothing to sync.</p>
+              <p class="status status-live"><span class="status-dot"></span>Available now</p>
+            </div>
+            <div class="plat reveal" style="--d: 1">
+              <svg class="icon icon-lg"><use href="#i-phone" /></svg>
+              <h3>iOS &amp; Android</h3>
+              <p class="body">Native apps for capturing, previewing and uploading on the move.</p>
+              <p class="status"><span class="status-dot"></span>Coming soon</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta" aria-labelledby="cta-title">
+        <div class="wrap cta-inner">
+          <h2 id="cta-title" class="reveal">Bring your files.<br />Keep your structure.</h2>
+          <div class="hero-actions reveal" style="--d: 1">
+            <a class="btn btn-primary btn-lg" href="https://app.usekeva.com/signup">
+              Start for free
+              <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
+            </a>
+            <a class="btn btn-outline btn-lg" href="https://app.usekeva.com/login">Sign in</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap site-footer-inner">
+        <a class="wordmark wordmark-sm" href="/" aria-label="Keva home">
+          <img src="/main-icon.png" alt="" width="24" height="24" />
+          <span>Keva</span>
+        </a>
+        <p class="footer-tagline">
+          Metadata-rich object storage for people, applications and agents.
+        </p>
+        <nav class="footer-nav" aria-label="Footer">
+          <a href="https://app.usekeva.com/login">Sign in</a>
+          <a href="https://app.usekeva.com/signup">Get started</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
