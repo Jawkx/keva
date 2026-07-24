@@ -7,21 +7,28 @@
       name="description"
       content="Keva is metadata-rich object storage for people, applications, and agents."
     />
-    <meta name="theme-color" content="#f8f4e8" />
+    <meta name="theme-color" content="#f7f7f8" />
     <meta property="og:title" content="Keva — files with context" />
     <meta
       property="og:description"
       content="Keep every object, detail, and relationship in one durable place."
     />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:image" content="/main-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/src/styles.css" />
     <title>Keva — files with context</title>
+    <script>
+      document.documentElement.classList.add("js");
+    </script>
   </head>
   <body>
     <div class="page-shell">
       <header class="site-header">
         <a class="wordmark" href="/" aria-label="Keva home">
-          <span class="wordmark-mark" aria-hidden="true">k</span>
+          <img class="wordmark-mark" src="/main-icon.png" alt="" aria-hidden="true" />
           <span>keva</span>
         </a>
         <a class="header-link" href="https://app.usekeva.com/login">Sign in</a>
@@ -94,6 +101,216 @@
           <p>Every workflow.</p>
         </section>
 
+        <section class="features" aria-labelledby="features-title">
+          <div class="section-head" data-reveal>
+            <p class="eyebrow"><span></span> Everything, in context</p>
+            <h2 id="features-title">A file, and everything<br />you know about it.</h2>
+          </div>
+
+          <article class="feature" data-reveal>
+            <div class="feature-copy">
+              <p class="feature-index">01 — Metadata</p>
+              <h3>Tag anything.</h3>
+              <p>
+                Attach typed properties to any object — strings, numbers, booleans, dates. They
+                render as tags you edit inline, and every value is queryable later.
+              </p>
+            </div>
+            <div class="feature-visual">
+              <div class="mock mock-tags">
+                <div class="mock-file">
+                  <span class="mock-glyph">PDF</span>
+                  <div>
+                    <p class="mock-name">q2-invoice.pdf</p>
+                    <p class="mock-sub">88 KB · application/pdf</p>
+                  </div>
+                </div>
+                <div class="chips">
+                  <span class="chip chip-ink">status = paid</span>
+                  <span class="chip">vendor = acme</span>
+                  <span class="chip">amount = 4200</span>
+                  <span class="chip">due = 2026-06-30</span>
+                  <span class="chip chip-add">+ property</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature reverse" data-reveal>
+            <div class="feature-copy">
+              <p class="feature-index">02 — Retrieval</p>
+              <h3>Query it. Save the view.</h3>
+              <p>
+                Filter across metadata the way you think — then pin the result as a first-class view
+                in your sidebar. Your archive organises itself.
+              </p>
+            </div>
+            <div class="feature-visual">
+              <div class="mock mock-views">
+                <aside class="mock-side">
+                  <p class="mock-side-title">Views</p>
+                  <ul>
+                    <li>All files</li>
+                    <li class="active">Finance · 2026</li>
+                    <li>Shared with me</li>
+                    <li>Images</li>
+                  </ul>
+                </aside>
+                <div class="mock-main">
+                  <div class="mock-filterbar">
+                    <span class="filter-chip">category = finance</span>
+                    <span class="filter-chip">type = pdf</span>
+                    <span class="filter-add">+ filter</span>
+                  </div>
+                  <ul class="mock-results">
+                    <li><span class="dot"></span> q2-invoice.pdf <em>status=paid</em></li>
+                    <li><span class="dot"></span> q1-invoice.pdf <em>status=paid</em></li>
+                    <li><span class="dot"></span> budget.xlsx <em>status=final</em></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature" data-reveal>
+            <div class="feature-copy">
+              <p class="feature-index">03 — Sharing</p>
+              <h3>Share a slice, not the vault.</h3>
+              <p>
+                Publish any view behind a link. Recipients see exactly the objects that match — and
+                can drop new uploads straight into it, no account required.
+              </p>
+            </div>
+            <div class="feature-visual">
+              <div class="mock mock-share">
+                <div class="share-head">
+                  <p>Share “Finance · 2026”</p>
+                  <span class="pill pill-on">Link on</span>
+                </div>
+                <div class="share-url">
+                  <span>usekeva.com/s/9f3a71c…</span>
+                  <button type="button">Copy</button>
+                </div>
+                <ul class="share-perms">
+                  <li><span class="check">✓</span> Anyone with the link can view</li>
+                  <li><span class="check">✓</span> Uploads allowed into this view</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature reverse" data-reveal>
+            <div class="feature-copy">
+              <p class="feature-index">04 — Provenance</p>
+              <h3>Every change, on the record.</h3>
+              <p>
+                Each object keeps a full history with who did what — people and agents alike. When
+                an assistant acts for you, the trail shows both.
+              </p>
+            </div>
+            <div class="feature-visual">
+              <div class="mock mock-log">
+                <p class="log-title">field-notes.pdf · history</p>
+                <ol>
+                  <li>
+                    <span class="log-when">09:24</span>
+                    <span
+                      ><b>Claude</b> <span class="via">via kaixuan</span> tagged
+                      <em>review = true</em></span
+                    >
+                  </li>
+                  <li>
+                    <span class="log-when">09:24</span>
+                    <span
+                      ><b>Claude</b> <span class="via">via kaixuan</span> set
+                      <em>status = paid</em></span
+                    >
+                  </li>
+                  <li>
+                    <span class="log-when">08:03</span>
+                    <span><b>kaixuan</b> uploaded the object</span>
+                  </li>
+                </ol>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="agent" aria-labelledby="agent-title">
+          <div class="section-head" data-reveal>
+            <p class="eyebrow"><span></span> For people, applications &amp; agents</p>
+            <h2 id="agent-title">Hand it to an agent.</h2>
+            <p class="agent-lede">
+              Keva speaks MCP, so an assistant can search, tag, and organise your objects the same
+              way you do — from Claude, Cursor, or any MCP client.
+            </p>
+          </div>
+
+          <div
+            class="chat"
+            data-reveal
+            role="img"
+            aria-label="A chat where an assistant searches Keva for unpaid invoices and tags them for review"
+          >
+            <div class="chat-head">
+              <span class="chat-mark"><img src="/main-icon.png" alt="" /></span>
+              <span class="chat-title">keva · assistant</span>
+              <span class="chat-conn"><i></i> MCP connected</span>
+            </div>
+            <div class="chat-body">
+              <div class="msg msg-user" data-reveal style="--i: 0">
+                <p>
+                  Find last quarter’s invoices that aren’t marked paid, and tag them for review.
+                </p>
+              </div>
+
+              <div class="msg msg-bot" data-reveal style="--i: 1">
+                <div class="tool">
+                  <div class="tool-head">
+                    <span class="tool-name">keva.search</span>
+                    <span class="tool-state">done</span>
+                  </div>
+                  <pre>{ type: "invoice", status: { not: "paid" }, period: "Q1-2026" }</pre>
+                  <div class="tool-result">→ 3 objects</div>
+                </div>
+                <ul class="chat-files">
+                  <li><span class="cf-glyph">PDF</span> mar-invoice.pdf <em>$4,200</em></li>
+                  <li><span class="cf-glyph">PDF</span> feb-invoice.pdf <em>$1,980</em></li>
+                  <li><span class="cf-glyph">PDF</span> jan-invoice.pdf <em>$3,510</em></li>
+                </ul>
+              </div>
+
+              <div class="msg msg-bot" data-reveal style="--i: 2">
+                <div class="tool">
+                  <div class="tool-head">
+                    <span class="tool-name">keva.tag</span>
+                    <span class="tool-state">done</span>
+                  </div>
+                  <pre>{ items: 3, set: { review: true } }</pre>
+                  <div class="tool-result">→ tagged 3 objects · review = true</div>
+                </div>
+              </div>
+
+              <div class="msg msg-bot" data-reveal style="--i: 3">
+                <p>
+                  Done — the 3 unpaid invoices from last quarter are now tagged
+                  <b>review = true</b>. Want me to share them with the finance view?
+                </p>
+              </div>
+
+              <div class="msg msg-bot typing" data-reveal style="--i: 4" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+            <div class="chat-input">
+              <span>Message keva…</span>
+              <button type="button" aria-hidden="true" tabindex="-1">↑</button>
+            </div>
+          </div>
+
+          <p class="agent-clients" data-reveal>Works with Claude · Cursor · Zed · any MCP client</p>
+        </section>
+
         <section class="pricing" id="pricing" aria-labelledby="pricing-title">
           <div class="pricing-heading">
             <p class="eyebrow"><span></span> Simple monthly plans</p>
@@ -142,5 +359,24 @@
         <p>Built for humans and their agents.</p>
       </footer>
     </div>
+    <script type="module">
+      const targets = document.querySelectorAll("[data-reveal]");
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce || !("IntersectionObserver" in window)) {
+        for (const el of targets) el.classList.add("in-view");
+      } else {
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              entry.target.classList.add("in-view");
+              io.unobserve(entry.target);
+            }
+          },
+          { threshold: 0.18, rootMargin: "0px 0px -8% 0px" },
+        );
+        for (const el of targets) io.observe(el);
+      }
+    </script>
   </body>
 </html>
