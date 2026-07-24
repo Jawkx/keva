@@ -2,14 +2,43 @@ import { FileCode2, FileSpreadsheet, FileText, Image, type LucideIcon } from "lu
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
+function Keyhole({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 132" fill="none" className={className} aria-hidden>
+      <circle cx="50" cy="42" r="30" stroke="currentColor" strokeWidth="6" />
+      <path
+        d="M40 66 L31 116 Q30 124 38 124 L62 124 Q70 124 69 116 L60 66"
+        stroke="currentColor"
+        strokeWidth="6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function Wordmark({ className, mark }: { className?: string; mark?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-3", className)}>
+      <img
+        src="/main-icon.png"
+        alt=""
+        className={cn("size-9 rounded-[10px] object-cover ring-1", mark ?? "ring-white/15")}
+      />
+      <span className="font-heading text-[26px] leading-none font-semibold tracking-tight">
+        Keva
+      </span>
+    </span>
+  );
+}
+
 function Chip({ children, accent }: { children: ReactNode; accent?: boolean }) {
   return (
     <span
       className={cn(
-        "rounded-md px-2.5 py-1 text-[13px] font-medium ring-1",
+        "rounded-md px-2.5 py-1 text-[13px] ring-1 ring-inset",
         accent
-          ? "bg-primary/15 text-primary ring-primary/25"
-          : "bg-white/[0.06] text-white/55 ring-white/10",
+          ? "bg-white/90 font-medium text-neutral-900 ring-white/0"
+          : "bg-white/[0.04] font-medium text-white/55 ring-white/10",
       )}
     >
       {children}
@@ -27,9 +56,9 @@ type MockFile = {
 function FileCard({ file }: { file: MockFile }) {
   const Icon = file.icon;
   return (
-    <div className="mr-6 w-72 shrink-0 rounded-xl border border-white/10 bg-[#141922] p-5">
+    <div className="mr-5 w-72 shrink-0 rounded-xl bg-white/[0.03] p-5 ring-1 ring-inset ring-white/[0.08]">
       <div className="flex items-center gap-3.5">
-        <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+        <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-inset ring-white/10">
           <Icon className="size-[22px]" />
         </div>
         <div className="min-w-0">
@@ -103,27 +132,41 @@ function FileRow({ ariaHidden }: { ariaHidden?: boolean }) {
 
 function BrandPanel() {
   return (
-    <div className="relative hidden overflow-hidden bg-[#0b0e13] p-14 text-white lg:flex lg:flex-col">
+    <div className="relative hidden overflow-hidden bg-[#0a0a0b] p-14 text-white lg:flex lg:flex-col">
+      {/* Blueprint grid — reads as "structured", fades toward the edges */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.035] to-transparent"
+        className="pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.045)_1px,transparent_1px)] [background-size:46px_46px] [mask-image:radial-gradient(ellipse_120%_90%_at_20%_10%,black,transparent_70%)]"
       />
+      {/* Soft top-left light source */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -left-40 size-[32rem] rounded-full bg-white/[0.05] blur-3xl"
+      />
+      {/* Oversized keyhole watermark bleeding off the bottom-right — the vault motif */}
+      <Keyhole className="pointer-events-none absolute -right-24 -bottom-28 h-[32rem] w-auto text-white/[0.028]" />
 
       <div className="relative flex h-full flex-col">
-        <span className="font-heading text-[42px] leading-none font-semibold text-primary">
-          Keva
-        </span>
+        <Wordmark className="text-white" />
 
         <div className="flex flex-1 flex-col justify-center gap-12">
-          <div>
-            <h2 className="max-w-md font-heading text-[2.75rem] leading-[1.05] font-semibold tracking-tight text-balance">
+          <div className="max-w-md">
+            <span className="text-[13px] font-medium tracking-[0.18em] text-white/40 uppercase">
+              Metadata-rich object storage
+            </span>
+            <h2 className="mt-5 font-heading text-[2.75rem] leading-[1.05] font-semibold tracking-tight text-balance">
               Your files,
               <br />
-              <span className="text-primary">structured.</span>
+              <span className="relative inline-block">
+                structured.
+                <span
+                  aria-hidden
+                  className="absolute -bottom-1 left-0 h-[3px] w-full rounded-full bg-gradient-to-r from-white/60 to-white/5"
+                />
+              </span>
             </h2>
-            <div className="mt-7 h-px w-12 bg-primary/70" />
-            <p className="mt-7 text-[15px] leading-relaxed text-white/45">
-              Tag anything. Find it in seconds.
+            <p className="mt-8 text-[15px] leading-relaxed text-white/45">
+              Tag anything. Find it in seconds — from the app, the API, or an agent.
             </p>
           </div>
 
@@ -133,6 +176,14 @@ function BrandPanel() {
               <FileRow ariaHidden />
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-[13px] text-white/35">
+          <span>For people</span>
+          <span className="text-white/20">·</span>
+          <span>applications</span>
+          <span className="text-white/20">·</span>
+          <span>agents</span>
         </div>
       </div>
     </div>
@@ -146,9 +197,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <main className="flex flex-col items-center justify-center px-6 py-12 lg:border-l lg:border-border">
         <div className="flex w-full max-w-sm flex-col gap-8">
           <div className="flex justify-center lg:hidden">
-            <span className="font-heading text-[42px] leading-none font-semibold text-primary">
-              Keva
-            </span>
+            <Wordmark className="text-foreground" mark="ring-border" />
           </div>
           {children}
         </div>
