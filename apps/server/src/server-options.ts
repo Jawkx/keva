@@ -17,6 +17,7 @@ import {
 } from "./email-verification.js";
 import { Polar } from "@polar-sh/sdk";
 import { makeBillingStore, type BillingConfig, type BillingStore } from "./billing.js";
+import { makeUserAvatarResolver } from "./avatar.js";
 
 export interface ServerOptionsConfig {
   readonly staticToken: string;
@@ -106,6 +107,7 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
 
   return {
     layer,
+    userAvatars: makeUserAvatarResolver(database.db),
     ...(auth
       ? {
           authHandler: auth.handler,

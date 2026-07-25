@@ -9,6 +9,8 @@ import { listReceivedShares, receivedSharesQueryKey } from "../lib/account-share
 import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
 import { viewIcon } from "./view-icons";
+import { UserAvatar } from "./UserAvatar";
+import { avatarRecipeForUser } from "../lib/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -224,9 +226,11 @@ function HeaderAccount() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground uppercase">
-          {(name || "?").charAt(0)}
-        </div>
+        {data?.user ? (
+          <UserAvatar avatar={avatarRecipeForUser(data.user.id, data.user.avatar)} name={name} />
+        ) : (
+          <div className="size-8 shrink-0 rounded-full bg-muted" />
+        )}
         <span className="hidden max-w-36 truncate text-sm font-medium lg:block">{name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">

@@ -13,6 +13,7 @@ import { errorMessage } from "../lib/errors";
 import { formatDate } from "../lib/format";
 import { viewIcon } from "../components/view-icons";
 import { PageHeader } from "../components/PageHeader";
+import { UserAvatar } from "../components/UserAvatar";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -120,9 +121,14 @@ export function SharedWithMePage() {
                         </div>
                         <div className="min-w-0">
                           <h3 className="truncate font-medium">{share.name}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            Shared by {share.owner.name}
-                          </p>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <UserAvatar
+                              avatar={share.owner.avatar}
+                              name={share.owner.name}
+                              className="size-5"
+                            />
+                            <span className="truncate">Shared by {share.owner.name}</span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-1">
@@ -177,9 +183,16 @@ export function SharedWithMePage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <h3 className="truncate font-medium">{share.name}</h3>
-                          <p className="truncate text-sm text-muted-foreground">
-                            {share.owner.name} · Shared {formatDate(share.createdAt)}
-                          </p>
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <UserAvatar
+                              avatar={share.owner.avatar}
+                              name={share.owner.name}
+                              className="size-5"
+                            />
+                            <span className="truncate">
+                              {share.owner.name} · Shared {formatDate(share.createdAt)}
+                            </span>
+                          </div>
                         </div>
                       </Link>
                       <Button

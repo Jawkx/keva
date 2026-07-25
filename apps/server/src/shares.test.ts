@@ -92,6 +92,13 @@ const makeApp = (scopedTokenScopes?: ReadonlyArray<Scope>) => {
       viewsLayer,
       auth,
     ),
+    userAvatars: async (userIds) =>
+      new Map(
+        userIds.map((id) => [
+          id,
+          { version: 1 as const, seed: `current-${id}`, glasses: "variant01" as const },
+        ]),
+      ),
   });
 };
 
@@ -646,7 +653,15 @@ describe("server share subsystem", () => {
       headers: { cookie: RECIPIENT_COOKIE },
     });
     expect(await pending.json()).toMatchObject([
-      { id: grant.id, status: "pending", name: "Client drop", owner: { name: "Owner" } },
+      {
+        id: grant.id,
+        status: "pending",
+        name: "Client drop",
+        owner: {
+          name: "Owner",
+          avatar: { version: 1, seed: USERS[0].id },
+        },
+      },
     ]);
 
     const pendingAccess = await app.request(`/api/shared-views/${grant.id}/query`, {
@@ -726,7 +741,15 @@ describe("server share subsystem", () => {
       events: [
         {
           actor: {
-            user: { id: USERS[1].id, name: USERS[1].name },
+            user: {
+              id: USERS[1].id,
+              name: USERS[1].name,
+              avatar: {
+                version: 1,
+                seed: `current-${USERS[1].id}`,
+                glasses: "variant01",
+              },
+            },
             share: { grantId: grant.id, name: "Client drop" },
           },
         },

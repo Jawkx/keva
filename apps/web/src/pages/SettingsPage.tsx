@@ -6,6 +6,10 @@ import { AppearanceCard } from "../components/AppearanceCard";
 import { PasswordInput } from "../components/PasswordInput";
 import { StorageUsageCard } from "../components/StorageUsageCard";
 import { SubscriptionCard } from "../components/SubscriptionCard";
+import { AvatarEditor } from "../components/AvatarEditor";
+import { UserAvatar } from "../components/UserAvatar";
+import { avatarRecipeForUser, serializeAvatarRecipe } from "../lib/avatar";
+import type { AvatarRecipe } from "@keva/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -37,6 +41,23 @@ export function SettingsPage() {
       toast.error(err instanceof Error ? err.message : "Could not update profile.");
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const onSaveAvatar = async (recipe: AvatarRecipe | null): Promise<boolean> => {
+    try {
+      const result = await authClient.updateUser({
+        avatar: recipe ? serializeAvatarRecipe(recipe) : null,
+      });
+      if (result.error) {
+        toast.error(result.error.message ?? "Could not update avatar.");
+        return false;
+      }
+      toast.success(recipe ? "Avatar updated" : "Avatar reset");
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update avatar.");
+      return false;
     }
   };
 
@@ -78,9 +99,32 @@ export function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Profile</CardTitle>
-              <CardDescription>Your display name and email.</CardDescription>
+              <CardDescription>Your avatar, display name, and email.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-col gap-6">
+              {data?.user && (
+                <div className="flex items-center gap-4 rounded-xl border bg-muted/20 p-4">
+                  <UserAvatar
+                    avatar={avatarRecipeForUser(data.user.id, data.user.avatar)}
+                    name={data.user.name || data.user.email}
+                    className="size-20"
+                    labelled
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{data.user.name || data.user.email}</p>
+                      <p className="text-xs text-muted-foreground">Lorelei by DiceBear</p>
+                    </div>
+                    <AvatarEditor
+                      key={`${data.user.id}:${data.user.avatar ?? "default"}`}
+                      userId={data.user.id}
+                      name={data.user.name || data.user.email}
+                      avatar={data.user.avatar}
+                      onSave={onSaveAvatar}
+                    />
+                  </div>
+                </div>
+              )}
               <form onSubmit={onSaveProfile}>
                 <FieldGroup>
                   <Field>

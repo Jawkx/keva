@@ -16,6 +16,7 @@ import { formatDate } from "../lib/format";
 import { listShares, revokeShare, sharesQueryKey } from "../lib/shares";
 import { getView, viewQueryKey } from "../lib/views";
 import { ConfirmRevoke } from "./connection/ConfirmRevoke";
+import { UserAvatar } from "../components/UserAvatar";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -200,11 +201,18 @@ export function ViewSharesPage() {
                       {people.map((share) => (
                         <TableRow key={share.id} className="hover:bg-transparent">
                           <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{share.recipient.name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {share.recipient.email}
-                              </span>
+                            <div className="flex items-center gap-3">
+                              <UserAvatar
+                                avatar={share.recipient.avatar}
+                                name={share.recipient.name}
+                                className="size-9"
+                              />
+                              <div className="flex min-w-0 flex-col">
+                                <span className="truncate font-medium">{share.recipient.name}</span>
+                                <span className="truncate text-xs text-muted-foreground">
+                                  {share.recipient.email}
+                                </span>
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell>

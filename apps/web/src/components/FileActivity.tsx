@@ -8,6 +8,7 @@ import { keva } from "../lib/keva";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UserAvatar } from "./UserAvatar";
 
 const actorLabel = (event: ItemEvent): string => {
   const actor = event.actor;
@@ -114,11 +115,25 @@ export function FileActivity({ itemId }: { readonly itemId: string }) {
               key={event.id}
               className="flex flex-col gap-1 border-b border-border/50 py-2.5 text-sm last:border-b-0"
             >
-              <div className="flex min-w-0 items-baseline justify-between gap-3">
-                <p className="min-w-0">
-                  <span className="font-medium">{actorLabel(event)}</span>{" "}
-                  <span className="text-muted-foreground">{actionLabel(event)}</span>
-                </p>
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  {event.actor?.user && (
+                    <UserAvatar
+                      avatar={
+                        event.actor.user.avatar ?? {
+                          version: 1,
+                          seed: event.actor.user.id,
+                        }
+                      }
+                      name={event.actor.user.name}
+                      className="size-7"
+                    />
+                  )}
+                  <p className="min-w-0 pt-1">
+                    <span className="font-medium">{actorLabel(event)}</span>{" "}
+                    <span className="text-muted-foreground">{actionLabel(event)}</span>
+                  </p>
+                </div>
                 <time
                   dateTime={event.createdAt}
                   title={formatDate(event.createdAt)}

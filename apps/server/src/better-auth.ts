@@ -14,6 +14,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { SessionResolver } from "./auth.js";
+import { serializeAvatarRecipe } from "./avatar.js";
 import * as authSchema from "./auth-schema.js";
 import * as mcpConnectionSchema from "./mcp-connection-schema.js";
 
@@ -146,6 +147,38 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: Boolean(config.sendVerificationEmail),
+    },
+    user: {
+      additionalFields: {
+        avatar: {
+          type: "string",
+          required: false,
+        },
+      },
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          before: async (user) => {
+            if (user.avatar === undefined || user.avatar === null) return { data: user };
+            try {
+              return { data: { ...user, avatar: serializeAvatarRecipe(user.avatar) } };
+            } catch {
+              throw new APIError("BAD_REQUEST", { message: "Invalid avatar" });
+            }
+          },
+        },
+        update: {
+          before: async (user) => {
+            if (user.avatar === undefined || user.avatar === null) return { data: user };
+            try {
+              return { data: { ...user, avatar: serializeAvatarRecipe(user.avatar) } };
+            } catch {
+              throw new APIError("BAD_REQUEST", { message: "Invalid avatar" });
+            }
+          },
+        },
+      },
     },
     ...(sendVerificationEmail
       ? {

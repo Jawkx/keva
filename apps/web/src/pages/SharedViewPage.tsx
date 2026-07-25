@@ -18,6 +18,7 @@ import { ShareUploadZone } from "./share/ShareUploadZone";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { UserAvatar } from "../components/UserAvatar";
 
 function SharedViewBody({ grantId }: { grantId: string }) {
   const navigate = useNavigate();
@@ -66,7 +67,10 @@ function SharedViewBody({ grantId }: { grantId: string }) {
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-heading text-lg font-medium">{self.name}</h1>
-            <p className="truncate text-xs text-muted-foreground">Shared by {self.owner.name}</p>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <UserAvatar avatar={self.owner.avatar} name={self.owner.name} className="size-4" />
+              <span className="truncate">Shared by {self.owner.name}</span>
+            </div>
           </div>
           {canRead && <Badge variant="secondary">View</Badge>}
           {canWrite && <Badge variant="secondary">Upload</Badge>}

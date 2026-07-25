@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  AvatarRecipe,
   BatchDelete,
   BatchPatch,
   CreateAccountShare,
@@ -25,6 +26,32 @@ import {
 } from "./index.js";
 
 describe("schema", () => {
+  it("accepts versioned avatar recipes and rejects unsupported options", () => {
+    expect(
+      Schema.decodeUnknownSync(AvatarRecipe)({
+        version: 1,
+        seed: "user-123",
+        hair: "variant48",
+        glasses: null,
+      }),
+    ).toEqual({
+      version: 1,
+      seed: "user-123",
+      hair: "variant48",
+      glasses: null,
+    });
+    expect(() =>
+      Schema.decodeUnknownSync(AvatarRecipe)({ version: 2, seed: "user-123" }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(AvatarRecipe)({
+        version: 1,
+        seed: "user-123",
+        hair: "variant49",
+      }),
+    ).toThrow();
+  });
+
   it("decodes updated events and legacy patch events", () => {
     const base = {
       id: "event-1",

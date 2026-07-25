@@ -7,8 +7,12 @@ import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
+import { authClient } from "../lib/auth";
+import { avatarRecipeForUser } from "../lib/avatar";
+import { UserAvatar } from "../components/UserAvatar";
 
 export function OAuthConsentPage() {
+  const { data } = authClient.useSession();
   const request = parseConsentRequest(window.location.search);
   const [error, setError] = useState<string | null>(() =>
     request ? null : "This authorization link is invalid or has expired.",
@@ -60,6 +64,19 @@ export function OAuthConsentPage() {
 
             {request && (
               <>
+                {data?.user && (
+                  <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
+                    <UserAvatar
+                      avatar={avatarRecipeForUser(data.user.id, data.user.avatar)}
+                      name={data.user.name || data.user.email}
+                      className="size-10"
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{data.user.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{data.user.email}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs font-medium text-muted-foreground">
                     It will be able to

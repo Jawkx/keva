@@ -23,6 +23,7 @@ import {
 import { Context, Effect } from "effect";
 import { type Sql } from "postgres";
 import { jsonbParam } from "./postgres-json.js";
+import { avatarForUser } from "./avatar.js";
 import {
   type AuthStrategy,
   hasStoragePermissions,
@@ -130,9 +131,11 @@ interface AccountShareRow extends ShareRow {
   readonly recipient_id: string;
   readonly recipient_name: string;
   readonly recipient_email: string;
+  readonly recipient_avatar: string | null;
   readonly owner_id: string;
   readonly owner_name: string;
   readonly owner_email: string;
+  readonly owner_avatar: string | null;
   readonly view_name: string;
   readonly view_icon: string | null;
 }
@@ -195,6 +198,7 @@ const accountRecord = (row: AccountShareRow): AccountShareRecord => ({
     id: row.recipient_id,
     name: row.recipient_name,
     email: row.recipient_email,
+    avatar: avatarForUser(row.recipient_id, row.recipient_avatar),
   },
   createdAt: iso(row.account_created_at)!,
   acceptedAt: iso(row.accepted_at),
@@ -207,7 +211,12 @@ const receivedRecord = (row: AccountShareRow): ReceivedShare => ({
   icon: row.view_icon,
   scopes: [...row.scopes],
   status: row.account_status,
-  owner: { id: row.owner_id, name: row.owner_name, email: row.owner_email },
+  owner: {
+    id: row.owner_id,
+    name: row.owner_name,
+    email: row.owner_email,
+    avatar: avatarForUser(row.owner_id, row.owner_avatar),
+  },
   createdAt: iso(row.account_created_at)!,
   acceptedAt: iso(row.accepted_at),
   expiresAt: iso(row.expires_at),
@@ -420,8 +429,10 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
       const result = yield* Effect.tryPromise({
         try: () =>
           sql.begin(async (transaction) => {
-            const recipients = await transaction<{ id: string; name: string; email: string }[]>`
-              select id, name, email from "user"
+            const recipients = await transaction<
+              { id: string; name: string; email: string; avatar: string | null }[]
+            >`
+              select id, name, email, avatar from "user"
               where lower(email) = lower(${input.recipientEmail.trim()})
               limit 1
             `;
@@ -451,8 +462,10 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
             `;
             if (duplicate.length > 0) return { status: "duplicate" as const };
 
-            const owners = await transaction<{ id: string; name: string; email: string }[]>`
-              select id, name, email from "user" where id = ${ownerUserId} limit 1
+            const owners = await transaction<
+              { id: string; name: string; email: string; avatar: string | null }[]
+            >`
+              select id, name, email, avatar from "user" where id = ${ownerUserId} limit 1
             `;
             const owner = owners[0];
             if (!owner) return { status: "owner_missing" as const };
@@ -490,9 +503,11 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
               recipient_id: recipient.id,
               recipient_name: recipient.name,
               recipient_email: recipient.email,
+              recipient_avatar: recipient.avatar,
               owner_id: owner.id,
               owner_name: owner.name,
               owner_email: owner.email,
+              owner_avatar: owner.avatar,
               view_name: view.name,
               view_icon: view.icon,
             };
@@ -527,9 +542,9 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
           select g.*, v.conditions as view_conditions, v.name as view_name, v.icon as view_icon,
             a.status as account_status, a.created_at as account_created_at, a.accepted_at,
             recipient.id as recipient_id, recipient.name as recipient_name,
-            recipient.email as recipient_email,
+            recipient.email as recipient_email, recipient.avatar as recipient_avatar,
             owner_user.id as owner_id, owner_user.name as owner_name,
-            owner_user.email as owner_email
+            owner_user.email as owner_email, owner_user.avatar as owner_avatar
           from account_share_grants a
           join share_grants g on g.id = a.grant_id
           join views v on v.id = g.view_id
@@ -550,9 +565,9 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
           select g.*, v.conditions as view_conditions, v.name as view_name, v.icon as view_icon,
             a.status as account_status, a.created_at as account_created_at, a.accepted_at,
             recipient.id as recipient_id, recipient.name as recipient_name,
-            recipient.email as recipient_email,
+            recipient.email as recipient_email, recipient.avatar as recipient_avatar,
             owner_user.id as owner_id, owner_user.name as owner_name,
-            owner_user.email as owner_email
+            owner_user.email as owner_email, owner_user.avatar as owner_avatar
           from account_share_grants a
           join share_grants g on g.id = a.grant_id
           join views v on v.id = g.view_id
@@ -659,9 +674,9 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
           select g.*, v.conditions as view_conditions, v.name as view_name, v.icon as view_icon,
             a.status as account_status, a.created_at as account_created_at, a.accepted_at,
             recipient_user.id as recipient_id, recipient_user.name as recipient_name,
-            recipient_user.email as recipient_email,
+            recipient_user.email as recipient_email, recipient_user.avatar as recipient_avatar,
             owner_user.id as owner_id, owner_user.name as owner_name,
-            owner_user.email as owner_email
+            owner_user.email as owner_email, owner_user.avatar as owner_avatar
           from account_share_grants a
           join share_grants g on g.id = a.grant_id
           join views v on v.id = g.view_id

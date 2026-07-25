@@ -400,7 +400,12 @@ describe("KevaClient", () => {
       icon: null,
       scopes: ["write"] as const,
       status: "pending" as const,
-      owner: { id: "owner", name: "Owner", email: "owner@example.com" },
+      owner: {
+        id: "owner",
+        name: "Owner",
+        email: "owner@example.com",
+        avatar: { version: 1 as const, seed: "owner" },
+      },
       createdAt: "2026-01-01T00:00:00.000Z",
       acceptedAt: null,
       expiresAt: null,
@@ -417,7 +422,12 @@ describe("KevaClient", () => {
       maxTotalBytes: null,
       maxItems: null,
       status: received.status,
-      recipient: { id: "recipient", name: "Recipient", email: "recipient@example.com" },
+      recipient: {
+        id: "recipient",
+        name: "Recipient",
+        email: "recipient@example.com",
+        avatar: { version: 1 as const, seed: "recipient" },
+      },
       createdAt: received.createdAt,
       acceptedAt: null,
       expiresAt: null,
@@ -620,7 +630,12 @@ describe("SharedViewClient", () => {
         if (url.endsWith("/shared-views/grant-account/self")) {
           return Response.json({
             name: "Client drop",
-            owner: { id: "owner", name: "Owner", email: "owner@example.com" },
+            owner: {
+              id: "owner",
+              name: "Owner",
+              email: "owner@example.com",
+              avatar: { version: 1, seed: "owner" },
+            },
             scopes: ["write"],
             expiresAt: null,
             upload: {

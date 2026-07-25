@@ -36,6 +36,11 @@ interface TestUser {
   readonly email: string;
 }
 
+const sharePerson = (user: TestUser) => ({
+  ...user,
+  avatar: { version: 1 as const, seed: user.id },
+});
+
 interface StoredAccountGrant {
   readonly owner: TestUser;
   readonly recipient: TestUser;
@@ -83,7 +88,7 @@ export const makeInMemoryShareGrantStore = (
     maxTotalBytes: grant.maxTotalBytes,
     maxItems: grant.maxItems,
     status: account.status,
-    recipient: account.recipient,
+    recipient: sharePerson(account.recipient),
     createdAt: account.createdAt,
     acceptedAt: account.acceptedAt,
     expiresAt: grant.expiresAt,
@@ -95,7 +100,7 @@ export const makeInMemoryShareGrantStore = (
     icon: views.get(grant.viewId)?.icon ?? null,
     scopes: [...grant.scopes],
     status: account.status,
-    owner: account.owner,
+    owner: sharePerson(account.owner),
     createdAt: account.createdAt,
     acceptedAt: account.acceptedAt,
     expiresAt: grant.expiresAt,

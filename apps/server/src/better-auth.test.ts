@@ -8,6 +8,7 @@ import {
 import { makeDatabaseUnit } from "./database.js";
 import * as authSchema from "./auth-schema.js";
 import { requireTestDatabaseUrl } from "./test/db.js";
+import { eq } from "drizzle-orm";
 
 const database = makeDatabaseUnit(requireTestDatabaseUrl());
 const auth = createBetterAuth({
@@ -55,6 +56,66 @@ describe("MCP OAuth registration", () => {
 
     expect(metadata.scopes_supported).toContain("keva:read");
     expect(metadata.scopes_supported).toContain("keva:delete");
+  });
+});
+
+describe("profile avatars", () => {
+  it("validates and persists avatar recipes through Better Auth", async () => {
+    const suffix = crypto.randomUUID();
+    const email = `avatar-${suffix}@example.com`;
+    const signUp = await auth.handler(
+      new Request("http://localhost:8787/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Avatar User", email, password: "password@1" }),
+      }),
+    );
+    expect(signUp.status).toBe(200);
+    const cookie = signUp.headers.get("set-cookie")?.split(";")[0];
+    expect(cookie).toBeTruthy();
+
+    const avatar = JSON.stringify({ version: 1, seed: suffix, glasses: "variant03" });
+    const update = await auth.handler(
+      new Request("http://localhost:8787/api/auth/update-user", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookie! },
+        body: JSON.stringify({ avatar }),
+      }),
+    );
+    expect(update.status).toBe(200);
+    expect(await update.json()).toEqual({ status: true });
+
+    const invalid = await auth.handler(
+      new Request("http://localhost:8787/api/auth/update-user", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookie! },
+        body: JSON.stringify({
+          avatar: JSON.stringify({ version: 1, seed: suffix, glasses: "variant99" }),
+        }),
+      }),
+    );
+    expect(invalid.status).toBe(400);
+
+    const [stored] = await database.db
+      .select({ avatar: authSchema.user.avatar })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.email, email));
+    expect(stored?.avatar).toBe(avatar);
+
+    const reset = await auth.handler(
+      new Request("http://localhost:8787/api/auth/update-user", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookie! },
+        body: JSON.stringify({ avatar: null }),
+      }),
+    );
+    expect(reset.status).toBe(200);
+    const [resetUser] = await database.db
+      .select({ avatar: authSchema.user.avatar })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.email, email));
+    expect(resetUser?.avatar).toBeNull();
+    await database.db.delete(authSchema.user).where(eq(authSchema.user.email, email));
   });
 });
 

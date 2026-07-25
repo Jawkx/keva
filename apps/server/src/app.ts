@@ -25,6 +25,7 @@ import {
   StorageUnavailable,
   statusFor,
   type KevaItem,
+  type AvatarRecipe,
   type Principal,
 } from "@keva/schema";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect";
@@ -47,6 +48,7 @@ import {
   type BillingStore,
 } from "./billing.js";
 import type { Polar } from "@polar-sh/sdk";
+import type { UserAvatarResolver } from "./avatar.js";
 
 export type AppServices =
   | Authenticator
@@ -147,6 +149,7 @@ export interface AppServiceOptions {
   // no-DB/static-token path these routes stay unmounted, mirroring how token
   // management is unavailable without a database.
   readonly mcp?: McpDeps;
+  readonly userAvatars?: UserAvatarResolver;
   readonly dispose?: () => Promise<void>;
 }
 
@@ -159,6 +162,7 @@ interface ResolvedServices {
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
   readonly billing?: AppServiceOptions["billing"];
   readonly mcp?: McpDeps;
+  readonly userAvatars?: UserAvatarResolver;
   readonly dispose?: () => Promise<void>;
 }
 
@@ -176,6 +180,7 @@ const makeServices = (options: AppServiceOptions): ResolvedServices => ({
   ...(options.authHandler ? { authHandler: options.authHandler } : {}),
   ...(options.billing ? { billing: options.billing } : {}),
   ...(options.mcp ? { mcp: options.mcp } : {}),
+  ...(options.userAvatars ? { userAvatars: options.userAvatars } : {}),
   ...(options.dispose ? { dispose: options.dispose } : {}),
 });
 
@@ -386,25 +391,45 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
   );
 
   app.get("/api/items/:id/events", (context) =>
-    runRoute(
-      context,
-      Effect.gen(function* () {
-        const principal = yield* principalEffect(context.req.raw.headers);
-        const id = yield* itemIdParam(context);
-        const limitRaw = context.req.query("limit");
-        const limit =
-          limitRaw === undefined
-            ? undefined
-            : yield* decode(
-                Schema.NumberFromString.pipe(Schema.int(), Schema.between(1, 200)),
-                limitRaw,
-              );
-        const cursor = context.req.query("cursor");
-        return yield* makeKevaEngine(principal).events(id, {
-          ...(limit !== undefined ? { limit } : {}),
-          ...(cursor !== undefined ? { cursor } : {}),
-        });
-      }),
+    withServices(context, ({ runtime, userAvatars }) =>
+      execute(
+        context,
+        Effect.gen(function* () {
+          const principal = yield* principalEffect(context.req.raw.headers);
+          const id = yield* itemIdParam(context);
+          const limitRaw = context.req.query("limit");
+          const limit =
+            limitRaw === undefined
+              ? undefined
+              : yield* decode(
+                  Schema.NumberFromString.pipe(Schema.int(), Schema.between(1, 200)),
+                  limitRaw,
+                );
+          const cursor = context.req.query("cursor");
+          const result = yield* makeKevaEngine(principal).events(id, {
+            ...(limit !== undefined ? { limit } : {}),
+            ...(cursor !== undefined ? { cursor } : {}),
+          });
+          if (!userAvatars) return result;
+          const userIds = result.events.flatMap((event) =>
+            event.actor?.user ? [event.actor.user.id] : [],
+          );
+          const avatars = yield* Effect.tryPromise({
+            try: () => userAvatars(userIds),
+            catch: () => new StorageUnavailable({ message: "User avatars unavailable" }),
+          });
+          return {
+            ...result,
+            events: result.events.map((event) => {
+              const user = event.actor?.user;
+              if (!user) return event;
+              const avatar: AvatarRecipe = avatars.get(user.id) ?? { version: 1, seed: user.id };
+              return { ...event, actor: { ...event.actor!, user: { ...user, avatar } } };
+            }),
+          };
+        }),
+        runtime,
+      ),
     ),
   );
 
