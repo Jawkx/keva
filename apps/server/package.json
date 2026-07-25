@@ -15,7 +15,7 @@
     "auth:generate": "auth generate --config src/better-auth-cli.ts --output src/auth-schema.ts --yes"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "1.6.20",
+    "@better-auth/drizzle-adapter": "1.6.22",
     "@hono/node-server": "2.0.5",
     "@keva/core": "workspace:*",
     "@keva/mcp": "workspace:*",
@@ -23,7 +23,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@polar-sh/better-auth": "1.8.4",
     "@polar-sh/sdk": "0.48.1",
-    "better-auth": "1.6.20",
+    "better-auth": "1.6.22",
     "drizzle-orm": "0.45.2",
     "effect": "3.21.4",
     "hono": "4.12.26",
@@ -34,7 +34,7 @@
     "@keva/effect-test": "workspace:*",
     "@keva/tsconfig": "workspace:*",
     "@types/node": "22.15.30",
-    "auth": "1.6.20",
+    "auth": "1.6.22",
     "tsx": "4.22.4",
     "vitest": "4.1.9"
   }

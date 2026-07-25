@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { errorMessage, isUnauthorized } from "./errors";
 
 export function useApiError() {

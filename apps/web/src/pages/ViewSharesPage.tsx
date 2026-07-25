@@ -1,6 +1,6 @@
 import { ArrowLeft, Link as LinkIcon, Plus, TriangleAlert, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AccountShareCreateDialog } from "../components/AccountShareCreateDialog";

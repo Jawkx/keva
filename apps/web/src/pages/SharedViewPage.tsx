@@ -1,6 +1,6 @@
 import { Inbox, TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import {
   MutationCache,
   QueryCache,
