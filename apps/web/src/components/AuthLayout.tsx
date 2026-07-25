@@ -147,14 +147,18 @@ function BrandPanel() {
       <Keyhole className="pointer-events-none absolute -right-24 -bottom-28 h-[32rem] w-auto text-white/[0.028]" />
 
       <div className="relative flex h-full flex-col">
-        <Wordmark className="text-white" />
+        <span className="font-heading text-[26px] leading-none font-semibold tracking-tight">
+          Keva
+        </span>
 
         <div className="flex flex-1 flex-col justify-center gap-12">
-          <div className="max-w-md">
-            <span className="text-[13px] font-medium tracking-[0.18em] text-white/40 uppercase">
-              Metadata-rich object storage
-            </span>
-            <h2 className="mt-5 font-heading text-[2.75rem] leading-[1.05] font-semibold tracking-tight text-balance">
+          <div className="flex max-w-xl items-center gap-6">
+            <img
+              src="/main-icon.png"
+              alt=""
+              className="size-[5.75rem] shrink-0 rounded-[22px] object-cover ring-1 ring-white/15"
+            />
+            <h2 className="font-heading text-[2.75rem] leading-[1.05] font-semibold tracking-tight text-balance">
               Your files,
               <br />
               <span className="relative inline-block">
@@ -165,9 +169,6 @@ function BrandPanel() {
                 />
               </span>
             </h2>
-            <p className="mt-8 text-[15px] leading-relaxed text-white/45">
-              Tag anything. Find it in seconds — from the app, the API, or an agent.
-            </p>
           </div>
 
           <div className="-mx-14 [mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_7%,black_93%,transparent)]">
@@ -176,14 +177,6 @@ function BrandPanel() {
               <FileRow ariaHidden />
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 text-[13px] text-white/35">
-          <span>For people</span>
-          <span className="text-white/20">·</span>
-          <span>applications</span>
-          <span className="text-white/20">·</span>
-          <span>agents</span>
         </div>
       </div>
     </div>

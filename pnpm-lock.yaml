@@ -74,10 +74,10 @@ importers:
         version: 1.29.0(zod@4.4.3)
       '@polar-sh/better-auth':
         specifier: 1.8.4
-        version: 1.8.4(@polar-sh/sdk@0.48.1)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@stripe/stripe-js@7.9.0)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2)))(react@19.2.7)(zod@4.4.3)
+        version: 1.8.4(@polar-sh/sdk@0.49.0)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@stripe/stripe-js@7.9.0)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2)))(react@19.2.7)(zod@4.4.3)
       '@polar-sh/sdk':
-        specifier: 0.48.1
-        version: 0.48.1
+        specifier: 0.49.0
+        version: 0.49.0
       better-auth:
         specifier: 1.6.22
         version: 1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2))
@@ -183,7 +183,7 @@ importers:
         version: link:../../packages/sdk
       '@polar-sh/better-auth':
         specifier: 1.8.4
-        version: 1.8.4(@polar-sh/sdk@0.48.1)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@stripe/stripe-js@7.9.0)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2)))(react@19.2.7)(zod@4.4.3)
+        version: 1.8.4(@polar-sh/sdk@0.49.0)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@stripe/stripe-js@7.9.0)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2)))(react@19.2.7)(zod@4.4.3)
       '@tanstack/react-query':
         specifier: ^5.101.2
         version: 5.101.2(react@19.2.7)
@@ -2527,8 +2527,8 @@ packages:
       '@stripe/stripe-js': ^7.1.0
       react: ^18 || ^19
 
-  '@polar-sh/sdk@0.48.1':
-    resolution: {integrity: sha512-FmU6eLJRXJ6Zau0IkqscfkFta8xxYbFV1VD9zzS2Ki2btCuFmUyPZOkHOXU77R892h2zyBegLnHS7jrOhMN1Sw==}
+  '@polar-sh/sdk@0.49.0':
+    resolution: {integrity: sha512-9UYb70iKjJCtWYlu0OF5HLYBLmkxHwqr2RlXwuxXQgRGqq56IQWlVG+NO7e1YJ7I5GW0CBHhGIjRbQ9hYM6ycQ==}
 
   '@poppinss/colors@4.1.6':
     resolution: {integrity: sha512-H9xkIdFswbS8n1d6vmRd8+c10t2Qe+rZITbbDHHkQixH5+2x1FDGmi/0K+WgWiqQFKPSlIYB7jlH6Kpfn6Fleg==}
@@ -7087,10 +7087,10 @@ snapshots:
     dependencies:
       pako: 1.0.11
 
-  '@polar-sh/better-auth@1.8.4(@polar-sh/sdk@0.48.1)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@stripe/stripe-js@7.9.0)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2)))(react@19.2.7)(zod@4.4.3)':
+  '@polar-sh/better-auth@1.8.4(@polar-sh/sdk@0.49.0)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@stripe/stripe-js@7.9.0)(better-auth@1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2)))(react@19.2.7)(zod@4.4.3)':
     dependencies:
       '@polar-sh/checkout': 0.2.1(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@stripe/stripe-js@7.9.0)(react@19.2.7)
-      '@polar-sh/sdk': 0.48.1
+      '@polar-sh/sdk': 0.49.0
       better-auth: 1.6.22(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.2)(postgres@3.4.9))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(svelte@5.56.4(@typescript-eslint/types@8.63.0))(vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.15.30)(vite@8.0.16(@types/node@22.15.30)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(vue@3.5.39(typescript@7.0.2))
       zod: 4.4.3
     transitivePeerDependencies:
@@ -7105,7 +7105,7 @@ snapshots:
       date-fns: 4.4.0
       react: 19.2.7
 
-  '@polar-sh/sdk@0.48.1':
+  '@polar-sh/sdk@0.49.0':
     dependencies:
       standardwebhooks: 1.0.0
       zod: 4.4.3

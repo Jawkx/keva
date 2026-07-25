@@ -43,7 +43,7 @@ credentials when a logged-in view is needed — never hardcode a password in thi
 
 The test login credential is as follow, it's for testing purpose and won't cause issue even when leak
 
-email: jaw@test.com
+email: test-alice@gmail.com
 password: password@1
 
 ## Interaction tips

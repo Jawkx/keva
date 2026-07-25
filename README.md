@@ -33,7 +33,7 @@ Select **Sandbox** and the Keva sandbox organization when prompted by the
 listener. Copy its generated secret to `POLAR_WEBHOOK_SECRET` in
 `apps/server/.env`, then start the app in another terminal with `pnpm dev:app`.
 The listener forwards events to
-`http://localhost:8787/api/auth/polar/webhooks`.
+`http://127.0.0.1:8787/api/auth/polar/webhooks`.
 
 Polar customer emails are unique within an organization. Use distinct aliases
 for each environment, such as `name+dev@example.com` and
