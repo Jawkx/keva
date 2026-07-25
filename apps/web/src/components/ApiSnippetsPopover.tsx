@@ -1,5 +1,5 @@
 import { CodeXml } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import type { QueryCondition } from "@keva/schema";
 import { CodeBlock } from "./CodeBlock";
 import { Button } from "@/components/ui/button";

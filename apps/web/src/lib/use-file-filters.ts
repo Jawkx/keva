@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import type { PropertyValue, QueryCondition } from "@keva/schema";
 import {
   createFilterDraft,

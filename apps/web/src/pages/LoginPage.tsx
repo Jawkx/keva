@@ -1,6 +1,6 @@
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { authClient } from "../lib/auth";
 import { oauthContinuation } from "../lib/oauth";
 import { Alert, AlertTitle } from "@/components/ui/alert";

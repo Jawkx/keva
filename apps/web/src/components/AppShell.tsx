@@ -9,7 +9,7 @@ import {
   Settings,
 } from "lucide-react";
 import { type MouseEvent, useState } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";

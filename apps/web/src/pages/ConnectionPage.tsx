@@ -1,6 +1,6 @@
 import { KeyRound, Plug } from "lucide-react";
 import { useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { PageHeader } from "../components/PageHeader";
 import { ApiTokensSection } from "./connection/ApiTokensSection";
 import { ConnectedAppsSection } from "./connection/ConnectedAppsSection";

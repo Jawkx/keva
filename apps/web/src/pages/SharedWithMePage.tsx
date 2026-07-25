@@ -1,5 +1,5 @@
 import { Inbox, TriangleAlert } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
