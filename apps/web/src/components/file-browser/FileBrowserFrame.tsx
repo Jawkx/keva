@@ -45,7 +45,7 @@ export function FileBrowserFrame({
         <SheetContent
           side="bottom"
           showCloseButton={false}
-          className="h-[min(88dvh,56rem)] rounded-t-2xl p-0"
+          className="data-[side=bottom]:h-[min(88dvh,56rem)] rounded-t-2xl p-0"
         >
           <SheetTitle className="sr-only">{detailTitle}</SheetTitle>
           {detailOpen && !isWide && detail}

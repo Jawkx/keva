@@ -932,11 +932,14 @@ function FilterMenu({
   );
 }
 
-export function FilterMenuButton(props: FilterMenuProps) {
+export function FilterMenuButton({
+  className,
+  ...props
+}: FilterMenuProps & { className?: string }) {
   return (
     <FilterMenu
       {...props}
-      trigger={<Button variant="outline" />}
+      trigger={<Button variant="outline" className={className} />}
       triggerContent={
         <>
           <ListFilter data-icon="inline-start" />

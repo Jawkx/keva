@@ -100,7 +100,7 @@ export function ViewSharesPage() {
 
   const dialog = (
     <ShareCreateDialog
-      key={createOpen ? "open" : "closed"}
+      key={`link-${createOpen ? "open" : "closed"}`}
       open={createOpen}
       onOpenChange={setCreateOpen}
       viewId={viewId ?? ""}
@@ -110,7 +110,7 @@ export function ViewSharesPage() {
 
   const inviteDialog = view ? (
     <AccountShareCreateDialog
-      key={inviteOpen ? "open" : "closed"}
+      key={`invite-${inviteOpen ? "open" : "closed"}`}
       open={inviteOpen}
       onOpenChange={setInviteOpen}
       viewId={view.id}

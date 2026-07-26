@@ -213,6 +213,8 @@ const EMPTY_FILE_ROWS: FileRow[] = [];
 const columnHelper = createColumnHelper<FileRow>();
 
 const responsiveColumnClass = (columnId: string) => {
+  if (columnId === "name") return "min-w-0 overflow-hidden";
+  if (columnId === "size") return "hidden sm:table-cell";
   if (columnId === "updatedAt") return "hidden sm:table-cell";
   if (columnId === "properties") return "hidden lg:table-cell";
   return undefined;
@@ -227,7 +229,7 @@ const columns = [
         checked={table.getIsAllRowsSelected()}
         indeterminate={table.getIsSomeRowsSelected()}
         onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
-        className="opacity-0 transition-opacity group-hover:opacity-100"
+        className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
       />
     ),
     cell: ({ row, table }) => {
@@ -260,7 +262,9 @@ const columns = [
           onCheckedChange={(checked) => row.toggleSelected(checked)}
           className={cn(
             "transition-opacity",
-            row.getIsSelected() ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            row.getIsSelected()
+              ? "opacity-100"
+              : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
           )}
         />
       );
@@ -299,7 +303,7 @@ const columns = [
           <KindIcon className="size-4 shrink-0 text-muted-foreground" />
           <button
             type="button"
-            className="block min-w-0 truncate text-left text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="block w-full min-w-0 truncate text-left text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={(event) => {
               event.stopPropagation();
               meta?.onOpenItem(row.original.id);
@@ -709,7 +713,7 @@ function FilesPageContent({
   const tableInner = (
     <Table
       containerClassName="overflow-visible"
-      className="[&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_tr]:border-0"
+      className="table-fixed sm:table-auto [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_tr]:border-0"
     >
       <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
         {table.getHeaderGroups().map((group) => (
@@ -828,7 +832,7 @@ function FilesPageContent({
   const browserControls = (
     <div className="flex w-full min-w-0 shrink-0 flex-col gap-3">
       <div className="flex shrink-0 flex-col gap-3 px-1">
-        <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
           {viewId && view ? (
             <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
               <ViewIconPicker
@@ -839,9 +843,9 @@ function FilesPageContent({
                     type="button"
                     title="Change icon"
                     aria-label="Change view icon"
-                    className="group/vicon relative flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-muted"
+                    className="group/vicon relative flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-muted sm:size-9"
                   >
-                    <HeaderViewIcon className="size-6" />
+                    <HeaderViewIcon className="size-5 sm:size-6" />
                     <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vicon:opacity-100">
                       <Pencil className="size-3.5" />
                     </span>
@@ -858,7 +862,7 @@ function FilesPageContent({
                     if (e.key === "Enter") commitName();
                     else if (e.key === "Escape") setNameEditing(false);
                   }}
-                  className="h-9 w-56 text-[21px] font-medium"
+                  className="h-8 w-56 text-lg font-medium sm:h-9 sm:text-[21px]"
                 />
               ) : (
                 <button
@@ -868,7 +872,7 @@ function FilesPageContent({
                   onClick={startNameEdit}
                   className="group/vname relative flex min-w-0 items-center rounded-md text-left"
                 >
-                  <span className="truncate px-1 text-[21px] leading-none font-medium">
+                  <span className="truncate px-1 text-lg leading-none font-medium sm:text-[21px]">
                     {view.name}
                   </span>
                   <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 text-muted-foreground opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vname:opacity-100 group-focus-visible/vname:opacity-100">
@@ -897,25 +901,31 @@ function FilesPageContent({
             </div>
           ) : (
             <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
-              <div className="flex size-9 shrink-0 items-center justify-center">
-                <Files className="size-6" />
+              <div className="flex size-8 shrink-0 items-center justify-center sm:size-9">
+                <Files className="size-5 sm:size-6" />
               </div>
-              <h1 className="truncate px-1 text-[21px] leading-none font-medium">All</h1>
+              <h1 className="truncate px-1 text-lg leading-none font-medium sm:text-[21px]">All</h1>
             </div>
           )}
           {!selectMode && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <FilterMenuButton
                 draft={filterDraft}
                 onDraftChange={setFilterDraft}
                 onApply={applyWhere}
+                className="h-7 px-2 text-[0.8rem] sm:h-8 sm:px-2.5 sm:text-sm [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-4"
               />
               {uploadStampEntries.length > 0 ? (
                 <HoverCard>
                   <HoverCardTrigger
                     delay={100}
                     closeDelay={100}
-                    render={<Button onClick={() => uploadInputRef.current?.click()} />}
+                    render={
+                      <Button
+                        onClick={() => uploadInputRef.current?.click()}
+                        className="h-7 px-2 text-[0.8rem] sm:h-8 sm:px-2.5 sm:text-sm [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-4"
+                      />
+                    }
                   >
                     <Upload data-icon="inline-start" />
                     Upload
@@ -930,7 +940,10 @@ function FilesPageContent({
                   </HoverCardContent>
                 </HoverCard>
               ) : (
-                <Button onClick={() => uploadInputRef.current?.click()}>
+                <Button
+                  onClick={() => uploadInputRef.current?.click()}
+                  className="h-7 px-2 text-[0.8rem] sm:h-8 sm:px-2.5 sm:text-sm [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-4"
+                >
                   <Upload data-icon="inline-start" />
                   Upload
                 </Button>
@@ -941,7 +954,7 @@ function FilesPageContent({
         {!selectMode && (
           <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
             <div
-              className="flex w-fit max-w-full flex-wrap items-center rounded-lg border border-border bg-muted/70 p-1"
+              className="base-ui-disable-scrollbar flex w-full max-w-full flex-nowrap items-center overflow-x-auto rounded-lg border border-border bg-muted/70 p-1 sm:w-fit sm:flex-wrap sm:overflow-visible"
               aria-label="File type"
             >
               {QUICK_KINDS.map((kind) => {
@@ -956,7 +969,7 @@ function FilesPageContent({
                     size="sm"
                     aria-pressed={active}
                     className={cn(
-                      "rounded-md px-4 text-muted-foreground shadow-none hover:text-foreground",
+                      "shrink-0 rounded-md px-4 text-muted-foreground shadow-none hover:text-foreground",
                       active &&
                         "bg-background text-foreground hover:bg-background hover:text-foreground",
                     )}
