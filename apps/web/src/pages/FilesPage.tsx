@@ -953,40 +953,42 @@ function FilesPageContent({
         </div>
         {!selectMode && (
           <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
-            <div
-              className="base-ui-disable-scrollbar flex w-full max-w-full flex-nowrap items-center overflow-x-auto rounded-lg border border-border bg-muted/70 p-1 sm:w-fit sm:flex-wrap sm:overflow-visible"
-              aria-label="File type"
-            >
-              {QUICK_KINDS.map((kind) => {
-                const active =
-                  kind.id === "all"
-                    ? filterDraft.kinds.length === 0
-                    : filterDraft.kinds[0] === kind.id && filterDraft.kinds.length === 1;
-                return (
-                  <Button
-                    key={kind.id}
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={active}
-                    className={cn(
-                      "shrink-0 rounded-md px-4 text-muted-foreground shadow-none hover:text-foreground",
-                      active &&
-                        "bg-background text-foreground hover:bg-background hover:text-foreground",
-                    )}
-                    onClick={() => {
-                      const nextDraft = {
-                        ...filterDraft,
-                        kinds: kind.id === "all" ? [] : [kind.id],
-                      };
-                      setFilterDraft(nextDraft);
-                      applyWhere(buildFilterWhere(nextDraft));
-                    }}
-                  >
-                    {kind.label}
-                  </Button>
-                );
-              })}
-            </div>
+            {!viewId && (
+              <div
+                className="base-ui-disable-scrollbar flex w-full max-w-full flex-nowrap items-center overflow-x-auto rounded-lg border border-border bg-muted/70 p-1 sm:w-fit sm:flex-wrap sm:overflow-visible"
+                aria-label="File type"
+              >
+                {QUICK_KINDS.map((kind) => {
+                  const active =
+                    kind.id === "all"
+                      ? filterDraft.kinds.length === 0
+                      : filterDraft.kinds[0] === kind.id && filterDraft.kinds.length === 1;
+                  return (
+                    <Button
+                      key={kind.id}
+                      variant="ghost"
+                      size="sm"
+                      aria-pressed={active}
+                      className={cn(
+                        "shrink-0 rounded-md px-4 text-muted-foreground shadow-none hover:text-foreground",
+                        active &&
+                          "bg-background text-foreground hover:bg-background hover:text-foreground",
+                      )}
+                      onClick={() => {
+                        const nextDraft = {
+                          ...filterDraft,
+                          kinds: kind.id === "all" ? [] : [kind.id],
+                        };
+                        setFilterDraft(nextDraft);
+                        applyWhere(buildFilterWhere(nextDraft));
+                      }}
+                    >
+                      {kind.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
             {showFilterRow && (
               <>
                 <FilterBar
