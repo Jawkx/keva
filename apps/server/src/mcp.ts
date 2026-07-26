@@ -412,6 +412,9 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
   app.all("/mcp", async (context) => {
     const response = await withServices(context, (deps, runtime) => {
       const handle = deps.authorizationServer.withMcpAuth(async (request, session) => {
+        if (request.method === "GET") {
+          return new Response(null, { status: 405, headers: { Allow: "POST" } });
+        }
         const tenantId = await deps.resolveTenant(session.userId);
         if (!tenantId) {
           return Response.json(

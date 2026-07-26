@@ -260,6 +260,21 @@ describe("MCP discovery and browser transport", () => {
     expect(response.headers.get("access-control-allow-headers")).toContain("Authorization");
   });
 
+  it("rejects unsupported SSE streams on the stateless endpoint", async () => {
+    const app = createApp({
+      layer: baseLayer(),
+      mcp: stubMcpDeps({
+        mcpSession: { userId: "u1", scopes: "keva:read", clientId: "client-1" },
+      }),
+    });
+    const response = await app.request("/mcp", {
+      headers: { accept: "text/event-stream" },
+    });
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST");
+  });
+
   it("returns the configured canonical MCP URL to signed-in users", async () => {
     const app = createApp({
       layer: baseLayer(),
