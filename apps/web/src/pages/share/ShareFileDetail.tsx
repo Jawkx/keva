@@ -7,11 +7,13 @@ import { propertyListClass } from "../../components/PropertiesEditor";
 import { CsvPreviewViewer } from "../../components/viewers/CsvPreviewViewer";
 import { PdfPreviewViewer } from "../../components/viewers/PdfPreviewViewer";
 import { FilePreviewSkeleton } from "../../components/viewers/FilePreviewSkeleton";
+import { HtmlPreviewViewer } from "../../components/viewers/HtmlPreviewViewer";
+import { MarkdownPreviewViewer } from "../../components/viewers/MarkdownPreviewViewer";
 import { errorMessage } from "../../lib/errors";
 import { formatBytes, formatDate, formatPropertyValue, formatRelative } from "../../lib/format";
 import { shareContentQueryKey, shareItemQueryKey } from "../../lib/items-cache";
 import { objectUrlFor } from "../../lib/object-url-cache";
-import { isCsv, isImage, isPdf, isPreviewable } from "../../lib/preview";
+import { isCsv, isHtml, isImage, isMarkdown, isPdf, isPreviewable } from "../../lib/preview";
 import { runEffectPromise } from "../../lib/effect-runtime";
 import { loadPreviewContent } from "../../lib/preview-content";
 import { useShare } from "./share-context";
@@ -224,6 +226,10 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
                   className="min-h-0 w-full flex-1 overflow-hidden rounded-md bg-muted/30"
                 />
               </Suspense>
+            ) : preview?.kind === "text" && isMarkdown(item) ? (
+              <MarkdownPreviewViewer key={itemId} source={preview.text} />
+            ) : preview?.kind === "text" && isHtml(item) ? (
+              <HtmlPreviewViewer key={itemId} source={preview.text} />
             ) : preview?.kind === "text" ? (
               <div className="min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-md bg-muted/50">
                 <pre className="w-max p-3 font-mono text-xs">{preview.text}</pre>

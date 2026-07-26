@@ -3,6 +3,10 @@ export interface Previewable {
   size: number | null;
 }
 
+export interface NamedPreviewable extends Previewable {
+  name: string;
+}
+
 const IMAGE_MAX = 5 * 1024 * 1024;
 const PDF_MAX = 25 * 1024 * 1024;
 const TEXT_MAX = 256 * 1024;
@@ -13,6 +17,10 @@ export const isCsv = (o: Previewable) =>
   o.contentType === "text/csv" ||
   o.contentType === "text/tab-separated-values" ||
   o.contentType === "application/csv";
+export const isMarkdown = (o: NamedPreviewable) =>
+  o.contentType === "text/markdown" || /\.(?:md|markdown|mdown|mkd)$/i.test(o.name);
+export const isHtml = (o: NamedPreviewable) =>
+  o.contentType === "text/html" || /\.html?$/i.test(o.name);
 export const isText = (o: Previewable) =>
   o.contentType.startsWith("text/") ||
   o.contentType === "application/json" ||
