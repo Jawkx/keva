@@ -116,7 +116,7 @@ describe("Postgres metadata store", () => {
     expect(fetched.properties).toEqual({ project: "keva", rating: "nine" });
   });
 
-  it("searches by name and content type with tenant-scoped pagination", async () => {
+  it("searches configured text fields with tenant-scoped pagination", async () => {
     const tenantA = crypto.randomUUID();
     const tenantB = crypto.randomUUID();
     const found = await run(
@@ -143,12 +143,12 @@ describe("Postgres metadata store", () => {
           limit: 1,
           order: "created_at_asc",
         });
-        const second = yield* engine.query({
+        const namesOnly = yield* engine.query({
           where: [],
           search: "fox",
-          limit: 1,
+          searchFields: ["name"],
+          limit: 100,
           order: "created_at_asc",
-          cursor: first.nextCursor,
         });
         const other = yield* makeKevaEngine(principal(tenantB)).query({
           where: [],
@@ -156,7 +156,7 @@ describe("Postgres metadata store", () => {
           limit: 100,
           order: "created_at_asc",
         });
-        return { named, typed, all, first, second, other };
+        return { named, typed, all, first, namesOnly, other };
       }),
     );
 
@@ -164,11 +164,35 @@ describe("Postgres metadata store", () => {
       [found.named, found.typed].sort(),
     );
     expect(found.first.items).toHaveLength(1);
-    expect(found.second.items).toHaveLength(1);
-    expect(new Set([found.first.items[0]!.id, found.second.items[0]!.id])).toEqual(
-      new Set([found.named, found.typed]),
-    );
+    expect(found.first.nextCursor).toBeDefined();
+    expect(found.namesOnly.items.map((item) => item.id)).toEqual([found.named]);
+    expect(found.typed).not.toBe(found.named);
     expect(found.other.items).toHaveLength(0);
+  });
+
+  it("suggests matching property keys, scalar values, and array members", async () => {
+    const tenantA = crypto.randomUUID();
+    const tenantB = crypto.randomUUID();
+    const suggestions = await run(
+      Effect.gen(function* () {
+        const engine = makeKevaEngine(principal(tenantA));
+        const scalar = yield* createReady(principal(tenantA), "budget.txt", "a");
+        const array = yield* createReady(principal(tenantA), "teams.txt", "b");
+        const other = yield* createReady(principal(tenantB), "private.txt", "c");
+        yield* engine.patch(scalar, { set: { department: "Finance" }, unset: [] });
+        yield* engine.patch(array, { set: { teams: ["FinOps", "Legal"] }, unset: [] });
+        yield* makeKevaEngine(principal(tenantB)).patch(other, {
+          set: { department: "Financial Crime" },
+          unset: [],
+        });
+        return yield* engine.propertySuggestions("fin", 12);
+      }),
+    );
+
+    expect(suggestions.entries).toEqual([
+      { key: "department", value: "Finance" },
+      { key: "teams", value: "FinOps" },
+    ]);
   });
 
   it("returns offset pages with an exact filtered total", async () => {

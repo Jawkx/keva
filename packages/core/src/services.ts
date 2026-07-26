@@ -1,5 +1,6 @@
 import type {
   PropertyScalar,
+  PropertySuggestion,
   PropertySummary,
   PropertyValue,
   ItemEvent,
@@ -45,6 +46,7 @@ export class BlobStore extends Context.Tag("@keva/core/BlobStore")<BlobStore, Bl
 
 export const SUGGESTION_KEY_LIMIT = 500;
 export const SUGGESTION_VALUE_LIMIT = 100;
+export const PROPERTY_SEARCH_LIMIT = 12;
 export const DEFAULT_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024 * 1024;
 
 export interface ItemTransition {
@@ -153,6 +155,11 @@ export interface MetadataStoreService {
   readonly propertySummary: (
     tenantId: string,
   ) => Effect.Effect<ReadonlyArray<PropertySummary>, KevaError>;
+  readonly propertySuggestions: (
+    tenantId: string,
+    search: string,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<PropertySuggestion>, KevaError>;
   readonly listByStatus: (
     status: ItemStatus,
     limit: number,

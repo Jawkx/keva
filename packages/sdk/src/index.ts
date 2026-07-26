@@ -18,6 +18,7 @@ import {
   OwnerItem,
   PropertyKeysResult,
   PropertySummaryResult,
+  PropertySuggestionsResult,
   PropertyValuesResult,
   Query,
   ReceivedShare,
@@ -39,6 +40,7 @@ import {
   type PropertyScalar as PropertyScalarType,
   type PropertyValue as PropertyValueType,
   type PropertySummary as PropertySummaryType,
+  type PropertySuggestion as PropertySuggestionType,
   type QueryCondition as QueryConditionType,
   type BatchPatchItem as BatchPatchItemType,
   type BatchPatchResult as BatchPatchResultType,
@@ -94,6 +96,7 @@ export type {
   PropertyScalarType as PropertyScalar,
   PropertyValueType as PropertyValue,
   PropertySummaryType as PropertySummary,
+  PropertySuggestionType as PropertySuggestion,
   QueryConditionType as QueryCondition,
   ShareGrantRecordType as ShareGrantRecord,
   ShareSelfType as ShareSelf,
@@ -513,6 +516,15 @@ export class KevaClient {
 
   async propertySummary(): Promise<PropertySummaryType[]> {
     const { entries } = await this.#request("GET", "/properties/summary", PropertySummaryResult);
+    return [...entries];
+  }
+
+  async propertySuggestions(search: string): Promise<PropertySuggestionType[]> {
+    const { entries } = await this.#request(
+      "GET",
+      `/properties/search?q=${encodeURIComponent(search)}`,
+      PropertySuggestionsResult,
+    );
     return [...entries];
   }
 

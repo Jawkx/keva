@@ -1,4 +1,4 @@
-import { Database, Files, Inbox, LogOut, PanelLeft, Plug, Search, Settings } from "lucide-react";
+import { Database, Files, Inbox, LogOut, PanelLeft, Plug, Settings } from "lucide-react";
 import { type MouseEvent, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +11,7 @@ import { listViews, viewsQueryKey } from "../lib/views";
 import { viewIcon } from "./view-icons";
 import { UserAvatar } from "./UserAvatar";
 import { avatarRecipeForUser } from "../lib/avatar";
+import { GlobalSearch } from "./GlobalSearch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -273,15 +274,7 @@ export function AppShell() {
       <SidebarInset className="h-svh min-w-0 overflow-hidden">
         <header className="flex h-16 shrink-0 items-center gap-3 border-b px-4">
           <SidebarTrigger className="-ml-1 md:hidden" />
-          <div className="relative hidden w-full max-w-xl sm:block">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              disabled
-              aria-label="Global search coming soon"
-              placeholder="Search everything (coming soon)"
-              className="h-9 w-full rounded-lg border bg-muted/40 pr-3 pl-9 text-sm text-muted-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-80"
-            />
-          </div>
+          <GlobalSearch />
           <div
             ref={setHeaderSlot}
             className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end"

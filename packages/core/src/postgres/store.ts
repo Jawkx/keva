@@ -794,7 +794,14 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       if (search) {
         const pattern = `%${escapeLikePattern(search)}%`;
         predicates.push(
-          sql`(name ilike ${pattern} escape '\' or content_type ilike ${pattern} escape '\')`,
+          anyOf(
+            sql,
+            (query.searchFields ?? ["name", "content_type"]).map((field) =>
+              field === "name"
+                ? sql`name ilike ${pattern} escape '\'`
+                : sql`content_type ilike ${pattern} escape '\'`,
+            ),
+          ),
         );
       }
       const orderSql = queryOrder(sql, order);
@@ -1035,6 +1042,50 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         key: row.key,
         kinds: row.kinds,
         values: row.values ?? [],
+      }));
+    }),
+  propertySuggestions: (tenantId, search, limit) =>
+    attempt(async () => {
+      const pattern = `%${escapeLikePattern(search)}%`;
+      const prefix = `${escapeLikePattern(search)}%`;
+      const rows = await sql<{ key: string; value: string | null }[]>`
+        with properties_expanded as (
+          select property.key, property.value
+          from items
+          cross join lateral jsonb_each(properties) as property(key, value)
+          where tenant_id = ${tenantId} and status = 'ready'
+        ), scalar_values as (
+          select key, value #>> '{}' as value
+          from properties_expanded
+          where jsonb_typeof(value) = 'string'
+          union all
+          select key, member.value
+          from properties_expanded
+          cross join lateral jsonb_array_elements_text(properties_expanded.value) as member(value)
+          where jsonb_typeof(properties_expanded.value) = 'array'
+        ), matches as (
+          select distinct key, null::text as value
+          from properties_expanded
+          where key ilike ${pattern} escape '\'
+          union
+          select distinct key, value
+          from scalar_values
+          where value ilike ${pattern} escape '\'
+        )
+        select key, value
+        from matches
+        order by
+          case
+            when lower(coalesce(value, key)) = lower(${search}) then 0
+            when coalesce(value, key) ilike ${prefix} escape '\' then 1
+            else 2
+          end,
+          lower(coalesce(value, key)), lower(key)
+        limit ${limit}
+      `;
+      return rows.map((row) => ({
+        key: row.key,
+        ...(row.value === null ? {} : { value: row.value }),
       }));
     }),
   listByStatus: (status, limit, olderThan) =>

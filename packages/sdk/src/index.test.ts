@@ -79,6 +79,23 @@ describe("KevaClient", () => {
     expect(body).toMatchObject({ offset: 4 });
   });
 
+  it("requests and decodes property suggestions", async () => {
+    let requestedUrl = "";
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async (input) => {
+        requestedUrl = String(input);
+        return Response.json({ entries: [{ key: "department", value: "Finance" }] });
+      },
+    });
+
+    await expect(client.propertySuggestions("fin & ops")).resolves.toEqual([
+      { key: "department", value: "Finance" },
+    ]);
+    expect(requestedUrl).toBe("https://keva.invalid/api/properties/search?q=fin%20%26%20ops");
+  });
+
   it("exposes typed failures through Effect methods", async () => {
     const client = new KevaClient({
       baseUrl: "https://keva.invalid",

@@ -434,11 +434,15 @@ export const QueryOrder = Schema.Literal(
 );
 export type QueryOrder = typeof QueryOrder.Type;
 
+export const QuerySearchField = Schema.Literal("name", "content_type");
+export type QuerySearchField = typeof QuerySearchField.Type;
+
 export const Query = Schema.Struct({
   where: Schema.optionalWith(Schema.Array(QueryCondition), {
     default: () => [],
   }),
   search: Schema.optional(Schema.String.pipe(Schema.maxLength(256))),
+  searchFields: Schema.optional(Schema.Array(QuerySearchField).pipe(Schema.minItems(1))),
   limit: Schema.optionalWith(Schema.Number.pipe(Schema.int(), Schema.between(1, 1000)), {
     default: () => 100,
   }),
@@ -495,6 +499,17 @@ export const PropertySummaryResult = Schema.Struct({
   entries: Schema.Array(PropertySummary),
 });
 export type PropertySummaryResult = typeof PropertySummaryResult.Type;
+
+export const PropertySuggestion = Schema.Struct({
+  key: Schema.String,
+  value: Schema.optional(PropertyScalar),
+});
+export type PropertySuggestion = typeof PropertySuggestion.Type;
+
+export const PropertySuggestionsResult = Schema.Struct({
+  entries: Schema.Array(PropertySuggestion),
+});
+export type PropertySuggestionsResult = typeof PropertySuggestionsResult.Type;
 
 export const ContentTypeUsage = Schema.Struct({
   contentType: Schema.String,

@@ -1,4 +1,4 @@
-import { BlobStore, makeKevaEngine, MetadataStore } from "@keva/core";
+import { BlobStore, makeKevaEngine, MetadataStore, PROPERTY_SEARCH_LIMIT } from "@keva/core";
 import {
   CreateAccountShare,
   BillingOverview,
@@ -538,6 +538,22 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         return yield* makeKevaEngine(principal).propertySummary();
+      }),
+    ),
+  );
+
+  app.get("/api/properties/search", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const search = context.req.query("q")?.trim() ?? "";
+        if (search.length < 2 || search.length > 256) {
+          return yield* new ValidationError({
+            message: "Property search must be between 2 and 256 characters",
+          });
+        }
+        return yield* makeKevaEngine(principal).propertySuggestions(search, PROPERTY_SEARCH_LIMIT);
       }),
     ),
   );

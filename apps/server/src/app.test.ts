@@ -174,4 +174,21 @@ describe("server API", () => {
     const unauthorized = await app.request("/api/properties/keys");
     expect(unauthorized.status).toBe(401);
   });
+
+  it("searches property suggestions after filtering values", async () => {
+    const app = createApp({ layer });
+    await seedItem(app, "finance.txt", { department: "Finance", teams: ["FinOps", "Legal"] });
+
+    const response = await app.request("/api/properties/search?q=fin", { headers: auth });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      entries: [
+        { key: "department", value: "Finance" },
+        { key: "teams", value: "FinOps" },
+      ],
+    });
+
+    const tooShort = await app.request("/api/properties/search?q=f", { headers: auth });
+    expect(tooShort.status).toBe(400);
+  });
 });
