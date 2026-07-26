@@ -834,7 +834,7 @@ function FilesPageContent({
       <div className="flex shrink-0 flex-col gap-3 px-1">
         <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
           {viewId && view ? (
-            <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
+            <div className="flex max-w-[24rem] min-w-0 items-center">
               <ViewIconPicker
                 value={view.icon}
                 onChange={changeIcon}
@@ -872,7 +872,7 @@ function FilesPageContent({
                   onClick={startNameEdit}
                   className="group/vname relative flex min-w-0 items-center rounded-md text-left"
                 >
-                  <span className="truncate px-1 text-lg leading-none font-medium sm:text-[21px]">
+                  <span className="truncate text-lg leading-none font-medium sm:text-[21px]">
                     {view.name}
                   </span>
                   <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 text-muted-foreground opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vname:opacity-100 group-focus-visible/vname:opacity-100">
@@ -900,11 +900,11 @@ function FilesPageContent({
               </DropdownMenu>
             </div>
           ) : (
-            <div className="flex max-w-[24rem] min-w-0 items-center gap-1">
+            <div className="flex max-w-[24rem] min-w-0 items-center">
               <div className="flex size-8 shrink-0 items-center justify-center sm:size-9">
                 <Files className="size-5 sm:size-6" />
               </div>
-              <h1 className="truncate px-1 text-lg leading-none font-medium sm:text-[21px]">All</h1>
+              <h1 className="truncate text-lg leading-none font-medium sm:text-[21px]">All</h1>
             </div>
           )}
           {!selectMode && (
