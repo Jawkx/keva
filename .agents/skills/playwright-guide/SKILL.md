@@ -41,10 +41,7 @@ The app redirects unauthenticated sessions to `/login`, and Playwright runs its 
 fresh cookie jar (so it starts logged out). Ask the user for the local dev test
 credentials when a logged-in view is needed — never hardcode a password in this repo.
 
-The test login credential is as follow, it's for testing purpose and won't cause issue even when leak
-
-email: test-alice@gmail.com
-password: password@1
+You can read the test credentails at `test-credentials.json`
 
 ## Interaction tips
 

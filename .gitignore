@@ -11,3 +11,5 @@ coverage
 
 # Playwright MCP scratch output: screenshots, page snapshots, console logs
 .playwright-mcp/
+
+test-credentials.json
