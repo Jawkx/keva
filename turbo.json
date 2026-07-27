@@ -7,11 +7,7 @@
     },
     "dev": {
       "cache": false,
-      "dependsOn": ["//#dev:postgres"],
       "persistent": true
-    },
-    "//#dev:postgres": {
-      "cache": false
     },
     "typecheck": {
       "dependsOn": ["^build"],

@@ -6,12 +6,19 @@ Metadata-rich, S3-backed object storage for people, applications, and agents.
 
 Requirements: Node.js 22+, pnpm 11+, Postgres, and an S3-compatible bucket.
 
+Use an existing Postgres installation by setting `DATABASE_URL`. On macOS with
+Homebrew, start it with `brew services start postgresql@14` (replace `14` with
+your installed version). Alternatively, start the provided container with
+`pnpm dev:postgres`; this requires Docker Desktop, Colima, or another running
+Docker daemon.
+
 ```sh
 pnpm install
 pnpm build
 cp apps/server/.env.example apps/server/.env
 # Configure DATABASE_URL and the S3_* values in apps/server/.env, then:
-pnpm --filter @keva/server dev
+pnpm db:migrate
+pnpm dev:app
 ```
 
 The server always uses Postgres for metadata and S3-compatible storage for blobs.
