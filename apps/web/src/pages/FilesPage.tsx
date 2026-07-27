@@ -1103,7 +1103,7 @@ function FilesPageContent({
     <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl border">
       <ScrollArea className="h-auto min-h-0 flex-1">
         {!loading && rows.length === 0 ? (
-          <Empty className="py-16">
+          <Empty className="h-full py-16">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 {!filtered && !hasItems ? <Files /> : <Search />}
