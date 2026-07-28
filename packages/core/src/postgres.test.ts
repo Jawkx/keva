@@ -1,5 +1,6 @@
 import type { Principal } from "@keva/schema";
 import { Effect, Layer } from "effect";
+import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeKevaEngine, reapPending } from "./engine.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
@@ -81,6 +82,13 @@ describe("Postgres metadata store", () => {
           'items_tenant_created_id_idx',
           'items_ready_name_trgm_idx',
           'items_ready_content_type_trgm_idx',
+          'item_property_terms_tenant_item_idx',
+          'item_property_terms_tenant_key_idx',
+          'item_property_terms_tenant_key_value_idx',
+          'item_property_terms_key_trgm_idx',
+          'item_property_terms_value_trgm_idx',
+          'item_property_terms_null_unique',
+          'item_property_terms_value_unique',
           'api_tokens_tenant_created_idx'
         )
     `;
@@ -95,7 +103,145 @@ describe("Postgres metadata store", () => {
       expect(indexDefinition).toContain("gin_trgm_ops");
       expect(indexDefinition).toMatch(/WHERE .*status.*= 'ready'/);
     }
+    for (const indexName of [
+      "item_property_terms_tenant_item_idx",
+      "item_property_terms_tenant_key_idx",
+      "item_property_terms_null_unique",
+      "item_property_terms_value_unique",
+    ]) {
+      expect(byName.has(indexName)).toBe(true);
+    }
+    const tenantKeyValueIndex = byName.get("item_property_terms_tenant_key_value_idx");
+    expect(tenantKeyValueIndex).toContain("USING btree (tenant_id, key, value)");
+    expect(tenantKeyValueIndex).toMatch(/WHERE .*value.*IS NOT NULL/i);
+    for (const indexName of [
+      "item_property_terms_key_trgm_idx",
+      "item_property_terms_value_trgm_idx",
+    ]) {
+      const indexDefinition = byName.get(indexName);
+      expect(indexDefinition).toContain("USING gin");
+      expect(indexDefinition).toContain("gin_trgm_ops");
+    }
+    expect(byName.get("item_property_terms_value_trgm_idx")).toMatch(/WHERE .*value.*IS NOT NULL/i);
     expect(byName.has("api_tokens_tenant_created_idx")).toBe(true);
+  });
+
+  it("normalizes legacy property values before projection backfill", async () => {
+    const tenant = crypto.randomUUID();
+    const itemId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    const migration = await readFile(
+      new URL("../drizzle/0012_late_mandroid.sql", import.meta.url),
+      "utf8",
+    );
+    const statements = migration
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    const validation = statements.find((statement) =>
+      statement.includes("Unsupported legacy property shape"),
+    );
+    const normalization = statements.find((statement) =>
+      statement.startsWith("WITH property_values AS"),
+    );
+    const backfill = statements.find((statement) => statement.startsWith("WITH expanded AS"));
+    if (!validation || !normalization || !backfill) {
+      throw new Error("Migration normalization statements are missing");
+    }
+
+    const properties = await sql.begin(async (transaction) => {
+      await transaction`set local session_replication_role = replica`;
+      await transaction`
+        insert into items (
+          id, tenant_id, name, content_type, declared_size, source, status,
+          storage_key, staging_key, created_at, updated_at, properties
+        ) values (
+          ${itemId}, ${tenant}, 'legacy-properties.txt', 'text/plain', 1, 'upload', 'ready',
+          ${`items/${tenant}/${itemId}`}, ${`staging/${tenant}/${itemId}`},
+          ${timestamp}, ${timestamp},
+          ${JSON.stringify({
+            empty: [],
+            emptyScalar: "",
+            mixed: [1, "1", true, "true", 2, false, 2],
+            onlyEmptyMembers: ["", ""],
+            scalarBoolean: false,
+            scalarNumber: 42,
+            tag: null,
+            text: "kept",
+            withEmptyMembers: ["", 3, "", "kept", 3, ""],
+          })}::text::jsonb
+        )
+      `;
+      await transaction.unsafe(validation);
+      await transaction.unsafe(normalization);
+      await transaction.unsafe(backfill);
+      const rows = await transaction<{ properties: Record<string, unknown> }[]>`
+        select properties from items where tenant_id = ${tenant} and id = ${itemId}
+      `;
+      return rows[0]!.properties;
+    });
+
+    for (const unsupported of [
+      { object: { nested: true } },
+      { nestedArray: [["nested"]] },
+      { nullMember: [null] },
+    ]) {
+      const invalidId = crypto.randomUUID();
+      await expect(
+        sql.begin(async (transaction) => {
+          await transaction`set local session_replication_role = replica`;
+          await transaction`
+            insert into items (
+              id, tenant_id, name, content_type, declared_size, source, status,
+              storage_key, staging_key, created_at, updated_at, properties
+            ) values (
+              ${invalidId}, ${tenant}, 'invalid-legacy-properties.txt', 'text/plain', 1,
+              'upload', 'ready', ${`items/${tenant}/${invalidId}`},
+              ${`staging/${tenant}/${invalidId}`}, ${timestamp}, ${timestamp},
+              ${JSON.stringify(unsupported)}::text::jsonb
+            )
+          `;
+          await transaction.unsafe(validation);
+        }),
+      ).rejects.toMatchObject({ code: "P0001" });
+    }
+
+    expect(properties).toEqual({
+      mixed: ["1", "true", "2", "false"],
+      scalarBoolean: "false",
+      scalarNumber: "42",
+      tag: null,
+      text: "kept",
+      withEmptyMembers: ["3", "kept"],
+    });
+    const engine = makeKevaEngine(principal(tenant));
+    const discovery = await run(
+      Effect.all({
+        keys: engine.propertyKeys(),
+        mixed: engine.propertyValues("mixed"),
+        summary: engine.propertySummary(),
+        withEmptyMembers: engine.propertyValues("withEmptyMembers"),
+        suggestions: engine.propertySuggestions("true", 10),
+      }),
+    );
+    expect(discovery.keys).toEqual({
+      keys: ["mixed", "scalarBoolean", "scalarNumber", "tag", "text", "withEmptyMembers"],
+    });
+    expect(discovery.mixed).toEqual({ values: ["1", "2", "false", "true"] });
+    expect(discovery.withEmptyMembers).toEqual({ values: ["3", "kept"] });
+    expect(discovery.summary).toEqual({
+      entries: [
+        { key: "mixed", kinds: ["array"], values: ["1", "2", "false", "true"] },
+        { key: "scalarBoolean", kinds: ["string"], values: ["false"] },
+        { key: "scalarNumber", kinds: ["string"], values: ["42"] },
+        { key: "tag", kinds: ["tag"], values: [] },
+        { key: "text", kinds: ["string"], values: ["kept"] },
+        { key: "withEmptyMembers", kinds: ["array"], values: ["3", "kept"] },
+      ],
+    });
+    expect(discovery.suggestions).toEqual({
+      entries: [{ key: "mixed", value: "true" }],
+    });
   });
 
   it("persists items + properties across a new store instance", async () => {
@@ -123,6 +269,176 @@ describe("Postgres metadata store", () => {
     );
     expect(fetched.status).toBe("ready");
     expect(fetched.properties).toEqual({ project: "keva", rating: "nine" });
+  });
+
+  it("maintains property terms across direct writes and metadata mutations", async () => {
+    const tenant = crypto.randomUUID();
+    const otherTenant = crypto.randomUUID();
+    const directId = crypto.randomUUID();
+    const pendingId = crypto.randomUUID();
+    const cascadeId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    type Term = { key: string; kind: "tag" | "string" | "array"; value: string | null };
+    const termsFor = (itemId: string) => sql<Term[]>`
+      select key, kind, value
+      from item_property_terms
+      where tenant_id = ${tenant} and item_id = ${itemId}
+      order by key, kind, value nulls first
+    `;
+
+    const consistency = await run(
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          sql`
+            insert into items (
+              id, tenant_id, name, content_type, declared_size, source, status,
+              storage_key, staging_key, created_at, updated_at, properties
+            ) values (
+              ${directId}, ${tenant}, 'direct-ready.txt', 'text/plain', 1, 'upload', 'ready',
+              ${`items/${tenant}/${directId}`}, ${`staging/${tenant}/${directId}`},
+              ${timestamp}, ${timestamp},
+              ${JSON.stringify({ arrayKey: ["a", "b"], stringKey: "value", tagKey: null })}::text::jsonb
+            )
+          `.then(() => undefined),
+        );
+        const directTerms = yield* Effect.promise(() => termsFor(directId));
+
+        yield* Effect.promise(() =>
+          sql`
+            insert into items (
+              id, tenant_id, name, content_type, declared_size, source, status,
+              storage_key, staging_key, created_at, updated_at, properties
+            ) values (
+              ${pendingId}, ${tenant}, 'direct-pending.txt', 'text/plain', 1, 'upload', 'pending',
+              ${`items/${tenant}/${pendingId}`}, ${`staging/${tenant}/${pendingId}`},
+              ${timestamp}, ${timestamp}, ${JSON.stringify({ pendingKey: "pending-value" })}::text::jsonb
+            )
+          `.then(() => undefined),
+        );
+        const pendingBefore = yield* Effect.promise(() => termsFor(pendingId));
+        const metadata = yield* MetadataStore;
+        yield* metadata.transition(tenant, pendingId, ["pending"], {
+          status: "ready",
+          updatedAt: timestamp,
+        });
+        const pendingReady = yield* Effect.promise(() => termsFor(pendingId));
+
+        yield* metadata.transition(tenant, directId, ["ready"], {
+          status: "deleting",
+          updatedAt: timestamp,
+        });
+        const transitionRemoved = yield* Effect.promise(() => termsFor(directId));
+
+        const p = principal(tenant);
+        const eventTransitionId = yield* createReady(p, "event-transition.txt", "e");
+        yield* makeKevaEngine(p).patch(eventTransitionId, {
+          set: { eventTransitionKey: "event-transition-value" },
+          unset: [],
+        });
+        yield* metadata.transitionWithEvent(
+          tenant,
+          eventTransitionId,
+          ["ready"],
+          { status: "deleting", updatedAt: timestamp },
+          (item) => ({
+            id: crypto.randomUUID(),
+            tenantId: tenant,
+            itemId: item.id,
+            itemName: item.name,
+            action: "deleted",
+            actor: null,
+            payload: {},
+            createdAt: timestamp,
+          }),
+        );
+        const eventTransitionRemoved = yield* Effect.promise(() => termsFor(eventTransitionId));
+
+        const patchedId = yield* createReady(p, "patched-terms.txt", "p");
+        yield* metadata.patch(
+          tenant,
+          patchedId,
+          { fields: {}, set: { plainKey: "before", removedKey: "gone" }, unset: [] },
+          timestamp,
+        );
+        const patched = yield* Effect.promise(() => termsFor(patchedId));
+        yield* makeKevaEngine(p).patch(patchedId, {
+          set: { eventKey: ["after", "next"] },
+          unset: ["plainKey", "removedKey"],
+        });
+        const patchedWithEvent = yield* Effect.promise(() => termsFor(patchedId));
+
+        yield* Effect.promise(() =>
+          sql`
+            insert into items (
+              id, tenant_id, name, content_type, declared_size, source, status,
+              storage_key, staging_key, created_at, updated_at, properties
+            ) values (
+              ${cascadeId}, ${tenant}, 'cascade-ready.txt', 'text/plain', 1, 'upload', 'ready',
+              ${`items/${tenant}/${cascadeId}`}, ${`staging/${tenant}/${cascadeId}`},
+              ${timestamp}, ${timestamp}, ${JSON.stringify({ cascadeKey: "cascade-value" })}::text::jsonb
+            )
+          `.then(() => undefined),
+        );
+        const cascadeBefore = yield* Effect.promise(() => termsFor(cascadeId));
+        yield* Effect.promise(() =>
+          sql`delete from items where tenant_id = ${tenant} and id = ${cascadeId}`.then(
+            () => undefined,
+          ),
+        );
+        const cascadeAfter = yield* Effect.promise(() => termsFor(cascadeId));
+
+        const crossTenantCode = yield* Effect.promise(async () => {
+          try {
+            await sql`
+              insert into item_property_terms (tenant_id, item_id, key, kind, value)
+              values (${otherTenant}, ${pendingId}, 'invalid', 'string', 'invalid')
+            `;
+            return null;
+          } catch (error) {
+            return (error as { code?: string }).code ?? null;
+          }
+        });
+
+        return {
+          directTerms,
+          pendingBefore,
+          pendingReady,
+          transitionRemoved,
+          eventTransitionRemoved,
+          patched,
+          patchedWithEvent,
+          cascadeBefore,
+          cascadeAfter,
+          crossTenantCode,
+        };
+      }),
+    );
+
+    expect(consistency.directTerms).toEqual([
+      { key: "arrayKey", kind: "array", value: "a" },
+      { key: "arrayKey", kind: "array", value: "b" },
+      { key: "stringKey", kind: "string", value: "value" },
+      { key: "tagKey", kind: "tag", value: null },
+    ]);
+    expect(consistency.pendingBefore).toEqual([]);
+    expect(consistency.pendingReady).toEqual([
+      { key: "pendingKey", kind: "string", value: "pending-value" },
+    ]);
+    expect(consistency.transitionRemoved).toEqual([]);
+    expect(consistency.eventTransitionRemoved).toEqual([]);
+    expect(consistency.patched).toEqual([
+      { key: "plainKey", kind: "string", value: "before" },
+      { key: "removedKey", kind: "string", value: "gone" },
+    ]);
+    expect(consistency.patchedWithEvent).toEqual([
+      { key: "eventKey", kind: "array", value: "after" },
+      { key: "eventKey", kind: "array", value: "next" },
+    ]);
+    expect(consistency.cascadeBefore).toEqual([
+      { key: "cascadeKey", kind: "string", value: "cascade-value" },
+    ]);
+    expect(consistency.cascadeAfter).toEqual([]);
+    expect(consistency.crossTenantCode).toBe("23503");
   });
 
   it("searches configured text fields with tenant-scoped pagination", async () => {
@@ -225,28 +541,143 @@ describe("Postgres metadata store", () => {
     expect(found.other.items).toHaveLength(0);
   });
 
-  it("suggests matching property keys, scalar values, and array members", async () => {
+  it("discovers ready tenant property shapes and tracks updates", async () => {
+    const tenantA = crypto.randomUUID();
+    const tenantB = crypto.randomUUID();
+    const discovery = await run(
+      Effect.gen(function* () {
+        const p = principal(tenantA);
+        const engine = makeKevaEngine(p);
+        const one = yield* createReady(p, "properties-one.txt", "a");
+        const two = yield* createReady(p, "properties-two.txt", "b");
+        const removed = yield* createReady(p, "properties-removed.txt", "c");
+        yield* engine.patch(one, {
+          set: {
+            arrayKey: ["alpha", "beta"],
+            oldKey: "old",
+            shared: "same",
+            stringKey: "one",
+            tagKey: null,
+          },
+          unset: [],
+        });
+        yield* engine.patch(two, {
+          set: { arrayKey: ["beta", "gamma"], shared: "same" },
+          unset: [],
+        });
+        yield* engine.patch(one, {
+          set: { stringKey: "two", updatedKey: "updated" },
+          unset: ["oldKey"],
+        });
+        yield* engine.patch(removed, { set: { removedKey: "gone" }, unset: [] });
+        const pending = yield* engine.initiate({
+          name: "properties-pending.txt",
+          contentType: "text/plain",
+          size: 1,
+          source: "upload",
+          properties: { pendingKey: "hidden" },
+        });
+        const other = yield* createReady(principal(tenantB), "properties-other.txt", "d");
+        yield* makeKevaEngine(principal(tenantB)).patch(other, {
+          set: { tenantKey: "hidden" },
+          unset: [],
+        });
+        const metadata = yield* MetadataStore;
+        yield* metadata.transition(tenantA, removed, ["ready"], {
+          status: "deleting",
+          updatedAt: new Date().toISOString(),
+        });
+        return {
+          pendingStatus: pending.item.status,
+          keys: yield* engine.propertyKeys(),
+          arrayValues: yield* engine.propertyValues("arrayKey"),
+          tagValues: yield* engine.propertyValues("tagKey"),
+          summary: yield* engine.propertySummary(),
+        };
+      }),
+    );
+
+    expect(discovery.pendingStatus).toBe("pending");
+    expect(discovery.keys).toEqual({
+      keys: ["arrayKey", "shared", "stringKey", "tagKey", "updatedKey"],
+    });
+    expect(discovery.arrayValues).toEqual({ values: ["alpha", "beta", "gamma"] });
+    expect(discovery.tagValues).toEqual({ values: [] });
+    expect(discovery.summary).toEqual({
+      entries: [
+        { key: "arrayKey", kinds: ["array"], values: ["alpha", "beta", "gamma"] },
+        { key: "shared", kinds: ["string"], values: ["same"] },
+        { key: "stringKey", kinds: ["string"], values: ["two"] },
+        { key: "tagKey", kinds: ["tag"], values: [] },
+        { key: "updatedKey", kinds: ["string"], values: ["updated"] },
+      ],
+    });
+  });
+
+  it("orders, limits, and escapes property suggestions", async () => {
     const tenantA = crypto.randomUUID();
     const tenantB = crypto.randomUUID();
     const suggestions = await run(
       Effect.gen(function* () {
-        const engine = makeKevaEngine(principal(tenantA));
-        const scalar = yield* createReady(principal(tenantA), "budget.txt", "a");
-        const array = yield* createReady(principal(tenantA), "teams.txt", "b");
-        const other = yield* createReady(principal(tenantB), "private.txt", "c");
-        yield* engine.patch(scalar, { set: { department: "Finance" }, unset: [] });
-        yield* engine.patch(array, { set: { teams: ["FinOps", "Legal"] }, unset: [] });
-        yield* makeKevaEngine(principal(tenantB)).patch(other, {
-          set: { department: "Financial Crime" },
+        const p = principal(tenantA);
+        const engine = makeKevaEngine(p);
+        const one = yield* createReady(p, "suggestions-one.txt", "a");
+        const two = yield* createReady(p, "suggestions-two.txt", "b");
+        yield* engine.patch(one, {
+          set: {
+            backslashLiteral: "literal\\value",
+            department: "Finance",
+            financeKey: null,
+            mode: "fin",
+            percentLiteral: "literal%value",
+            underscoreLiteral: "literal_value",
+            teams: ["FinOps", "Refinance"],
+          },
           unset: [],
         });
-        return yield* engine.propertySuggestions("fin", 12);
+        yield* engine.patch(two, {
+          set: { department: "Finance", teams: ["FinOps"] },
+          unset: [],
+        });
+        yield* engine.initiate({
+          name: "suggestions-pending.txt",
+          contentType: "text/plain",
+          size: 1,
+          source: "upload",
+          properties: { pendingFinance: "Finance" },
+        });
+        const other = yield* createReady(principal(tenantB), "suggestions-other.txt", "c");
+        yield* makeKevaEngine(principal(tenantB)).patch(other, {
+          set: { privateFinance: "Finance" },
+          unset: [],
+        });
+        return {
+          all: yield* engine.propertySuggestions("fin", 12),
+          limited: yield* engine.propertySuggestions("fin", 3),
+          percent: yield* engine.propertySuggestions("%", 12),
+          underscore: yield* engine.propertySuggestions("_", 12),
+          backslash: yield* engine.propertySuggestions("\\", 12),
+        };
       }),
     );
 
-    expect(suggestions.entries).toEqual([
+    const ordered = [
+      { key: "mode", value: "fin" },
       { key: "department", value: "Finance" },
+      { key: "financeKey" },
       { key: "teams", value: "FinOps" },
+      { key: "teams", value: "Refinance" },
+    ];
+    expect(suggestions.all.entries).toEqual(ordered);
+    expect(suggestions.limited.entries).toEqual(ordered.slice(0, 3));
+    expect(suggestions.percent.entries).toEqual([
+      { key: "percentLiteral", value: "literal%value" },
+    ]);
+    expect(suggestions.underscore.entries).toEqual([
+      { key: "underscoreLiteral", value: "literal_value" },
+    ]);
+    expect(suggestions.backslash.entries).toEqual([
+      { key: "backslashLiteral", value: "literal\\value" },
     ]);
   });
 

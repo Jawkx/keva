@@ -85,6 +85,13 @@
       "when": 1785250828396,
       "tag": "0011_bright_iron_fist",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785252272058,
+      "tag": "0012_late_mandroid",
+      "breakpoints": true
     }
   ]
 }

@@ -970,13 +970,10 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   propertyKeys: (tenantId) =>
     attempt(async () => {
-      // Fan out each item's top-level property keys, then dedupe across the
-      // tenant. The GIN index doesn't serve this, but distinct key counts are
-      // small and the row scan is bounded by the tenant's ready items.
       const rows = await sql<{ key: string }[]>`
-        select distinct k as key
-        from items, lateral jsonb_object_keys(properties) as k
-        where tenant_id = ${tenantId} and status = 'ready'
+        select distinct key
+        from item_property_terms
+        where tenant_id = ${tenantId}
         order by key
         limit ${SUGGESTION_KEY_LIMIT}
       `;
@@ -986,14 +983,8 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     attempt(async () => {
       const rows = await sql<{ value: PropertyScalar }[]>`
         select distinct value
-        from items, lateral (
-          select properties ->> ${key} as value
-          where jsonb_typeof(properties -> ${key}) = 'string'
-          union all
-          select jsonb_array_elements_text(properties -> ${key}) as value
-          where jsonb_typeof(properties -> ${key}) = 'array'
-        ) discovered
-        where tenant_id = ${tenantId} and status = 'ready'
+        from item_property_terms
+        where tenant_id = ${tenantId} and key = ${key} and value is not null
         order by value
         limit ${SUGGESTION_VALUE_LIMIT}
       `;
@@ -1001,41 +992,33 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   propertySummary: (tenantId) =>
     attempt(async () => {
-      // jsonb 'null' surfaces as the product kind "tag" (bare membership tag).
       const rows = await sql<
         { key: string; kinds: PropertyKind[]; values: PropertyScalar[] | null }[]
       >`
-        with kv as (
-          select k.key as key,
-                 jsonb_typeof(properties -> k.key) as kind,
-                 properties -> k.key as value
-          from items, lateral jsonb_object_keys(properties) as k(key)
-          where tenant_id = ${tenantId} and status = 'ready'
-        ), kinds as (
-          select key,
-                 array_agg(distinct case when kind = 'null' then 'tag' else kind end) as kinds
-          from kv
+        with selected_keys as (
+          select key, array_agg(distinct kind order by kind) as kinds
+          from item_property_terms
+          where tenant_id = ${tenantId}
           group by key
-        ), scalar_values as (
-          select distinct key, value #>> '{}' as value
-          from kv where kind = 'string'
-          union
-          select distinct kv.key, member.value
-          from kv, lateral jsonb_array_elements_text(kv.value) as member(value)
-          where kind = 'array'
+          order by key
+          limit ${SUGGESTION_KEY_LIMIT}
+        ), distinct_values as (
+          select distinct terms.key, terms.value
+          from item_property_terms terms
+          join selected_keys on selected_keys.key = terms.key
+          where terms.tenant_id = ${tenantId} and terms.value is not null
         ), ranked_values as (
           select key, value,
                  row_number() over (partition by key order by value) as rank
-          from scalar_values
+          from distinct_values
         )
-        select kinds.key, kinds.kinds,
+        select selected_keys.key, selected_keys.kinds,
                jsonb_agg(ranked_values.value order by ranked_values.value)
                  filter (where ranked_values.rank <= ${SUGGESTION_VALUE_LIMIT}) as values
-        from kinds
-        left join ranked_values on ranked_values.key = kinds.key
-        group by kinds.key, kinds.kinds
-        order by kinds.key
-        limit ${SUGGESTION_KEY_LIMIT}
+        from selected_keys
+        left join ranked_values on ranked_values.key = selected_keys.key
+        group by selected_keys.key, selected_keys.kinds
+        order by selected_keys.key
       `;
       return rows.map((row) => ({
         key: row.key,
@@ -1048,28 +1031,15 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       const pattern = `%${escapeLikePattern(search)}%`;
       const prefix = `${escapeLikePattern(search)}%`;
       const rows = await sql<{ key: string; value: string | null }[]>`
-        with properties_expanded as (
-          select property.key, property.value
-          from items
-          cross join lateral jsonb_each(properties) as property(key, value)
-          where tenant_id = ${tenantId} and status = 'ready'
-        ), scalar_values as (
-          select key, value #>> '{}' as value
-          from properties_expanded
-          where jsonb_typeof(value) = 'string'
-          union all
-          select key, member.value
-          from properties_expanded
-          cross join lateral jsonb_array_elements_text(properties_expanded.value) as member(value)
-          where jsonb_typeof(properties_expanded.value) = 'array'
-        ), matches as (
+        with matches as (
           select distinct key, null::text as value
-          from properties_expanded
-          where key ilike ${pattern} escape '\\'
+          from item_property_terms
+          where tenant_id = ${tenantId} and key ilike ${pattern} escape '\\'
           union
           select distinct key, value
-          from scalar_values
-          where value ilike ${pattern} escape '\\'
+          from item_property_terms
+          where tenant_id = ${tenantId} and value is not null
+            and value ilike ${pattern} escape '\\'
         )
         select key, value
         from matches

@@ -12,6 +12,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -80,6 +81,40 @@ export const items = pgTable(
       "items_upload_reservation_state_check",
       sql`${table.uploadReservationState} is null or ${table.uploadReservationState} in ('reserved', 'consumed')`,
     ),
+  ],
+);
+
+export const itemPropertyTerms = pgTable(
+  "item_property_terms",
+  {
+    tenantId: text("tenant_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    key: text("key").notNull(),
+    kind: text("kind").$type<"tag" | "string" | "array">().notNull(),
+    value: text("value"),
+  },
+  (table) => [
+    foreignKey({
+      name: "item_property_terms_tenant_item_fk",
+      columns: [table.tenantId, table.itemId],
+      foreignColumns: [items.tenantId, items.id],
+    }).onDelete("cascade"),
+    check("item_property_terms_kind_check", sql`${table.kind} in ('tag', 'string', 'array')`),
+    index("item_property_terms_tenant_item_idx").on(table.tenantId, table.itemId),
+    index("item_property_terms_tenant_key_idx").on(table.tenantId, table.key),
+    index("item_property_terms_tenant_key_value_idx")
+      .on(table.tenantId, table.key, table.value)
+      .where(sql`${table.value} is not null`),
+    index("item_property_terms_key_trgm_idx").using("gin", sql`${table.key} gin_trgm_ops`),
+    index("item_property_terms_value_trgm_idx")
+      .using("gin", sql`${table.value} gin_trgm_ops`)
+      .where(sql`${table.value} is not null`),
+    uniqueIndex("item_property_terms_null_unique")
+      .on(table.tenantId, table.itemId, table.key, table.kind)
+      .where(sql`${table.value} is null`),
+    uniqueIndex("item_property_terms_value_unique")
+      .on(table.tenantId, table.itemId, table.key, table.kind, table.value)
+      .where(sql`${table.value} is not null`),
   ],
 );
 
