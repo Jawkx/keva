@@ -811,15 +811,14 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         const rows = yield* attempt(
           async () =>
             await sql<{ items: ItemRow[]; total_count: string }[]>`
-              with matched as materialized (
-                select * from items where ${where}
-              ), page as (
-                select * from matched
+              with page as (
+                select * from items
+                where ${where}
                 order by ${orderSql.by}
                 limit ${query.limit} offset ${offset}
               )
               select coalesce(json_agg(page order by ${orderSql.by}), '[]'::json) as items,
-                     (select count(*)::bigint from matched) as total_count
+                     (select count(*)::bigint from items where ${where}) as total_count
               from page
             `,
         );

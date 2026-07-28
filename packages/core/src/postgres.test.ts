@@ -195,28 +195,65 @@ describe("Postgres metadata store", () => {
     ]);
   });
 
-  it("returns offset pages with an exact filtered total", async () => {
-    const tenant = crypto.randomUUID();
+  it("returns stable offset pages with an exact tenant-scoped filtered total", async () => {
+    const tenantA = crypto.randomUUID();
+    const tenantB = crypto.randomUUID();
     const result = await run(
       Effect.gen(function* () {
-        const p = principal(tenant);
-        yield* createReady(p, "numbered-1.txt", "a");
+        const p = principal(tenantA);
+        const first = yield* createReady(p, "numbered-1.txt", "a");
         yield* createReady(p, "excluded.txt", "b");
-        yield* createReady(p, "numbered-2.txt", "c");
-        yield* createReady(p, "numbered-3.txt", "d");
-        return yield* makeKevaEngine(p).query({
+        const second = yield* createReady(p, "numbered-2.txt", "c");
+        const third = yield* createReady(p, "numbered-3.txt", "d");
+        yield* createReady(principal(tenantB), "numbered-other-tenant.txt", "e");
+        yield* Effect.promise(() =>
+          sql`
+            update items
+            set created_at = case id
+              when ${first} then '2025-01-01T00:00:01.000Z'::timestamptz
+              when ${second} then '2025-01-01T00:00:02.000Z'::timestamptz
+              when ${third} then '2025-01-01T00:00:03.000Z'::timestamptz
+            end
+            where tenant_id = ${tenantA} and id in (${first}, ${second}, ${third})
+          `.then(() => undefined),
+        );
+        const engine = makeKevaEngine(p);
+        const middle = yield* engine.query({
           where: [],
           search: "numbered-",
           limit: 1,
           offset: 1,
           order: "created_at_asc",
         });
+        const beyondEnd = yield* engine.query({
+          where: [],
+          search: "numbered-",
+          limit: 2,
+          offset: 10,
+          order: "created_at_asc",
+        });
+        const descending = yield* engine.query({
+          where: [],
+          search: "numbered-",
+          limit: 3,
+          offset: 0,
+          order: "created_at_desc",
+        });
+        return { middle, beyondEnd, descending };
       }),
     );
 
-    expect(result.items.map((item) => item.name)).toEqual(["numbered-2.txt"]);
-    expect(result.totalCount).toBe(3);
-    expect(result.nextCursor).toBeUndefined();
+    expect(result.middle.items.map((item) => item.name)).toEqual(["numbered-2.txt"]);
+    expect(result.middle.totalCount).toBe(3);
+    expect(result.middle.nextCursor).toBeUndefined();
+    expect(result.beyondEnd.items).toEqual([]);
+    expect(result.beyondEnd.totalCount).toBe(3);
+    expect(result.descending.items.map((item) => item.name)).toEqual([
+      "numbered-3.txt",
+      "numbered-2.txt",
+      "numbered-1.txt",
+    ]);
+    expect(result.descending.totalCount).toBe(3);
   });
 
   it("resolves a concurrent confirm-vs-reaper race to exactly one winner", async () => {
