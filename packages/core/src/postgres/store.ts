@@ -798,8 +798,8 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             sql,
             (query.searchFields ?? ["name", "content_type"]).map((field) =>
               field === "name"
-                ? sql`name ilike ${pattern} escape '\'`
-                : sql`content_type ilike ${pattern} escape '\'`,
+                ? sql`name ilike ${pattern} escape '\\'`
+                : sql`content_type ilike ${pattern} escape '\\'`,
             ),
           ),
         );
@@ -1065,18 +1065,18 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         ), matches as (
           select distinct key, null::text as value
           from properties_expanded
-          where key ilike ${pattern} escape '\'
+          where key ilike ${pattern} escape '\\'
           union
           select distinct key, value
           from scalar_values
-          where value ilike ${pattern} escape '\'
+          where value ilike ${pattern} escape '\\'
         )
         select key, value
         from matches
         order by
           case
             when lower(coalesce(value, key)) = lower(${search}) then 0
-            when coalesce(value, key) ilike ${prefix} escape '\' then 1
+            when coalesce(value, key) ilike ${prefix} escape '\\' then 1
             else 2
           end,
           lower(coalesce(value, key)), lower(key)

@@ -62,6 +62,12 @@ export const items = pgTable(
       table.id,
     ),
     index("items_properties_gin_idx").using("gin", table.properties),
+    index("items_ready_name_trgm_idx")
+      .using("gin", sql`${table.name} gin_trgm_ops`)
+      .where(sql`${table.status} = 'ready'`),
+    index("items_ready_content_type_trgm_idx")
+      .using("gin", sql`${table.contentType} gin_trgm_ops`)
+      .where(sql`${table.status} = 'ready'`),
     index("items_tenant_source_idx").on(table.tenantId, table.source),
     index("items_staging_uncleaned_idx")
       .on(table.createdAt)

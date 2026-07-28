@@ -79,6 +79,8 @@ describe("Postgres metadata store", () => {
           'items_properties_gin_idx',
           'items_tenant_status_created_idx',
           'items_tenant_created_id_idx',
+          'items_ready_name_trgm_idx',
+          'items_ready_content_type_trgm_idx',
           'api_tokens_tenant_created_idx'
         )
     `;
@@ -86,6 +88,13 @@ describe("Postgres metadata store", () => {
     expect(byName.get("items_properties_gin_idx")).toContain("USING gin");
     expect(byName.has("items_tenant_status_created_idx")).toBe(true);
     expect(byName.has("items_tenant_created_id_idx")).toBe(true);
+    for (const indexName of ["items_ready_name_trgm_idx", "items_ready_content_type_trgm_idx"]) {
+      const indexDefinition = byName.get(indexName);
+      expect(indexDefinition).toBeDefined();
+      expect(indexDefinition).toContain("USING gin");
+      expect(indexDefinition).toContain("gin_trgm_ops");
+      expect(indexDefinition).toMatch(/WHERE .*status.*= 'ready'/);
+    }
     expect(byName.has("api_tokens_tenant_created_idx")).toBe(true);
   });
 
@@ -129,11 +138,13 @@ describe("Postgres metadata store", () => {
           "image/fox-icon",
           "b",
         );
-        yield* createReady(principal(tenantA), "plain.txt", "c");
-        yield* createReady(principal(tenantB), "other-fox.txt", "d");
+        const literal = yield* createReady(principal(tenantA), "literal-%_\\-markers.txt", "c");
+        yield* createReady(principal(tenantA), "plain.txt", "d");
+        yield* createReady(principal(tenantB), "other-fox.txt", "e");
+        yield* createReady(principal(tenantB), "literal-%_\\-markers.txt", "f");
         const all = yield* engine.query({
           where: [],
-          search: "fox",
+          search: "FOX",
           limit: 100,
           order: "created_at_asc",
         });
@@ -145,7 +156,35 @@ describe("Postgres metadata store", () => {
         });
         const namesOnly = yield* engine.query({
           where: [],
-          search: "fox",
+          search: "FOX",
+          searchFields: ["name"],
+          limit: 100,
+          order: "created_at_asc",
+        });
+        const contentTypesOnly = yield* engine.query({
+          where: [],
+          search: "FOX",
+          searchFields: ["content_type"],
+          limit: 100,
+          order: "created_at_asc",
+        });
+        const literalPercent = yield* engine.query({
+          where: [],
+          search: "%",
+          searchFields: ["name"],
+          limit: 100,
+          order: "created_at_asc",
+        });
+        const literalUnderscore = yield* engine.query({
+          where: [],
+          search: "_",
+          searchFields: ["name"],
+          limit: 100,
+          order: "created_at_asc",
+        });
+        const literalBackslash = yield* engine.query({
+          where: [],
+          search: "\\",
           searchFields: ["name"],
           limit: 100,
           order: "created_at_asc",
@@ -156,7 +195,19 @@ describe("Postgres metadata store", () => {
           limit: 100,
           order: "created_at_asc",
         });
-        return { named, typed, all, first, namesOnly, other };
+        return {
+          named,
+          typed,
+          literal,
+          all,
+          first,
+          namesOnly,
+          contentTypesOnly,
+          literalPercent,
+          literalUnderscore,
+          literalBackslash,
+          other,
+        };
       }),
     );
 
@@ -166,6 +217,10 @@ describe("Postgres metadata store", () => {
     expect(found.first.items).toHaveLength(1);
     expect(found.first.nextCursor).toBeDefined();
     expect(found.namesOnly.items.map((item) => item.id)).toEqual([found.named]);
+    expect(found.contentTypesOnly.items.map((item) => item.id)).toEqual([found.typed]);
+    expect(found.literalPercent.items.map((item) => item.id)).toEqual([found.literal]);
+    expect(found.literalUnderscore.items.map((item) => item.id)).toEqual([found.literal]);
+    expect(found.literalBackslash.items.map((item) => item.id)).toEqual([found.literal]);
     expect(found.typed).not.toBe(found.named);
     expect(found.other.items).toHaveLength(0);
   });
