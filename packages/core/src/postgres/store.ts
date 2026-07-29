@@ -277,7 +277,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         return sql.begin(async (transaction): Promise<PatchResult> => {
           const rows = await transaction<ItemRow[]>`
           select * from items
-          where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
+          where tenant_id = ${tenantId} and id = ${id} and status = 'ready' and deleted_at is null
           for update
         `;
           const row = rows[0];
@@ -300,7 +300,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           const updated = await transaction<ItemRow[]>`
           update items
           set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb
-          where tenant_id = ${tenantId} and id = ${id} and status = 'ready'
+          where tenant_id = ${tenantId} and id = ${id} and status = 'ready' and deleted_at is null
           returning *
         `;
           return updated[0]
@@ -322,7 +322,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       const result: PatchResult = yield* attempt(async () =>
         sql.begin(async (transaction): Promise<PatchResult> => {
           const rows = await transaction<ItemRow[]>`
-            select * from items where tenant_id = ${tenantId} and id = ${id} and status = 'ready' for update
+            select * from items where tenant_id = ${tenantId} and id = ${id} and status = 'ready' and deleted_at is null for update
           `;
           const row = rows[0];
           if (!row) return { status: "missing" };
@@ -341,7 +341,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           }
           const updated = await transaction<ItemRow[]>`
             update items set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb
-            where tenant_id = ${tenantId} and id = ${id} and status = 'ready' returning *
+            where tenant_id = ${tenantId} and id = ${id} and status = 'ready' and deleted_at is null returning *
           `;
           if (!updated[0]) return { status: "missing" };
           const previous = mapRow(row);
@@ -359,6 +359,55 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       return result.status === "updated"
         ? { previous: result.previous, updated: result.updated }
         : null;
+    }),
+  trash: (tenantId, id, deletedAt, event) =>
+    attempt(async () =>
+      sql.begin(async (transaction) => {
+        const updated = await transaction<ItemRow[]>`
+          update items
+          set deleted_at = ${deletedAt}, updated_at = ${deletedAt}
+          where tenant_id = ${tenantId} and id = ${id}
+            and status = 'ready' and deleted_at is null
+          returning *
+        `;
+        if (!updated[0]) return null;
+        const item = mapRow(updated[0]);
+        await insertEvent(transaction as unknown as Sql, event(item));
+        return item;
+      }),
+    ),
+  restore: (tenantId, id, updatedAt) =>
+    attempt(async () => {
+      const updated = await sql<ItemRow[]>`
+        update items
+        set deleted_at = null, updated_at = ${updatedAt}
+        where tenant_id = ${tenantId} and id = ${id}
+          and status = 'ready' and deleted_at is not null
+        returning *
+      `;
+      return updated[0] ? mapRow(updated[0]) : null;
+    }),
+  beginPurge: (tenantId, id, updatedAt) =>
+    attempt(async () => {
+      const updated = await sql<ItemRow[]>`
+        update items
+        set status = 'deleting', updated_at = ${updatedAt}
+        where tenant_id = ${tenantId} and id = ${id}
+          and status = 'ready' and deleted_at is not null
+        returning *
+      `;
+      return updated[0] ? mapRow(updated[0]) : null;
+    }),
+  listTrash: (tenantId) =>
+    attempt(async () => {
+      const rows = await sql<ItemRow[]>`
+        select * from items
+        where tenant_id = ${tenantId} and status = 'ready' and deleted_at is not null
+        order by deleted_at desc, id desc
+      `;
+      return rows.map(mapRow) as ReadonlyArray<
+        ReturnType<typeof mapRow> & { readonly deletedAt: string }
+      >;
     }),
   remove: (tenantId, id, expectedStatus) =>
     attempt(async () => {
@@ -386,6 +435,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       const predicates: Fragment[] = [
         sql`tenant_id = ${tenantId}`,
         sql`status = 'ready'`,
+        sql`deleted_at is null`,
         ...query.where.map((condition) => compileCondition(sql, condition)),
       ];
       const search = query.search?.trim();

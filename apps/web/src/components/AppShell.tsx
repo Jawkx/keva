@@ -1,4 +1,4 @@
-import { Database, Files, Inbox, LogOut, PanelLeft, Plug, Settings } from "lucide-react";
+import { Database, Files, Inbox, LogOut, PanelLeft, Plug, Settings, Trash2 } from "lucide-react";
 import { type MouseEvent, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +34,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarSeparator,
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -167,6 +168,19 @@ function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={isActive("/trash", false)}
+              tooltip="Trash"
+              render={<Link to="/trash" />}
+            >
+              <Trash2 />
+              <span>Trash</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarSeparator className="data-horizontal:w-[calc(100%-1rem)]" />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

@@ -150,7 +150,7 @@ describe("Postgres metadata store", () => {
     }
 
     const properties = await sql.begin(async (transaction) => {
-      await transaction`set local session_replication_role = replica`;
+      await transaction`alter table items disable trigger items_sync_item_property_terms`;
       await transaction`
         insert into items (
           id, tenant_id, name, content_type, declared_size, source, status,
@@ -178,6 +178,7 @@ describe("Postgres metadata store", () => {
       const rows = await transaction<{ properties: Record<string, unknown> }[]>`
         select properties from items where tenant_id = ${tenant} and id = ${itemId}
       `;
+      await transaction`alter table items enable trigger items_sync_item_property_terms`;
       return rows[0]!.properties;
     });
 
@@ -189,7 +190,7 @@ describe("Postgres metadata store", () => {
       const invalidId = crypto.randomUUID();
       await expect(
         sql.begin(async (transaction) => {
-          await transaction`set local session_replication_role = replica`;
+          await transaction`alter table items disable trigger items_sync_item_property_terms`;
           await transaction`
             insert into items (
               id, tenant_id, name, content_type, declared_size, source, status,

@@ -196,7 +196,13 @@ describe("schema", () => {
     expect(Schema.decodeUnknownSync(Query)({ order: "size_desc" })).toMatchObject({
       order: "size_desc",
     });
-    expect(() => Schema.decodeUnknownSync(Query)({ order: "name_desc" })).toThrow();
+    expect(Schema.decodeUnknownSync(Query)({ order: "name_desc" })).toMatchObject({
+      order: "name_desc",
+    });
+    expect(Schema.decodeUnknownSync(Query)({ order: "updated_at_asc" })).toMatchObject({
+      order: "updated_at_asc",
+    });
+    expect(() => Schema.decodeUnknownSync(Query)({ order: "random_desc" })).toThrow();
   });
 
   it("validates offset pagination independently of cursors", () => {
@@ -221,6 +227,11 @@ describe("schema", () => {
     expect(decodeCursor(encodeCursor([4096, id]))).toEqual([4096, id]);
     expect(decodeCursor(encodeCursor([4096, id, "size_desc"]))).toEqual([4096, id, "size_desc"]);
     expect(decodeCursor(btoa(JSON.stringify([-1, id])))).toBeNull();
+    expect(decodeCursor(encodeCursor(["report.pdf", id, "name_asc"]))).toEqual([
+      "report.pdf",
+      id,
+      "name_asc",
+    ]);
     expect(decodeCursor(btoa(JSON.stringify([4096, id, "name_asc"])))).toBeNull();
   });
 
@@ -333,6 +344,12 @@ describe("condition evaluator", () => {
   it("resolves declared system fields for items", () => {
     const item = sampleItem();
     expect(itemMatchesCondition(item, { key: "name", op: "eq", value: "report.pdf" })).toBe(true);
+    expect(
+      itemMatchesCondition(item, { key: "id", op: "in", value: [item.id, crypto.randomUUID()] }),
+    ).toBe(true);
+    expect(itemMatchesCondition(item, { key: "id", op: "in", value: [crypto.randomUUID()] })).toBe(
+      false,
+    );
     expect(itemMatchesCondition(item, { key: "system.size", op: "gte", value: 2048 })).toBe(true);
     expect(itemMatchesCondition(item, { key: "system.size", op: "gt", value: 4096 })).toBe(false);
     expect(

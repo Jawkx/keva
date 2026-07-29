@@ -18,6 +18,7 @@ export const Operator = Schema.Literal(
   "has_all",
   "contains_text",
   "contains_any",
+  "in",
 );
 export type Operator = typeof Operator.Type;
 
@@ -68,6 +69,9 @@ export const QueryCondition = Schema.Struct({
           return typeof value === "string" && isIsoInstant(value);
         return typeof value === "string" && value.length > 0;
       }
+      if (op === "in") {
+        return field.queryType === "string" && isNonEmptyUniqueStrings(value);
+      }
       if (["gt", "gte", "lt", "lte"].includes(op)) {
         return field.queryType === "number"
           ? typeof value === "number"
@@ -96,6 +100,10 @@ export const QueryOrder = Schema.Literal(
   "created_at_desc",
   "size_asc",
   "size_desc",
+  "name_asc",
+  "name_desc",
+  "updated_at_asc",
+  "updated_at_desc",
 );
 export type QueryOrder = typeof QueryOrder.Type;
 

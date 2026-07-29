@@ -6,6 +6,8 @@ import {
   ItemPatch,
   BatchDelete,
   BatchDeleteResult,
+  BatchRestore,
+  BatchRestoreResult,
   CreateAccountShare,
   CreateShareGrant,
   CreateShareGrantResult,
@@ -28,6 +30,7 @@ import {
   SharedInitiateUploadResult,
   SharedItem,
   SharedQueryResult,
+  TrashResult,
   UpdateView,
   UsageResult,
   ViewRecord,
@@ -46,6 +49,7 @@ import {
   type BatchPatchResult as BatchPatchResultType,
   type ItemPatch as ItemPatchType,
   type BatchDeleteResult as BatchDeleteResultType,
+  type BatchRestoreResult as BatchRestoreResultType,
   type CreateShareGrant as CreateShareGrantType,
   type CreateShareGrantResult as CreateShareGrantResultType,
   type CreateView as CreateViewType,
@@ -63,6 +67,7 @@ import {
   type SharedItem as SharedItemType,
   type SharedInitiateUploadResult as SharedInitiateUploadResultType,
   type SharedQueryResult as SharedQueryResultType,
+  type TrashItem as TrashItemType,
   type UpdateView as UpdateViewType,
   type UsageResult as UsageResultType,
   type ViewRecord as ViewRecordType,
@@ -78,6 +83,7 @@ export type {
   BatchPatchItemType as BatchPatchItem,
   BatchPatchResultType as BatchPatchResult,
   BatchDeleteResultType as BatchDeleteResult,
+  BatchRestoreResultType as BatchRestoreResult,
   CreateShareGrantType as CreateShareGrant,
   CreateShareGrantResultType as CreateShareGrantResult,
   CreateViewType as CreateView,
@@ -102,6 +108,7 @@ export type {
   ShareSelfType as ShareSelf,
   SharedItemType as SharedItem,
   SharedQueryResultType as SharedQueryResult,
+  TrashItemType as TrashItem,
   UsageResultType as UsageResult,
 };
 
@@ -538,6 +545,36 @@ export class KevaClient {
 
   deleteMany(ids: readonly string[]): Promise<BatchDeleteResultType> {
     return this.#request("POST", "/items/delete", BatchDeleteResult, decode(BatchDelete, { ids }));
+  }
+
+  async listTrash(): Promise<TrashItemType[]> {
+    const result = await this.#request("GET", "/trash", TrashResult);
+    return [...result.items];
+  }
+
+  restore(id: string): Promise<KevaItemType> {
+    return this.#request("POST", `/trash/${encodeURIComponent(id)}/restore`, OwnerItem);
+  }
+
+  restoreMany(ids: readonly string[]): Promise<BatchRestoreResultType> {
+    return this.#request(
+      "POST",
+      "/trash/restore",
+      BatchRestoreResult,
+      decode(BatchRestore, { ids }),
+    );
+  }
+
+  async purge(id: string): Promise<void> {
+    await this.#request(
+      "DELETE",
+      `/trash/${encodeURIComponent(id)}`,
+      Schema.Struct({ ok: Schema.Boolean }),
+    );
+  }
+
+  purgeMany(ids: readonly string[]): Promise<BatchDeleteResultType> {
+    return this.#request("POST", "/trash/delete", BatchDeleteResult, decode(BatchDelete, { ids }));
   }
 
   createShare(input: CreateShareGrantType): Promise<CreateShareGrantResultType> {

@@ -29,30 +29,50 @@ export const IsoInstant = Schema.String.pipe(
 );
 export type IsoInstant = typeof IsoInstant.Type;
 
-type CursorOrder = "created_at_asc" | "created_at_desc" | "size_asc" | "size_desc";
+type CursorOrder =
+  | "created_at_asc"
+  | "created_at_desc"
+  | "size_asc"
+  | "size_desc"
+  | "name_asc"
+  | "name_desc"
+  | "updated_at_asc"
+  | "updated_at_desc";
 export type Cursor = readonly [sortValue: string | number, id: string, order?: CursorOrder];
 
 export const encodeCursor = (cursor: Cursor): string => btoa(JSON.stringify(cursor));
 
+const CURSOR_ORDERS: readonly CursorOrder[] = [
+  "created_at_asc",
+  "created_at_desc",
+  "size_asc",
+  "size_desc",
+  "name_asc",
+  "name_desc",
+  "updated_at_asc",
+  "updated_at_desc",
+];
+
 export const decodeCursor = (cursor: string): Cursor | null => {
   try {
     const value = JSON.parse(atob(cursor)) as unknown;
-    if (
-      !Array.isArray(value) ||
-      (value.length !== 2 && value.length !== 3) ||
-      !(
-        (typeof value[0] === "string" && Number.isFinite(Date.parse(value[0]))) ||
-        (typeof value[0] === "number" && Number.isSafeInteger(value[0]) && value[0] >= 0)
-      ) ||
-      typeof value[1] !== "string" ||
-      !ITEM_ID_PATTERN.test(value[1]) ||
-      (value.length === 3 &&
-        !["created_at_asc", "created_at_desc", "size_asc", "size_desc"].includes(value[2]))
-    )
+    if (!Array.isArray(value) || (value.length !== 2 && value.length !== 3)) return null;
+    const order = value[2] as CursorOrder | undefined;
+    if (order !== undefined && !CURSOR_ORDERS.includes(order)) return null;
+    const numericValue =
+      typeof value[0] === "number" && Number.isSafeInteger(value[0]) && value[0] >= 0;
+    const timestampValue = typeof value[0] === "string" && Number.isFinite(Date.parse(value[0]));
+    const sortValueValid =
+      order === undefined
+        ? numericValue || timestampValue
+        : order.startsWith("size_")
+          ? numericValue
+          : order.startsWith("name_")
+            ? typeof value[0] === "string"
+            : timestampValue;
+    if (!sortValueValid || typeof value[1] !== "string" || !ITEM_ID_PATTERN.test(value[1]))
       return null;
-    return value.length === 3
-      ? [value[0], value[1], value[2] as CursorOrder]
-      : [value[0], value[1]];
+    return order ? [value[0], value[1], order] : [value[0], value[1]];
   } catch {
     return null;
   }

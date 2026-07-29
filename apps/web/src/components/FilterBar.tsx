@@ -1,6 +1,13 @@
 import { Check, ListFilter, LockKeyhole, Plus, X } from "lucide-react";
 import { useMemo, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
-import type { Operator, PropertySummary, PropertyValue, QueryCondition } from "@keva/schema";
+import {
+  QueryCondition as QueryConditionSchema,
+  type Operator,
+  type PropertySummary,
+  type PropertyValue,
+  type QueryCondition,
+} from "@keva/schema";
+import { Schema } from "effect";
 import { formatPropertyValue } from "../lib/format";
 import {
   buildFilterWhere,
@@ -47,6 +54,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -691,7 +699,27 @@ function AdvancedConditionDialog({
     open && opNeedsValue(op) && keyOptions.includes(trimmedKey),
   );
   const valueOptions = useMemo(() => suggestions.map(formatScalar), [suggestions]);
-  const canAdd = trimmedKey.length > 0 && (!opNeedsValue(op) || value.trim().length > 0);
+  const draftCondition = trimmedKey
+    ? buildFilterWhere({
+        kinds: [],
+        size: "any",
+        rows: [
+          createConditionDraft(
+            trimmedKey,
+            op,
+            opNeedsValue(op) ? [inferScalar(value, trimmedKey)] : [],
+          ),
+        ],
+      })[0]
+    : undefined;
+  const validationError = !trimmedKey
+    ? "Enter a key"
+    : opNeedsValue(op) && !value.trim()
+      ? "Enter a value"
+      : !draftCondition || !Schema.is(QueryConditionSchema)(draftCondition)
+        ? "This operator and value are not valid for the selected key"
+        : null;
+  const canAdd = validationError === null;
 
   const submit = () => {
     if (!canAdd) return;
@@ -719,42 +747,54 @@ function AdvancedConditionDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
-          <Combobox
-            aria-label="Condition key"
-            placeholder="key"
-            options={keyOptions}
-            emptyText="No matching keys"
-            value={key}
-            onValueChange={(nextKey) => {
-              setKey(nextKey);
-              const nextKinds = summary.find((entry) => entry.key === nextKey.trim())?.kinds;
-              const allowed = operatorsForKey(nextKey.trim(), nextKinds);
-              if (!allowed.includes(op)) setOp(allowed[0] ?? "has_value");
-            }}
-          />
-          <Select value={op} onValueChange={(next) => setOp(next as Operator)}>
-            <SelectTrigger>
-              <SelectValue>{(current: Operator) => FILTER_OPERATOR_LABELS[current]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {operatorsForKey(trimmedKey, kinds).map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {FILTER_OPERATOR_LABELS[option]}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          {opNeedsValue(op) && (
+          <Field>
+            <FieldLabel>Key</FieldLabel>
             <Combobox
-              aria-label="Condition value"
-              placeholder="value"
-              options={valueOptions}
-              emptyText="No matching values"
-              value={value}
-              onValueChange={setValue}
+              aria-label="Condition key"
+              placeholder="key"
+              options={keyOptions}
+              emptyText="No matching keys"
+              value={key}
+              onValueChange={(nextKey) => {
+                setKey(nextKey);
+                const nextKinds = summary.find((entry) => entry.key === nextKey.trim())?.kinds;
+                const allowed = operatorsForKey(nextKey.trim(), nextKinds);
+                if (!allowed.includes(op)) setOp(allowed[0] ?? "has_value");
+              }}
             />
+          </Field>
+          <Field>
+            <FieldLabel>Operator</FieldLabel>
+            <Select value={op} onValueChange={(next) => setOp(next as Operator)}>
+              <SelectTrigger aria-label="Condition operator">
+                <SelectValue>{(current: Operator) => FILTER_OPERATOR_LABELS[current]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {operatorsForKey(trimmedKey, kinds).map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {FILTER_OPERATOR_LABELS[option]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          {opNeedsValue(op) && (
+            <Field data-invalid={Boolean(validationError && value.trim())}>
+              <FieldLabel>Value</FieldLabel>
+              <Combobox
+                aria-label="Condition value"
+                placeholder="value"
+                options={valueOptions}
+                emptyText="No matching values"
+                value={value}
+                onValueChange={setValue}
+              />
+            </Field>
+          )}
+          {validationError && trimmedKey && (
+            <FieldDescription className="text-destructive">{validationError}</FieldDescription>
           )}
         </div>
         <DialogFooter>

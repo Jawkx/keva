@@ -34,7 +34,7 @@ const requireScope = (principal: Principal, scope: Scope) =>
     : Effect.fail(new Forbidden({ message: `Missing '${scope}' scope` }));
 
 const readyOrNotFound = (item: KevaItem | null) =>
-  item?.status === "ready"
+  item?.status === "ready" && item.deletedAt === undefined
     ? Effect.succeed(item)
     : Effect.fail(new NotFound({ message: "Item not found" }));
 
@@ -256,7 +256,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       if (share && item.source !== shareSource(share.grantId)) {
         return yield* new NotFound({ message: "Item not found" });
       }
-      if (item.status === "ready") return item;
+      if (item.status === "ready") return yield* readyOrNotFound(item);
       if (item.status !== "pending" && item.status !== "confirming") {
         return yield* new Conflict({ message: "Upload is no longer pending" });
       }
@@ -458,19 +458,71 @@ export const makeKevaEngine = (principal: Principal) => ({
       };
     }),
 
+  listTrash: () =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "list trash");
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      return yield* metadata.listTrash(principal.tenantId);
+    }),
+
+  restore: (id: string) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "restore items");
+      yield* requireScope(principal, "write");
+      const metadata = yield* MetadataStore;
+      const restored = yield* metadata.restore(principal.tenantId, id, now());
+      if (!restored) return yield* new NotFound({ message: "Item not found in trash" });
+      return restored;
+    }),
+
+  purge: (id: string) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "permanently delete items");
+      yield* requireScope(principal, "delete");
+      const metadata = yield* MetadataStore;
+      const blobs = yield* BlobStore;
+      const existing = yield* metadata.get(principal.tenantId, id);
+      if (!existing?.deletedAt) return;
+      const current =
+        existing.status === "ready"
+          ? yield* metadata.beginPurge(principal.tenantId, id, now())
+          : existing.status === "deleting"
+            ? existing
+            : null;
+      if (!current) return;
+      yield* blobs.delete(current.storageKey);
+      yield* blobs.delete(current.stagingKey);
+      const attempts = yield* metadata.listUploadAttemptsForItem(principal.tenantId, id);
+      yield* Effect.forEach(attempts, (attempt) =>
+        blobs
+          .delete(attempt.stagingKey)
+          .pipe(Effect.zipRight(metadata.removeUploadAttempt(attempt.id))),
+      );
+      yield* metadata.remove(principal.tenantId, id, "deleting");
+    }),
+
   delete: (id: string) =>
     Effect.gen(function* () {
       yield* forbidShare(principal, "delete items");
       yield* requireScope(principal, "delete");
       const metadata = yield* MetadataStore;
-      const blobs = yield* BlobStore;
       const current = yield* metadata.get(principal.tenantId, id);
       if (!current) return;
+      if (current.status === "ready") {
+        if (current.deletedAt) return;
+        const deletedAt = now();
+        yield* metadata.trash(principal.tenantId, id, deletedAt, (updated) =>
+          eventFor(principal, updated, "deleted", {}),
+        );
+        return;
+      }
+      const blobs = yield* BlobStore;
       if (current.status !== "deleting") {
         const claimed = yield* metadata.transitionWithEvent(
           principal.tenantId,
           id,
-          ["ready", "pending", "confirming"],
+          ["pending", "confirming"],
           { status: "deleting", updatedAt: now() },
           (updated) => eventFor(principal, updated, "deleted", {}),
         );

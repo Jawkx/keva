@@ -24,6 +24,7 @@ export interface ItemRow {
   readonly upload_reservation_state: "reserved" | "consumed" | null;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
+  readonly deleted_at: Date | string | null;
   readonly properties: KevaItem["properties"];
 }
 
@@ -45,6 +46,7 @@ export const mapRow = (row: ItemRow): KevaItem => ({
   revision: row.revision,
   createdAt: asIso(row.created_at),
   updatedAt: asIso(row.updated_at),
+  ...(row.deleted_at === null ? {} : { deletedAt: asIso(row.deleted_at) }),
   properties: canonicalizeProperties(row.properties),
 });
 

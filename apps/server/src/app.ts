@@ -8,6 +8,7 @@ import {
   BatchPatch,
   ItemPatch,
   BatchDelete,
+  BatchRestore,
   CreateShareGrant,
   CreateView,
   InitiateUpload,
@@ -18,6 +19,7 @@ import {
   Query,
   toSharedItem,
   toOwnerItem,
+  toTrashItem,
   UpdateView,
   ValidationError,
   StorageUnavailable,
@@ -350,6 +352,92 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         const principal = yield* principalEffect(context.req.raw.headers);
         const { items, set, unset } = yield* decode(BatchPatch, yield* jsonBody(context));
         return yield* makeKevaEngine(principal).patchMany(items, { set, unset });
+      }),
+    ),
+  );
+
+  app.get("/api/trash", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const items = yield* makeKevaEngine(principal).listTrash();
+        return { items: items.map(toTrashItem) };
+      }),
+    ),
+  );
+
+  app.post("/api/trash/restore", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const { ids } = yield* decode(BatchRestore, yield* jsonBody(context));
+        const engine = makeKevaEngine(principal);
+        const results = yield* Effect.forEach(
+          ids,
+          (id) =>
+            engine.restore(id).pipe(
+              Effect.as({ id, error: undefined as string | undefined }),
+              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+            ),
+          { concurrency: 8 },
+        );
+        return {
+          restored: results.filter((result) => !result.error).map((result) => result.id),
+          failed: results
+            .filter((result) => result.error)
+            .map((result) => ({ id: result.id, error: result.error! })),
+        };
+      }),
+    ),
+  );
+
+  app.post("/api/trash/delete", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const { ids } = yield* decode(BatchDelete, yield* jsonBody(context));
+        const engine = makeKevaEngine(principal);
+        const results = yield* Effect.forEach(
+          ids,
+          (id) =>
+            engine.purge(id).pipe(
+              Effect.as({ id, error: undefined as string | undefined }),
+              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+            ),
+          { concurrency: 8 },
+        );
+        return {
+          deleted: results.filter((result) => !result.error).map((result) => result.id),
+          failed: results
+            .filter((result) => result.error)
+            .map((result) => ({ id: result.id, error: result.error! })),
+        };
+      }),
+    ),
+  );
+
+  app.post("/api/trash/:id/restore", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        return toOwnerItem(yield* makeKevaEngine(principal).restore(id));
+      }),
+    ),
+  );
+
+  app.delete("/api/trash/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        yield* makeKevaEngine(principal).purge(id);
+        return { ok: true };
       }),
     ),
   );

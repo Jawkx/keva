@@ -17,19 +17,35 @@ export function FileBrowserFrame({
   detailTitle: string;
 }) {
   const isWide = useMediaQuery("(min-width: 1024px)");
+  const savedLayout = (() => {
+    try {
+      const value = JSON.parse(
+        localStorage.getItem("keva:file-browser-layout:v1") ?? "null",
+      ) as unknown;
+      return value && typeof value === "object" ? (value as Record<string, number>) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
 
   return (
     <div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
       {detailOpen && isWide ? (
         <ResizablePanelGroup
+          id="file-browser"
           orientation="horizontal"
+          defaultLayout={savedLayout}
+          onLayoutChanged={(layout) =>
+            localStorage.setItem("keva:file-browser-layout:v1", JSON.stringify(layout))
+          }
           className="min-h-0 w-full min-w-0 flex-1 gap-3"
         >
-          <ResizablePanel defaultSize={64} minSize={38} className="min-w-0">
+          <ResizablePanel id="list" defaultSize={64} minSize={38} className="min-w-0">
             {list}
           </ResizablePanel>
           <ResizableHandle withHandle className="bg-transparent" />
           <ResizablePanel
+            id="detail"
             defaultSize={36}
             minSize={28}
             className="min-w-0 overflow-hidden rounded-xl border"

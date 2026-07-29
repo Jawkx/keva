@@ -2,6 +2,7 @@ import { lazy, Suspense, type ComponentType } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { AppShell } from "./components/AppShell";
 import { RequireAuth } from "./components/RequireAuth";
+import { AppErrorPage } from "./pages/AppErrorPage";
 
 const ConnectionPage = lazy(() =>
   import("./pages/ConnectionPage").then(({ ConnectionPage }) => ({ default: ConnectionPage })),
@@ -40,6 +41,9 @@ const SignupPage = lazy(() =>
 const ViewSharesPage = lazy(() =>
   import("./pages/ViewSharesPage").then(({ ViewSharesPage }) => ({ default: ViewSharesPage })),
 );
+const TrashPage = lazy(() =>
+  import("./pages/TrashPage").then(({ TrashPage }) => ({ default: TrashPage })),
+);
 
 const route = (Page: ComponentType) => (
   <Suspense fallback={<div className="min-h-svh bg-background" />}>
@@ -56,6 +60,7 @@ export const router = createBrowserRouter([
     element: <RequireAuth>{route(OAuthConsentPage)}</RequireAuth>,
   },
   {
+    errorElement: <AppErrorPage />,
     element: (
       <RequireAuth>
         <AppShell />
@@ -68,6 +73,7 @@ export const router = createBrowserRouter([
       { path: "/v/:viewId/items/:id", element: route(FilesPage) },
       { path: "/v/:viewId/shares", element: route(ViewSharesPage) },
       { path: "/shared", element: route(SharedWithMePage) },
+      { path: "/trash", element: route(TrashPage) },
       { path: "/shared/:grantId", element: route(SharedViewPage) },
       { path: "/query", element: <Navigate to="/" replace /> },
       { path: "/connection", element: route(ConnectionPage) },

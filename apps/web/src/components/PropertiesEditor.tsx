@@ -78,13 +78,21 @@ interface FieldProps {
 export function PropertiesEditor({ properties, systemRows, onPatch }: PropertiesEditorProps) {
   const [mode, setMode] = useState<Mode>("rows");
   const [busy, setBusy] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saved" | "error">("idle");
+  const jsonDirty = useRef(false);
   const knownKeys = usePropertyKeys();
   const knownSet = useMemo(() => new Set(knownKeys), [knownKeys]);
 
   const commit = async (set: Record<string, PropertyValue>, unset: string[]) => {
     setBusy(true);
+    setSaveState("idle");
     try {
-      return await onPatch(set, unset);
+      const updated = await onPatch(set, unset);
+      setSaveState("saved");
+      return updated;
+    } catch (error) {
+      setSaveState("error");
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -106,13 +114,27 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Properties
         </h3>
+        <div className="ml-auto text-xs text-muted-foreground" role="status" aria-live="polite">
+          {busy
+            ? "Saving…"
+            : saveState === "saved"
+              ? "Saved"
+              : saveState === "error"
+                ? "Save failed"
+                : mode === "rows"
+                  ? "Changes save automatically"
+                  : ""}
+        </div>
         <ToggleGroup
           variant="outline"
           size="sm"
           value={[mode]}
           onValueChange={(value) => {
             const next = value[0] as Mode | undefined;
-            if (next) setMode(next);
+            if (!next || next === mode) return;
+            if (jsonDirty.current && !window.confirm("Discard your unsaved JSON changes?")) return;
+            jsonDirty.current = false;
+            setMode(next);
           }}
           aria-label="Editor mode"
         >
@@ -125,7 +147,17 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
         </ToggleGroup>
       </div>
 
-      {mode === "rows" ? <RowsField {...field} /> : <JsonView {...field} commit={commit} />}
+      {mode === "rows" ? (
+        <RowsField {...field} />
+      ) : (
+        <JsonView
+          {...field}
+          commit={commit}
+          onDirtyChange={(dirty) => {
+            jsonDirty.current = dirty;
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -572,8 +604,10 @@ function JsonView({
   systemRows,
   busy,
   commit,
+  onDirtyChange,
 }: FieldProps & {
   commit: (set: Record<string, PropertyValue>, unset: string[]) => Promise<Properties>;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const baseline = prettyJson(properties);
   const [draft, setDraft] = useState({ baseline, text: baseline });
@@ -596,6 +630,7 @@ function JsonView({
     const updated = await commit(diff.set, diff.unset);
     const nextBaseline = prettyJson(updated);
     setDraft({ baseline: nextBaseline, text: nextBaseline });
+    onDirtyChange(false);
   };
 
   return (
@@ -605,7 +640,11 @@ function JsonView({
         spellCheck={false}
         autoComplete="off"
         value={draft.text}
-        onChange={(e) => setDraft((current) => ({ ...current, text: e.target.value }))}
+        onChange={(e) => {
+          const text = e.target.value;
+          setDraft((current) => ({ ...current, text }));
+          onDirtyChange(text !== draft.baseline);
+        }}
         aria-invalid={!parsed.ok}
         className="min-h-56 resize-y font-mono text-xs leading-relaxed"
       />
@@ -634,7 +673,10 @@ function JsonView({
             variant="ghost"
             size="sm"
             disabled={busy || !modified}
-            onClick={() => setDraft({ baseline, text: baseline })}
+            onClick={() => {
+              setDraft({ baseline, text: baseline });
+              onDirtyChange(false);
+            }}
           >
             Discard
           </Button>

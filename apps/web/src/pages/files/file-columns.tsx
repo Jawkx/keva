@@ -37,6 +37,13 @@ declare module "@tanstack/react-table" {
   }
 }
 
+const filenameParts = (name: string) => {
+  const dot = name.lastIndexOf(".");
+  return dot <= 0
+    ? { stem: name, extension: "" }
+    : { stem: name.slice(0, dot), extension: name.slice(dot) };
+};
+
 const propertyChipLabel = (key: string, value: PropertyValue): string => {
   if (value === null) return key;
   return `${key}:${formatPropertyValue(value)}`;
@@ -156,7 +163,14 @@ const columns = [
     },
   }),
   columnHelper.accessor("name", {
-    header: "Name",
+    header: ({ table }) => (
+      <SortButton
+        label="Name"
+        column="name"
+        order={table.options.meta!.order}
+        onSort={table.options.meta!.onSort}
+      />
+    ),
     cell: ({ getValue, row, table }) => {
       const meta = table.options.meta;
       if (meta?.renamingId === row.original.id) {
@@ -183,18 +197,22 @@ const columns = [
         );
       }
       const KindIcon = fileKindIcon(row.original.contentType);
+      const filename = filenameParts(getValue());
       return (
         <div className="flex min-w-0 items-center gap-2.5">
           <KindIcon className="size-4 shrink-0 text-muted-foreground" />
           <button
             type="button"
-            className="block w-full min-w-0 truncate text-left text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex w-full min-w-0 text-left text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={getValue()}
+            aria-label={getValue()}
             onClick={(event) => {
               event.stopPropagation();
               meta?.onOpenItem(row.original.id);
             }}
           >
-            {getValue()}
+            <span className="min-w-0 truncate">{filename.stem}</span>
+            <span className="shrink-0">{filename.extension}</span>
           </button>
         </div>
       );
@@ -218,7 +236,14 @@ const columns = [
   }),
   columnHelper.accessor((o) => new Date(o.updatedAt).getTime(), {
     id: "updatedAt",
-    header: "Updated",
+    header: ({ table }) => (
+      <SortButton
+        label="Updated"
+        column="updatedAt"
+        order={table.options.meta!.order}
+        onSort={table.options.meta!.onSort}
+      />
+    ),
     cell: (ctx) => (
       <span className="text-muted-foreground">{formatRelative(ctx.row.original.updatedAt)}</span>
     ),

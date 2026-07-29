@@ -55,6 +55,9 @@ export const compileCondition = (sql: Sql, condition: QueryCondition): Fragment 
         ? sql`${column.fragment} is not null`
         : sql`(${column.fragment} is null or ${column.fragment} <> ${value as string | number})`;
     }
+    if (condition.op === "in") {
+      return sql`${column.fragment} in ${sql(value as readonly string[])}`;
+    }
     if (condition.op === "contains_text") {
       return sql`position(${value as string} in ${column.fragment}) > 0`;
     }
@@ -125,6 +128,37 @@ export const queryOrder = (
       afterCursor: (cursor) =>
         sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
       cursorFor: (item) => [item.createdAt, item.id],
+    };
+  }
+  if (order === "updated_at_desc") {
+    return {
+      by: sql`updated_at desc, id desc`,
+      afterCursor: (cursor) =>
+        sql`(updated_at, id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
+      cursorFor: (item) => [item.updatedAt, item.id],
+    };
+  }
+  if (order === "updated_at_asc") {
+    return {
+      by: sql`updated_at asc, id asc`,
+      afterCursor: (cursor) =>
+        sql`(updated_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
+      cursorFor: (item) => [item.updatedAt, item.id],
+    };
+  }
+  const name = sql`lower(name)`;
+  if (order === "name_desc") {
+    return {
+      by: sql`${name} desc, id desc`,
+      afterCursor: (cursor) => sql`(${name}, id) < (${cursor[0]}::text, ${cursor[1]}::uuid)`,
+      cursorFor: (item) => [item.name.toLowerCase(), item.id],
+    };
+  }
+  if (order === "name_asc") {
+    return {
+      by: sql`${name} asc, id asc`,
+      afterCursor: (cursor) => sql`(${name}, id) > (${cursor[0]}::text, ${cursor[1]}::uuid)`,
+      cursorFor: (item) => [item.name.toLowerCase(), item.id],
     };
   }
   const size = sql`coalesce(size, declared_size)`;

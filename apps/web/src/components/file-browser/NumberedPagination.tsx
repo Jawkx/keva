@@ -43,11 +43,16 @@ export function NumberedPagination({
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const previousDisabled = disabled || page <= 1;
   const nextDisabled = disabled || page >= totalPages;
+  let ellipsisCount = 0;
+  const paginationItems = visiblePaginationItems(page, totalPages).map((value) => ({
+    value,
+    key: value === "ellipsis" ? `ellipsis-${++ellipsisCount}` : `page-${value}`,
+  }));
 
   return (
     <Pagination className="justify-start px-3 py-3">
       <PaginationContent>
-        <PaginationItem>
+        <PaginationItem key="previous">
           <PaginationPrevious
             href="#"
             aria-disabled={previousDisabled}
@@ -59,13 +64,13 @@ export function NumberedPagination({
             }}
           />
         </PaginationItem>
-        {visiblePaginationItems(page, totalPages).map((value, index) =>
+        {paginationItems.map(({ value, key }) =>
           value === "ellipsis" ? (
-            <PaginationItem key={`ellipsis-${index}`}>
+            <PaginationItem key={key}>
               <PaginationEllipsis />
             </PaginationItem>
           ) : (
-            <PaginationItem key={value}>
+            <PaginationItem key={key}>
               <PaginationLink
                 href="#"
                 isActive={value === page}
@@ -83,7 +88,7 @@ export function NumberedPagination({
             </PaginationItem>
           ),
         )}
-        <PaginationItem>
+        <PaginationItem key="next">
           <PaginationNext
             href="#"
             aria-disabled={nextDisabled}

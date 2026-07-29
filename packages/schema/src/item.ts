@@ -17,6 +17,7 @@ export const KevaItem = Schema.Struct({
   revision: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
   createdAt: Schema.String,
   updatedAt: Schema.String,
+  deletedAt: Schema.optional(Schema.String),
   properties: Properties,
 });
 export type KevaItem = typeof KevaItem.Type;

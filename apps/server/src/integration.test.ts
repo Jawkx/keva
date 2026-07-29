@@ -158,6 +158,89 @@ describe("server integration — HTTP roundtrip", () => {
     return initiated.item.id;
   };
 
+  it("lists, restores, and permanently purges trashed ready items", async () => {
+    const app = makeApp();
+    const id = await makeReadyItem(app, "trash-roundtrip.txt");
+    const usageBefore = (await (await app.request("/api/usage", { headers: auth })).json()) as {
+      accountedItems: number;
+    };
+
+    expect(
+      (await app.request(`/api/items/${id}`, { method: "DELETE", headers: auth })).status,
+    ).toBe(200);
+    expect((await app.request(`/api/items/${id}`, { headers: auth })).status).toBe(404);
+    expect(
+      (
+        (await (
+          await app.request("/api/query", {
+            method: "POST",
+            headers: { ...auth, "content-type": "application/json" },
+            body: JSON.stringify({ where: [] }),
+          })
+        ).json()) as { items: { id: string }[] }
+      ).items.some((item) => item.id === id),
+    ).toBe(false);
+
+    const trash = (await (await app.request("/api/trash", { headers: auth })).json()) as {
+      items: { id: string; deletedAt: string }[];
+    };
+    expect(trash.items.find((item) => item.id === id)?.deletedAt).toMatch(/Z$/);
+    const usageTrashed = (await (await app.request("/api/usage", { headers: auth })).json()) as {
+      accountedItems: number;
+    };
+    expect(usageTrashed.accountedItems).toBe(usageBefore.accountedItems);
+
+    const restored = await app.request(`/api/trash/${id}/restore`, {
+      method: "POST",
+      headers: auth,
+    });
+    expect(restored.status).toBe(200);
+    expect((await restored.json()) as { id: string }).toMatchObject({ id });
+    expect((await app.request(`/api/items/${id}/content`, { headers: auth })).status).toBe(200);
+
+    await app.request(`/api/items/${id}`, { method: "DELETE", headers: auth });
+    expect(
+      (await app.request(`/api/trash/${id}`, { method: "DELETE", headers: auth })).status,
+    ).toBe(200);
+    expect(
+      (
+        (await (await app.request("/api/trash", { headers: auth })).json()) as {
+          items: { id: string }[];
+        }
+      ).items.some((item) => item.id === id),
+    ).toBe(false);
+    const usagePurged = (await (await app.request("/api/usage", { headers: auth })).json()) as {
+      accountedItems: number;
+    };
+    expect(usagePurged.accountedItems).toBe(usageBefore.accountedItems - 1);
+  });
+
+  it("batch restores and permanently purges trash", async () => {
+    const app = makeApp();
+    const restoredId = await makeReadyItem(app, "batch-restore.txt");
+    const purgedId = await makeReadyItem(app, "batch-purge.txt");
+    await app.request("/api/items/delete", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ids: [restoredId, purgedId] }),
+    });
+
+    const restored = await app.request("/api/trash/restore", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ids: [restoredId] }),
+    });
+    expect(await restored.json()).toMatchObject({ restored: [restoredId], failed: [] });
+    const purged = await app.request("/api/trash/delete", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ids: [purgedId] }),
+    });
+    expect(await purged.json()).toMatchObject({ deleted: [purgedId], failed: [] });
+    expect((await app.request(`/api/items/${restoredId}`, { headers: auth })).status).toBe(200);
+    expect((await app.request(`/api/items/${purgedId}`, { headers: auth })).status).toBe(404);
+  });
+
   it("batch delete removes every valid id and is idempotent for unknown ones", async () => {
     const app = makeApp();
     const a = await makeReadyItem(app, "a.txt");

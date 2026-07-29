@@ -1,7 +1,21 @@
-import { Files, File, Inbox, Plug, Search, Settings, Tags, type LucideIcon } from "lucide-react";
+import {
+  Files,
+  File,
+  History,
+  Inbox,
+  PanelLeft,
+  Plug,
+  Search,
+  Settings,
+  Tags,
+  Trash2,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -12,13 +26,17 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
+  CommandShortcut,
 } from "@/components/ui/command";
 import { Spinner } from "@/components/ui/spinner";
+import { useSidebar } from "@/components/ui/sidebar";
 import {
   includesSearch,
   isGlobalSearchShortcut,
   metadataSuggestionUrl,
 } from "../lib/global-search";
+import { errorMessage } from "../lib/errors";
+import { formatContentType, formatRelative } from "../lib/format";
 import { keva } from "../lib/keva";
 import { useMountEffect } from "../lib/useMountEffect";
 import { listViews, viewsQueryKey } from "../lib/views";
@@ -35,15 +53,45 @@ const PAGES: ReadonlyArray<{
 }> = [
   { title: "All files", url: "/", keywords: "home files", icon: Files },
   { title: "Shared with me", url: "/shared", keywords: "inbox shared", icon: Inbox },
+  { title: "Trash", url: "/trash", keywords: "deleted restore", icon: Trash2 },
   { title: "Connection", url: "/connection", keywords: "mcp api tokens", icon: Plug },
   { title: "Settings", url: "/settings", keywords: "account appearance storage", icon: Settings },
 ];
 
+const RECENT_SEARCHES_KEY = "keva:recent-searches:v1";
+
+const highlighted = (text: string, query: string) => {
+  const index = text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase());
+  if (index < 0) return text;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded-sm bg-primary/15 text-foreground">
+        {text.slice(index, index + query.length)}
+      </mark>
+      {text.slice(index + query.length)}
+    </>
+  );
+};
+
+const readRecentSearches = (): string[] => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]") as unknown;
+    return Array.isArray(stored)
+      ? stored.filter((value): value is string => typeof value === "string").slice(0, 5)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
 export function GlobalSearch() {
   const navigate = useNavigate();
+  const { toggleSidebar } = useSidebar();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [remoteSearch, setRemoteSearch] = useState("");
+  const [recentSearches, setRecentSearches] = useState(readRecentSearches);
   const searchTimer = useRef<number | undefined>(undefined);
   const normalizedSearch = search.trim();
   const canSearchRemotely = open && remoteSearch.length >= 2;
@@ -55,7 +103,7 @@ export function GlobalSearch() {
       keva.query({
         where: [],
         search: remoteSearch,
-        searchFields: ["name"],
+        searchFields: ["name", "content_type"],
         limit: FILE_RESULT_LIMIT,
         order: "created_at_desc",
       }),
@@ -70,6 +118,65 @@ export function GlobalSearch() {
   const fileResults = remoteResultsCurrent ? (filesQuery.data?.items ?? []) : [];
   const propertyResults = remoteResultsCurrent ? (propertiesQuery.data ?? []) : [];
 
+  const focusedFileId = sessionStorage.getItem("keva:focused-file");
+  const commands = [
+    {
+      title: "Upload files",
+      keywords: "add import",
+      icon: Upload,
+      shortcut: "U",
+      run: () => window.dispatchEvent(new Event("keva:upload")),
+    },
+    {
+      title: "Open Trash",
+      keywords: "deleted restore",
+      icon: Trash2,
+      shortcut: "T",
+      run: () => navigate("/trash"),
+    },
+    {
+      title: "Toggle sidebar",
+      keywords: "navigation collapse expand",
+      icon: PanelLeft,
+      shortcut: "B",
+      run: toggleSidebar,
+    },
+    ...(focusedFileId
+      ? [
+          {
+            title: "Open selected file properties",
+            keywords: "metadata edit focused",
+            icon: Tags,
+            shortcut: "P",
+            run: () => navigate(`/items/${focusedFileId}?panel=properties`),
+          },
+          {
+            title: "Download selected file",
+            keywords: "save focused",
+            icon: File,
+            shortcut: "D",
+            run: () => {
+              void keva
+                .getDownloadUrl(focusedFileId)
+                .then((target) => {
+                  const anchor = document.createElement("a");
+                  anchor.href = target.url;
+                  anchor.download = "";
+                  document.body.appendChild(anchor);
+                  anchor.click();
+                  anchor.remove();
+                })
+                .catch((error) => toast.error(errorMessage(error)));
+            },
+          },
+        ]
+      : []),
+  ];
+  const matchingCommands = commands.filter(
+    (command) =>
+      !normalizedSearch || includesSearch(`${command.title} ${command.keywords}`, normalizedSearch),
+  );
+
   const matchingViews = (views ?? [])
     .filter((view) => !normalizedSearch || includesSearch(view.name, normalizedSearch))
     .slice(0, 8);
@@ -82,6 +189,7 @@ export function GlobalSearch() {
     filesQuery.isFetching ||
     propertiesQuery.isFetching;
   const hasResults =
+    matchingCommands.length > 0 ||
     matchingPages.length > 0 ||
     matchingViews.length > 0 ||
     fileResults.length > 0 ||
@@ -119,7 +227,18 @@ export function GlobalSearch() {
     searchTimer.current = window.setTimeout(() => setRemoteSearch(trimmed), SEARCH_DELAY_MS);
   };
 
+  const rememberSearch = () => {
+    if (normalizedSearch.length < 2) return;
+    const next = [
+      normalizedSearch,
+      ...recentSearches.filter((value) => value !== normalizedSearch),
+    ].slice(0, 5);
+    setRecentSearches(next);
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+  };
+
   const select = (url: string) => {
+    rememberSearch();
     onOpenChange(false);
     navigate(url);
   };
@@ -168,6 +287,40 @@ export function GlobalSearch() {
               </CommandEmpty>
             )}
 
+            {matchingCommands.length > 0 && (
+              <CommandGroup heading="Commands">
+                {matchingCommands.map((command) => (
+                  <CommandItem
+                    key={command.title}
+                    value={`command:${command.title}`}
+                    onSelect={() => {
+                      onOpenChange(false);
+                      command.run();
+                    }}
+                  >
+                    <command.icon />
+                    <span>{command.title}</span>
+                    <CommandShortcut>{command.shortcut}</CommandShortcut>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            {normalizedSearch.length < 2 && recentSearches.length > 0 && (
+              <CommandGroup heading="Recent searches">
+                {recentSearches.map((value) => (
+                  <CommandItem
+                    key={value}
+                    value={`recent:${value}`}
+                    onSelect={() => onSearchChange(value)}
+                  >
+                    <History />
+                    <span className="truncate">{value}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
             {fileResults.length > 0 && (
               <CommandGroup heading="Files">
                 {fileResults.map((item) => (
@@ -177,7 +330,26 @@ export function GlobalSearch() {
                     onSelect={() => select(`/items/${item.id}`)}
                   >
                     <File />
-                    <span className="truncate">{item.name}</span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">{highlighted(item.name, normalizedSearch)}</span>
+                      <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                        <span>
+                          {highlighted(formatContentType(item.contentType), normalizedSearch)}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span title={new Date(item.updatedAt).toLocaleString()}>
+                          {formatRelative(item.updatedAt)}
+                        </span>
+                        {Object.keys(item.properties).length > 0 && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="truncate">
+                              {Object.keys(item.properties).slice(0, 2).join(", ")}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>

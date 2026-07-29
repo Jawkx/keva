@@ -1,11 +1,14 @@
 import {
   CloudUpload,
+  Download,
   EllipsisVertical,
+  Eye,
   Files,
   Pencil,
   Save,
   Search,
   Share2,
+  Tags,
   Trash2,
   TriangleAlert,
   Upload,
@@ -21,7 +24,7 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { toast } from "sonner";
-import type { QueryCondition, UpdateView } from "@keva/schema";
+import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
 import { FileBrowserFrame } from "../components/file-browser/FileBrowserFrame";
@@ -39,11 +42,13 @@ import {
   nextFileOrder,
 } from "../lib/file-order";
 import { buildFilterWhere, decodeFilterParam, draftFromConditions } from "../lib/item-filters";
+import { inferPropertyValue, validateKey } from "../lib/properties";
 import { cachePatchedItem, removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { listShares, sharesQueryKey } from "../lib/shares";
 import { uploadStampFrom } from "../lib/upload-stamp";
 import { useFileFilters } from "../lib/use-file-filters";
+import { useMountEffect } from "../lib/useMountEffect";
 import { useUploadQueue } from "../lib/use-upload-queue";
 import {
   createView,
@@ -172,6 +177,7 @@ function FilesPageContent({
   const queryClient = useQueryClient();
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const rememberFile = (id: string) => sessionStorage.setItem("keva:focused-file", id);
   const [pagination, setPagination] = useState({ identity: "", pageIndex: 0 });
   const resetQueryState = useCallback(() => {
     setRowSelection({});
@@ -191,6 +197,12 @@ function FilesPageContent({
   const queryIdentity = JSON.stringify([activeSearch, activeWhere, order]);
   const pageIndex = pagination.identity === queryIdentity ? pagination.pageIndex : 0;
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkPropertiesOpen, setBulkPropertiesOpen] = useState(false);
+  const [bulkPropertyKey, setBulkPropertyKey] = useState("");
+  const [bulkPropertyValue, setBulkPropertyValue] = useState("");
+  const [bulkShareOpen, setBulkShareOpen] = useState(false);
+  const [bulkShareKey, setBulkShareKey] = useState(0);
+  const [shareItem, setShareItem] = useState<FileRow | null>(null);
   const [renameItem, setRenameItem] = useState<{ id: string; draft: string } | null>(null);
   const [deleteItem, setDeleteItem] = useState<FileRow | null>(null);
 
@@ -202,6 +214,11 @@ function FilesPageContent({
   };
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  useMountEffect(() => {
+    const openUpload = () => uploadInputRef.current?.click();
+    window.addEventListener("keva:upload", openUpload);
+    return () => window.removeEventListener("keva:upload", openUpload);
+  });
   const [shareOpen, setShareOpen] = useState(false);
   const [shareKey, setShareKey] = useState(0);
   const openShare = () => {
@@ -386,7 +403,10 @@ function FilesPageContent({
     if (dropped.length > 0) startUploads(dropped);
   };
 
-  const closeDetail = () => navigate(listPath);
+  const closeDetail = () => {
+    if (selectedId) rememberFile(selectedId);
+    navigate(listPath);
+  };
   const navigateAfterDeletion = (deletedIds: Iterable<string>) => {
     const deleted = new Set(deletedIds);
     const selectedIndex = rows.findIndex((row) => row.original.id === selectedId);
@@ -405,7 +425,22 @@ function FilesPageContent({
     mutationFn: (ids: string[]) => keva.deleteMany(ids),
     onSuccess: (result) => {
       if (result.deleted.length > 0) {
-        toast.success(`Deleted ${result.deleted.length} ${plural(result.deleted.length)}`);
+        const deletedIds = [...result.deleted];
+        toast.success(`Moved ${deletedIds.length} ${plural(deletedIds.length)} to Trash`, {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              void keva
+                .restoreMany(deletedIds)
+                .then(() => {
+                  void queryClient.invalidateQueries({ queryKey: ["items"] });
+                  void queryClient.invalidateQueries({ queryKey: ["trash"] });
+                  toast.success(`Restored ${deletedIds.length} ${plural(deletedIds.length)}`);
+                })
+                .catch((error) => toast.error(errorMessage(error)));
+            },
+          },
+        });
       }
       if (result.failed.length > 0) {
         toast.error(`Failed to delete ${result.failed.length} ${plural(result.failed.length)}`);
@@ -419,9 +454,79 @@ function FilesPageContent({
     onError: (err) => toast.error(errorMessage(err)),
   });
 
+  const selectedItems = selectedRows.map((row) => row.original);
+  const selectedIds = selectedItems.map((item) => item.id);
+
+  const bulkPatchMutation = useMutation({
+    mutationFn: ({ set, unset }: { set: Record<string, PropertyValue>; unset: string[] }) =>
+      keva.patchMany(
+        selectedItems.map((item) => ({ id: item.id, expectedRevision: item.revision })),
+        {
+          set,
+          unset,
+        },
+      ),
+    onSuccess: (result) => {
+      setBulkPropertiesOpen(false);
+      setBulkPropertyKey("");
+      setBulkPropertyValue("");
+      setRowSelection({});
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      if (result.updated.length > 0)
+        toast.success(`Updated ${result.updated.length} ${plural(result.updated.length)}`);
+      if (result.failed.length > 0)
+        toast.error(`Could not update ${result.failed.length} ${plural(result.failed.length)}`);
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
+  const bulkDownloadMutation = useMutation({
+    mutationFn: async () => {
+      const results = await Promise.allSettled(
+        selectedItems.map(async (item) => ({ item, target: await keva.getDownloadUrl(item.id) })),
+      );
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const anchor = document.createElement("a");
+        anchor.href = result.value.target.url;
+        anchor.download = result.value.item.name;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      const failed = results.filter((result) => result.status === "rejected").length;
+      const downloaded = results.length - failed;
+      if (downloaded > 0)
+        toast.success(`Started ${downloaded} ${downloaded === 1 ? "download" : "downloads"}`);
+      if (failed > 0) toast.error(`Could not download ${failed} ${plural(failed)}`);
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
   const onBulkDelete = () => {
-    const ids = table.getSelectedRowModel().rows.map((r) => r.original.id);
-    if (ids.length > 0) bulkDeleteMutation.mutate(ids);
+    if (selectedIds.length > 0) bulkDeleteMutation.mutate(selectedIds);
+  };
+
+  const submitBulkProperty = (remove: boolean) => {
+    const key = bulkPropertyKey.trim();
+    const keyError = validateKey(key);
+    if (keyError) {
+      toast.error(keyError);
+      return;
+    }
+    if (remove) {
+      bulkPatchMutation.mutate({ set: {}, unset: [key] });
+      return;
+    }
+    const parsed = inferPropertyValue(bulkPropertyValue);
+    if (!parsed.ok) {
+      toast.error(parsed.error);
+      return;
+    }
+    bulkPatchMutation.mutate({ set: { [key]: parsed.value }, unset: [] });
   };
 
   const saveViewEdits = () => {
@@ -459,6 +564,20 @@ function FilesPageContent({
   const goToPage = (nextPage: number) => {
     setRowSelection({});
     setPagination({ identity: queryIdentity, pageIndex: nextPage - 1 });
+  };
+
+  const downloadItem = async (item: FileRow) => {
+    try {
+      const target = await keva.getDownloadUrl(item.id);
+      const anchor = document.createElement("a");
+      anchor.href = target.url;
+      anchor.download = item.name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
 
   const tableInner = (
@@ -514,6 +633,7 @@ function FilesPageContent({
                   }}
                   onClick={() => {
                     if (row.original.upload) return;
+                    rememberFile(row.original.id);
                     navigate(row.original.id === selectedId ? listPath : itemPath(row.original.id));
                   }}
                 >
@@ -539,6 +659,28 @@ function FilesPageContent({
                   <ContextMenuTrigger render={tableRow} />
                   <ContextMenuContent>
                     <ContextMenuGroup>
+                      <ContextMenuItem onClick={() => navigate(itemPath(row.original.id))}>
+                        <Eye />
+                        Preview
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onClick={() => {
+                          const target = new URL(itemPath(row.original.id), window.location.origin);
+                          target.searchParams.set("panel", "properties");
+                          navigate(`${target.pathname}${target.search}`);
+                        }}
+                      >
+                        <Tags />
+                        Properties
+                      </ContextMenuItem>
+                      <ContextMenuItem onClick={() => void downloadItem(row.original)}>
+                        <Download />
+                        Download
+                      </ContextMenuItem>
+                      <ContextMenuItem onClick={() => setShareItem(row.original)}>
+                        <Share2 />
+                        Share
+                      </ContextMenuItem>
                       <ContextMenuItem
                         onClick={() =>
                           setRenameItem({ id: row.original.id, draft: row.original.name })
@@ -703,7 +845,7 @@ function FilesPageContent({
           )}
         </div>
         {!selectMode && (
-          <div className="flex h-[42px] min-w-0 shrink-0 flex-wrap items-center gap-1.5">
+          <div className="flex min-h-[42px] min-w-0 shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-1.5">
             {!viewId && (
               <div
                 className="base-ui-disable-scrollbar flex w-full max-w-full flex-nowrap items-center overflow-x-auto rounded-lg border border-border bg-muted/70 p-1 sm:w-fit sm:flex-wrap sm:overflow-visible"
@@ -742,13 +884,15 @@ function FilesPageContent({
             )}
             {showFilterRow && (
               <>
-                <FilterBar
-                  draft={filterDraft}
-                  onDraftChange={setFilterDraft}
-                  onApply={applyWhere}
-                  onClear={clearFilters}
-                />
-                <div className="ml-auto flex items-center gap-1.5">
+                <div className="base-ui-disable-scrollbar flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5 sm:overflow-visible sm:pb-0">
+                  <FilterBar
+                    draft={filterDraft}
+                    onDraftChange={setFilterDraft}
+                    onApply={applyWhere}
+                    onClear={clearFilters}
+                  />
+                </div>
+                <div className="base-ui-disable-scrollbar flex w-full items-center justify-end gap-1.5 overflow-x-auto pb-0.5 sm:ml-auto sm:w-auto sm:overflow-visible sm:pb-0">
                   {filtered && <ApiSnippetsPopover search={activeSearch} where={activeWhere} />}
                   {viewId ? (
                     viewEdited && (
@@ -803,48 +947,68 @@ function FilesPageContent({
         )}
       </div>
       {selectMode && (
-        <div className="flex h-[42px] shrink-0 flex-wrap items-center gap-3 px-1">
+        <div className="flex min-h-[42px] shrink-0 flex-wrap items-center gap-2 px-1">
           <span className="text-sm font-medium">{selectedCount} selected</span>
-          <Button variant="ghost" onClick={() => setRowSelection({})}>
+          <Button variant="ghost" size="sm" onClick={() => setRowSelection({})}>
             Clear
           </Button>
-          <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
-            <AlertDialogTrigger
-              render={
-                <Button
-                  variant="destructive"
-                  className="ml-auto"
-                  disabled={bulkDeleteMutation.isPending}
-                />
-              }
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={bulkDownloadMutation.isPending}
+              onClick={() => bulkDownloadMutation.mutate()}
             >
-              <Trash2 data-icon="inline-start" />
-              Delete
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Delete {selectedCount} {plural(selectedCount)}?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  This permanently removes the selected {plural(selectedCount)} and their
-                  properties. This cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={() => {
-                    setBulkConfirmOpen(false);
-                    onBulkDelete();
-                  }}
-                >
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+              <Download data-icon="inline-start" />
+              Download
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setBulkPropertiesOpen(true)}>
+              <Tags data-icon="inline-start" />
+              Properties
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setBulkShareKey((key) => key + 1);
+                setBulkShareOpen(true);
+              }}
+            >
+              <Share2 data-icon="inline-start" />
+              Share
+            </Button>
+            <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+              <AlertDialogTrigger
+                render={<Button variant="destructive" disabled={bulkDeleteMutation.isPending} />}
+              >
+                <Trash2 data-icon="inline-start" />
+                Delete
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Delete {selectedCount} {plural(selectedCount)}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    The selected {plural(selectedCount)} will move to Trash, where you can restore
+                    them or delete them forever.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => {
+                      setBulkConfirmOpen(false);
+                      onBulkDelete();
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       )}
     </div>
@@ -874,12 +1038,20 @@ function FilesPageContent({
                     : "No items match your search and filters."}
               </EmptyDescription>
             </EmptyHeader>
-            {!filtered && !hasItems && (
+            {!filtered && !hasItems ? (
               <Button onClick={() => uploadInputRef.current?.click()}>
                 <Upload data-icon="inline-start" />
                 Upload
               </Button>
-            )}
+            ) : filtered ? (
+              <Button variant="outline" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            ) : emptyPage ? (
+              <Button variant="outline" onClick={() => goToPage(1)}>
+                Return to first page
+              </Button>
+            ) : null}
           </Empty>
         ) : (
           tableInner
@@ -933,6 +1105,9 @@ function FilesPageContent({
           <Alert variant="destructive">
             <TriangleAlert />
             <AlertTitle>{error}</AlertTitle>
+            <Button variant="outline" size="sm" onClick={() => void itemsQuery.refetch()}>
+              Retry
+            </Button>
           </Alert>
         </div>
       )}
@@ -968,7 +1143,7 @@ function FilesPageContent({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{deleteItem?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the item and its properties. This cannot be undone.
+              This moves the item to Trash, where you can restore it or delete it forever.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1001,12 +1176,81 @@ function FilesPageContent({
       />
 
       <ShareCreateDialog
-        key={shareKey}
+        key={`share-${shareKey}`}
         open={shareOpen}
         onOpenChange={setShareOpen}
         viewId={viewId ?? ""}
         conditions={activeWhere}
       />
+
+      <ShareCreateDialog
+        key={`bulk-share-${bulkShareKey}`}
+        open={bulkShareOpen}
+        onOpenChange={setBulkShareOpen}
+        viewId=""
+        conditions={[{ key: "id", op: "in", value: selectedIds }]}
+      />
+
+      <ShareCreateDialog
+        key={`item-share-${shareItem?.id ?? "none"}`}
+        open={Boolean(shareItem)}
+        onOpenChange={(open) => {
+          if (!open) setShareItem(null);
+        }}
+        viewId=""
+        conditions={shareItem ? [{ key: "id", op: "eq", value: shareItem.id }] : []}
+      />
+
+      <Dialog open={bulkPropertiesOpen} onOpenChange={setBulkPropertiesOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Edit properties for {selectedCount} {plural(selectedCount)}
+            </DialogTitle>
+            <DialogDescription>
+              Add, update, or remove one property across every selected file. Separate multiple
+              values with commas; leave the value empty to add a tag.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <Field>
+              <FieldLabel htmlFor="bulk-property-key">Property key</FieldLabel>
+              <Input
+                id="bulk-property-key"
+                value={bulkPropertyKey}
+                onChange={(event) => setBulkPropertyKey(event.target.value)}
+                placeholder="project"
+                autoFocus
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="bulk-property-value">Value</FieldLabel>
+              <Input
+                id="bulk-property-value"
+                value={bulkPropertyValue}
+                onChange={(event) => setBulkPropertyValue(event.target.value)}
+                placeholder="alpha, beta"
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <Button
+              variant="outline"
+              disabled={!bulkPropertyKey.trim() || bulkPatchMutation.isPending}
+              onClick={() => submitBulkProperty(true)}
+            >
+              Remove property
+            </Button>
+            <Button
+              disabled={!bulkPropertyKey.trim() || bulkPatchMutation.isPending}
+              onClick={() => submitBulkProperty(false)}
+            >
+              Apply to {selectedCount}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent className="sm:max-w-md">

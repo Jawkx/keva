@@ -40,12 +40,13 @@ export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
   has_all: "has all",
   contains_text: "contains",
   contains_any: "contains",
+  in: "is one of",
 };
 
 export const opNeedsValue = (op: Operator): boolean =>
   op !== "exists" && op !== "missing" && op !== "is_tag";
 export const opAllowsMultiple = (op: Operator): boolean =>
-  op === "has_any" || op === "has_all" || op === "contains_any";
+  op === "has_any" || op === "has_all" || op === "contains_any" || op === "in";
 
 const CUSTOM_OPERATORS: readonly Operator[] = [
   "exists",

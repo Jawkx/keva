@@ -50,6 +50,11 @@ const evaluate = (candidate: Candidate, condition: QueryCondition): boolean => {
     return false;
   }
   switch (condition.op) {
+    case "in":
+      return (
+        typeof candidate.value === "string" &&
+        (operand as readonly string[]).includes(candidate.value)
+      );
     case "eq": {
       if (
         field.queryType === "timestamp" &&

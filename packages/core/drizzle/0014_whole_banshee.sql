@@ -1,0 +1,2 @@
+CREATE INDEX "items_tenant_status_updated_id_idx" ON "items" USING btree ("tenant_id","status","updated_at","id");--> statement-breakpoint
+CREATE INDEX "items_tenant_status_name_id_idx" ON "items" USING btree ("tenant_id","status",lower("name"),"id");

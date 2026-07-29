@@ -11,6 +11,7 @@ export * from "./principal.js";
 export * from "./property-results.js";
 export * from "./usage.js";
 export * from "./upload.js";
+export * from "./trash.js";
 export * from "./events.js";
 export * from "./tokens.js";
 export * from "./views.js";

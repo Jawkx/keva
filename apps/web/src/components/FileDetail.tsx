@@ -1,4 +1,4 @@
-import { Download, Pencil, Trash2, TriangleAlert, X } from "lucide-react";
+import { Download, Maximize2, Minimize2, Pencil, Trash2, TriangleAlert, X } from "lucide-react";
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +41,7 @@ import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -78,6 +79,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const [fullScreen, setFullScreen] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -154,7 +156,22 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const deleteMutation = useMutation({
     mutationFn: () => keva.delete(itemId),
     onSuccess: () => {
-      toast.success(`Deleted ${item?.name ?? "item"}`);
+      const name = item?.name ?? "item";
+      toast.success(`Moved ${name} to Trash`, {
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void keva
+              .restore(itemId)
+              .then(() => {
+                void queryClient.invalidateQueries({ queryKey: ["items"] });
+                void queryClient.invalidateQueries({ queryKey: ["trash"] });
+                toast.success(`Restored ${name}`);
+              })
+              .catch((error) => toast.error(errorMessage(error)));
+          },
+        },
+      });
       removeDeletedItemsFromCache(queryClient, [itemId]);
       onDeleted();
     },
@@ -204,8 +221,18 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     }
   }, []);
 
+  const nameExtensionStart = item ? extensionStart(item.name) : 0;
+  const nameStem = item?.name.slice(0, nameExtensionStart) ?? "…";
+  const nameExtension = item?.name.slice(nameExtensionStart) ?? "";
+
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
+    <div
+      className={
+        fullScreen
+          ? "fixed inset-0 z-50 flex min-h-0 min-w-0 flex-col bg-background"
+          : "flex h-full min-h-0 w-full min-w-0 flex-col"
+      }
+    >
       <header className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           {loading ? (
@@ -233,8 +260,9 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
             />
           ) : (
             <div className="flex min-w-0 items-center gap-1">
-              <h2 className="truncate font-heading text-base font-medium" title={item?.name}>
-                {item?.name ?? "…"}
+              <h2 className="flex min-w-0 font-heading text-base font-medium" title={item?.name}>
+                <span className="min-w-0 truncate">{nameStem}</span>
+                <span className="shrink-0">{nameExtension}</span>
               </h2>
               {item && (
                 <Tooltip>
@@ -265,6 +293,36 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
           ) : null}
         </div>
         <div className="flex items-center gap-1">
+          {onClose && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Close file details"
+              title="Close"
+              onClick={onClose}
+            >
+              <X />
+            </Button>
+          )}
+          {item && activePanel === "preview" && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={fullScreen ? "Exit full screen" : "Open full-screen preview"}
+                    onClick={() => setFullScreen((current) => !current)}
+                  />
+                }
+              >
+                {fullScreen ? <Minimize2 /> : <Maximize2 />}
+              </TooltipTrigger>
+              <TooltipContent>
+                {fullScreen ? "Exit full screen" : "Full-screen preview"}
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -282,6 +340,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
             <TooltipContent>Download</TooltipContent>
           </Tooltip>
 
+          <Separator orientation="vertical" className="mx-1 h-5" />
           <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
             <Tooltip>
               <TooltipTrigger
@@ -301,13 +360,13 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
               >
                 <Trash2 />
               </TooltipTrigger>
-              <TooltipContent>Delete</TooltipContent>
+              <TooltipContent>Move to Trash</TooltipContent>
             </Tooltip>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete “{item?.name}”?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This permanently removes the item and its properties. This cannot be undone.
+                  This moves the item to Trash, where you can restore it or delete it forever.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -324,12 +383,6 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-
-          {onClose && (
-            <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
-              <X />
-            </Button>
-          )}
         </div>
       </header>
 

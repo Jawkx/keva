@@ -33,9 +33,9 @@ export function HtmlPreviewViewer({ source, className }: HtmlPreviewViewerProps)
       updateHeight();
     };
 
-    frame.addEventListener("load", measure);
+    frame.onload = measure;
     return () => {
-      frame.removeEventListener("load", measure);
+      frame.onload = null;
       resizeObserver?.disconnect();
     };
   }, []);

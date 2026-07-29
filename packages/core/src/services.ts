@@ -127,6 +127,25 @@ export interface MetadataStoreService {
     expectedRevision: number | undefined,
     event: (previous: KevaItem, updated: KevaItem) => ItemEvent | null,
   ) => Effect.Effect<ItemPatchResult | null, KevaError>;
+  readonly trash: (
+    tenantId: string,
+    id: string,
+    deletedAt: string,
+    event: (item: KevaItem) => ItemEvent,
+  ) => Effect.Effect<KevaItem | null, KevaError>;
+  readonly restore: (
+    tenantId: string,
+    id: string,
+    updatedAt: string,
+  ) => Effect.Effect<KevaItem | null, KevaError>;
+  readonly beginPurge: (
+    tenantId: string,
+    id: string,
+    updatedAt: string,
+  ) => Effect.Effect<KevaItem | null, KevaError>;
+  readonly listTrash: (
+    tenantId: string,
+  ) => Effect.Effect<ReadonlyArray<KevaItem & { readonly deletedAt: string }>, KevaError>;
   readonly remove: (
     tenantId: string,
     id: string,

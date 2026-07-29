@@ -47,6 +47,7 @@ export const items = pgTable(
     uploadReservationState: text("upload_reservation_state").$type<"reserved" | "consumed">(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
     properties: jsonb("properties").$type<Properties>().notNull().default({}),
   },
   (table) => [
@@ -56,6 +57,19 @@ export const items = pgTable(
     index("items_tenant_content_type_idx").on(table.tenantId, table.contentType),
     index("items_tenant_size_idx").on(table.tenantId, table.size),
     index("items_tenant_created_id_idx").on(table.tenantId, table.createdAt, table.id),
+    index("items_tenant_status_updated_id_idx").on(
+      table.tenantId,
+      table.status,
+      table.updatedAt,
+      table.id,
+    ),
+    index("items_tenant_status_name_id_idx").on(
+      table.tenantId,
+      table.status,
+      sql`lower(${table.name})`,
+      table.id,
+    ),
+    index("items_tenant_deleted_id_idx").on(table.tenantId, table.deletedAt, table.id),
     index("items_tenant_status_size_id_idx").on(
       table.tenantId,
       table.status,

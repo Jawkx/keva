@@ -121,6 +121,8 @@ export function McpSetupCard() {
                     {setup.openUrl && setup.openLabel ? (
                       <Button
                         variant="outline"
+                        nativeButton={false}
+                        aria-label={`${setup.openLabel} in a new tab`}
                         render={
                           <a href={setup.openUrl} target="_blank" rel="noreferrer">
                             {setup.openLabel}
