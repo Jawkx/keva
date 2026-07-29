@@ -173,6 +173,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
         },
       });
       removeDeletedItemsFromCache(queryClient, [itemId]);
+      void queryClient.invalidateQueries({ queryKey: ["trash"] });
       onDeleted();
     },
     onError: (err) => toast.error(errorMessage(err)),

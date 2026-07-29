@@ -447,6 +447,7 @@ function FilesPageContent({
       }
       setRowSelection({});
       removeDeletedItemsFromCache(queryClient, result.deleted);
+      void queryClient.invalidateQueries({ queryKey: ["trash"] });
       if (selectedId && result.deleted.includes(selectedId)) {
         navigateAfterDeletion(result.deleted);
       }
