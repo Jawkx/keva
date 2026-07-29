@@ -909,7 +909,7 @@ function FilesPageContent({
         if (dragDepth.current === 0) setPageDragging(false);
       }}
       onDrop={onPageDrop}
-      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 overflow-hidden p-3 md:p-4"
+      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 overflow-hidden p-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300 md:p-4"
     >
       {pageDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
