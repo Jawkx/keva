@@ -10,10 +10,8 @@ import {
   BatchDelete,
   CreateShareGrant,
   CreateView,
-  ItemId,
   InitiateUpload,
   isFutureInstant,
-  Internal,
   KevaError,
   MintToken,
   NotFound,
@@ -23,150 +21,50 @@ import {
   UpdateView,
   ValidationError,
   StorageUnavailable,
-  statusFor,
-  type KevaItem,
   type AvatarRecipe,
-  type Principal,
 } from "@keva/schema";
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { Hono, type Context } from "hono";
 import {
   ApiTokenStore,
-  Authenticator,
   requireAdminSession,
   requireStorageManagement,
   requireStoragePermissions,
 } from "./auth.js";
-import { defectTypes, failureOrElse } from "./effect-failure.js";
-import { mountMcp, type McpDeps } from "./mcp.js";
+import { mountMcp } from "./mcp.js";
 import { ShareGrantStore } from "./shares.js";
 import { ViewStore } from "./views.js";
+import { BillingMeterLive } from "./billing.js";
 import {
-  BillingMeter,
-  BillingMeterLive,
-  isProgrammaticPrincipal,
-  type BillingStore,
-} from "./billing.js";
-import type { Polar } from "@polar-sh/sdk";
-import type { UserAvatarResolver } from "./avatar.js";
+  decode,
+  execute,
+  failureFrom,
+  itemIdParam,
+  jsonBody,
+  principalEffect,
+  redactItem,
+  reportDefect,
+  reportServiceFailure,
+  sessionUser,
+} from "./http.js";
+import type { AppServiceOptions, CreateAppOptions, KevaApp, RuntimeServices } from "./app-types.js";
 
-export type AppServices =
-  | Authenticator
-  | BlobStore
-  | MetadataStore
-  | ApiTokenStore
-  | ShareGrantStore
-  | ViewStore;
-export type RuntimeServices = AppServices | BillingMeter;
-
-const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
-  Schema.decodeUnknown(schema)(value).pipe(
-    Effect.mapError(() => new ValidationError({ message: "Request validation failed" })),
-  );
-
-const jsonBody = (context: Context) =>
-  Effect.tryPromise({
-    try: () => context.req.json() as Promise<unknown>,
-    catch: () => new ValidationError({ message: "Request body must be JSON" }),
-  });
-
-const itemIdParam = (context: Context) => decode(ItemId, context.req.param("id"));
-
-// Every route's failure channel is a typed KevaError, so a tracked failure maps
-// straight to its tagged error. Only an untracked defect (Effect.die, a thrown
-// bug) falls through to a generic 500 — internals are never serialized.
-const failureFrom = (cause: Cause.Cause<KevaError>): KevaError =>
-  failureOrElse(cause, () => new Internal({ message: "Internal server error" }));
-
-const reportDefect = (context: Context, cause: Cause.Cause<unknown>): void => {
-  if (Option.isSome(Cause.failureOption(cause))) return;
-  console.error(
-    JSON.stringify({
-      event: "http.request.defect",
-      method: context.req.method,
-      path: context.req.path,
-      defectTypes: defectTypes(cause),
-    }),
-  );
-};
-
-const reportServiceFailure = (context: Context, error: KevaError): void => {
-  if (statusFor(error) < 500) return;
-  console.error(
-    JSON.stringify({
-      event: "http.request.failed",
-      method: context.req.method,
-      path: context.req.path,
-      errorTag: error._tag,
-    }),
-  );
-};
-
-const execute = async <A>(
-  context: Context,
-  effect: Effect.Effect<A, KevaError, RuntimeServices>,
-  runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>,
-): Promise<Response> => {
-  const exit = await runtime.runPromiseExit(effect);
-  if (Exit.isSuccess(exit)) return context.json(exit.value as never);
-  reportDefect(context, exit.cause);
-  const error = failureFrom(exit.cause);
-  if (Option.isSome(Cause.failureOption(exit.cause))) reportServiceFailure(context, error);
-  return context.json(error, statusFor(error) as never);
-};
-
-const principalEffect = (headers: Headers) =>
-  Effect.gen(function* () {
-    const authenticator = yield* Authenticator;
-    const principal = yield* authenticator.authenticate({ headers });
-    if (isProgrammaticPrincipal(principal)) {
-      const billing = yield* BillingMeter;
-      yield* billing.consumeApiRequest(principal.tenantId);
-    }
-    return principal;
-  });
-
-const sessionUser = (principal: Principal) =>
-  principal.via === "session" && principal.actor?.user
-    ? Effect.succeed(principal.actor.user)
-    : Effect.fail(new NotFound({ message: "Account session not found" }));
-
-// Share visitors never receive the tenant-internal storage fields. Redaction
-// happens here at the boundary (not in the engine) so internal callers keep the
-// full KevaItem shape and only the wire response is trimmed.
-const redactItem = (principal: Principal, item: KevaItem) =>
-  principal.via === "share" ? toSharedItem(item) : toOwnerItem(item);
-
-export interface AppServiceOptions {
-  readonly layer: Layer.Layer<AppServices>;
-  readonly authHandler?: (request: Request) => Response | Promise<Response>;
-  readonly billing?: {
-    readonly store: BillingStore;
-    readonly polar: Polar;
-  };
-  // Present only when Better Auth is configured (requires a database). Enables
-  // the OAuth 2.1 discovery endpoints and the /mcp resource server. In the
-  // no-DB/static-token path these routes stay unmounted, mirroring how token
-  // management is unavailable without a database.
-  readonly mcp?: McpDeps;
-  readonly userAvatars?: UserAvatarResolver;
-  readonly dispose?: () => Promise<void>;
-}
-
-export type CreateAppOptions =
-  | AppServiceOptions
-  | { readonly getRequestServices: (context: Context) => AppServiceOptions };
+export type {
+  AppServiceOptions,
+  AppServices,
+  CreateAppOptions,
+  KevaApp,
+  RuntimeServices,
+} from "./app-types.js";
 
 interface ResolvedServices {
   readonly runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
   readonly authHandler?: (request: Request) => Response | Promise<Response>;
   readonly billing?: AppServiceOptions["billing"];
-  readonly mcp?: McpDeps;
-  readonly userAvatars?: UserAvatarResolver;
+  readonly mcp?: AppServiceOptions["mcp"];
+  readonly userAvatars?: AppServiceOptions["userAvatars"];
   readonly dispose?: () => Promise<void>;
 }
-
-export type KevaApp = Hono & { readonly dispose: () => Promise<void> };
 
 const isRequestScoped = (
   options: CreateAppOptions,

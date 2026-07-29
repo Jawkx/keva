@@ -1,35 +1,42 @@
 import {
   FIELD_BY_KEY,
-  canonicalizeProperties,
-  decodeCursor as decodeSharedCursor,
   encodeCursor,
-  Internal,
   Conflict,
   QuotaExceeded,
   SubscriptionRequired,
   validateProperties,
-  ValidationError,
-  type Actor,
-  type ItemEvent,
-  type ItemEventPayload,
-  type KevaError,
-  type KevaItem,
   type PropertyKind,
   type PropertyScalar,
-  type QueryCondition,
-  type QueryOrder,
-  type Cursor,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
 import {
   MetadataStore,
   type MetadataStoreService,
-  type UploadAttempt,
   DEFAULT_STORAGE_QUOTA_BYTES,
   SUGGESTION_KEY_LIMIT,
   SUGGESTION_VALUE_LIMIT,
 } from "../services.js";
+import {
+  attempt,
+  decodeEventCursor,
+  decodeQueryCursor,
+  encodeEventCursor,
+  insertEvent,
+} from "./db.js";
+import {
+  asIso,
+  jsonbParam,
+  mapAttemptRow,
+  mapEventRow,
+  mapRow,
+  type ItemEventRow,
+  type ItemRow,
+  type PatchResult,
+  type UploadAttemptRow,
+} from "./mappers.js";
+import { anyOf, compileCondition, escapeLikePattern, queryOrder, type Fragment } from "./query.js";
+import { insertItemRow, reserveTenantQuota } from "./quota.js";
 
 export interface PostgresConfig {
   readonly url: string;
@@ -37,415 +44,6 @@ export interface PostgresConfig {
   readonly idleTimeoutSeconds?: number;
   readonly connectTimeoutSeconds?: number;
 }
-
-interface ItemRow {
-  readonly id: string;
-  readonly tenant_id: string;
-  readonly name: string;
-  readonly content_type: string;
-  readonly declared_size: number | string;
-  readonly size: number | string | null;
-  readonly etag: string | null;
-  readonly source: string;
-  readonly status: "pending" | "confirming" | "ready" | "deleting";
-  readonly storage_key: string;
-  readonly staging_key: string;
-  readonly revision: number;
-  readonly upload_period_start: Date | string | null;
-  readonly upload_reservation_state: "reserved" | "consumed" | null;
-  readonly created_at: Date | string;
-  readonly updated_at: Date | string;
-  readonly properties: KevaItem["properties"];
-}
-
-const asIso = (value: Date | string): string =>
-  value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-
-const mapRow = (row: ItemRow): KevaItem => ({
-  id: row.id,
-  tenantId: row.tenant_id,
-  name: row.name,
-  contentType: row.content_type,
-  declaredSize: Number(row.declared_size),
-  size: row.size === null ? null : Number(row.size),
-  etag: row.etag,
-  source: row.source,
-  status: row.status,
-  storageKey: row.storage_key,
-  stagingKey: row.staging_key,
-  revision: row.revision,
-  createdAt: asIso(row.created_at),
-  updatedAt: asIso(row.updated_at),
-  properties: canonicalizeProperties(row.properties),
-});
-
-interface UploadAttemptRow {
-  readonly id: string;
-  readonly tenant_id: string;
-  readonly item_id: string | null;
-  readonly retry_key: string | null;
-  readonly request_hash: string | null;
-  readonly staging_key: string;
-  readonly storage_key: string;
-  readonly upload_url: string;
-  readonly upload_headers: Readonly<Record<string, string>>;
-  readonly expected_size: number | string;
-  readonly expires_at: Date | string;
-  readonly state: UploadAttempt["state"];
-  readonly observed_etag: string | null;
-  readonly cleanup_after: Date | string;
-  readonly next_retry_at: Date | string;
-  readonly retry_count: number;
-}
-
-const mapAttemptRow = (row: UploadAttemptRow): UploadAttempt => ({
-  id: row.id,
-  tenantId: row.tenant_id,
-  itemId: row.item_id,
-  retryKey: row.retry_key,
-  requestHash: row.request_hash,
-  stagingKey: row.staging_key,
-  storageKey: row.storage_key,
-  uploadUrl: row.upload_url,
-  uploadHeaders: row.upload_headers,
-  expectedSize: Number(row.expected_size),
-  expiresAt: asIso(row.expires_at),
-  state: row.state,
-  observedEtag: row.observed_etag,
-  cleanupAfter: asIso(row.cleanup_after),
-  nextRetryAt: asIso(row.next_retry_at),
-  retryCount: row.retry_count,
-});
-
-interface ItemEventRow {
-  readonly id: string;
-  readonly tenant_id: string;
-  readonly item_id: string;
-  readonly item_name: string;
-  readonly action: ItemEvent["action"];
-  readonly actor: Actor | null;
-  readonly payload: ItemEventPayload;
-  readonly created_at: Date | string;
-}
-
-type PatchResult =
-  | { readonly status: "missing" }
-  | { readonly status: "conflict" }
-  | { readonly status: "limit-exceeded" }
-  | { readonly status: "updated"; readonly previous: KevaItem; readonly updated: KevaItem };
-
-const mapEventRow = (row: ItemEventRow): ItemEvent => ({
-  id: row.id,
-  tenantId: row.tenant_id,
-  itemId: row.item_id,
-  itemName: row.item_name,
-  action: row.action,
-  actor: row.actor,
-  payload: row.payload,
-  createdAt: asIso(row.created_at),
-});
-
-const jsonbParam = (value: unknown): string | null =>
-  value === undefined || value === null ? null : JSON.stringify(value);
-
-const insertEvent = async (sql: Sql, event: ItemEvent): Promise<void> => {
-  await sql`
-    insert into item_events (id, tenant_id, item_id, item_name, action, actor, payload, created_at)
-    values (
-      ${event.id}, ${event.tenantId}, ${event.itemId}, ${event.itemName}, ${event.action},
-      ${jsonbParam(event.actor)}::text::jsonb, ${jsonbParam(event.payload)}::text::jsonb, ${event.createdAt}
-    )
-  `;
-};
-
-const encodeEventCursor = (event: ItemEvent): string =>
-  btoa(JSON.stringify([event.createdAt, event.id]));
-
-const dbFailure = (): Internal => new Internal({ message: "Metadata store unavailable" });
-
-const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, KevaError> =>
-  Effect.tryPromise({ try: operation, catch: dbFailure });
-
-const decodeCursor = (cursor: string): Effect.Effect<Cursor, ValidationError> => {
-  const decoded = decodeSharedCursor(cursor);
-  return decoded
-    ? Effect.succeed(decoded)
-    : Effect.fail(new ValidationError({ message: "Invalid query cursor" }));
-};
-
-const invalidCursor = () => new ValidationError({ message: "Cursor does not match query order" });
-
-const decodeQueryCursor = (
-  cursor: string,
-  order: QueryOrder,
-): Effect.Effect<Cursor, ValidationError> =>
-  Effect.flatMap(decodeCursor(cursor), (decoded) =>
-    (order.startsWith("size_") ? typeof decoded[0] === "number" : typeof decoded[0] === "string") &&
-    (decoded[2] === order || (decoded[2] === undefined && order.startsWith("created_at_")))
-      ? Effect.succeed(decoded)
-      : Effect.fail(invalidCursor()),
-  );
-
-const decodeEventCursor = (
-  cursor: string,
-): Effect.Effect<readonly [string, string], ValidationError> =>
-  Effect.flatMap(decodeCursor(cursor), (decoded) =>
-    typeof decoded[0] === "string" && decoded[2] === undefined
-      ? Effect.succeed([decoded[0], decoded[1]] as const)
-      : Effect.fail(invalidCursor()),
-  );
-
-type Fragment = ReturnType<Sql["unsafe"]>;
-type CursorPredicate = (cursor: Cursor) => Fragment;
-
-const systemColumn = (
-  sql: Sql,
-  key: string,
-): {
-  fragment: Fragment;
-  type: "string" | "number" | "nullable-string" | "timestamp";
-} | null => {
-  const field = FIELD_BY_KEY.get(key);
-  return field ? { fragment: sql.unsafe(field.column), type: field.queryType } : null;
-};
-
-const comparison = (sql: Sql, operator: string): Fragment => {
-  const allowed: Record<string, string> = {
-    gt: ">",
-    gte: ">=",
-    lt: "<",
-    lte: "<=",
-  };
-  return sql.unsafe(allowed[operator] ?? "=");
-};
-
-// OR-join a list of fragments into `(a or b or …)`. An empty list matches
-// nothing (an `in` with no compatible members can never be satisfied).
-const anyOf = (sql: Sql, fragments: readonly Fragment[]): Fragment =>
-  fragments.length === 0
-    ? sql`false`
-    : sql`(${fragments.reduce((left, right) => sql`${left} or ${right}`)})`;
-
-const compileCondition = (sql: Sql, condition: QueryCondition): Fragment => {
-  const column = systemColumn(sql, condition.key);
-  const value = condition.value;
-  if (column) {
-    if (condition.op === "exists") return sql`${column.fragment} is not null`;
-    if (condition.op === "missing") return sql`${column.fragment} is null`;
-    if (condition.op === "eq") {
-      return value === null
-        ? sql`${column.fragment} is null`
-        : sql`${column.fragment} = ${value as string | number}`;
-    }
-    if (condition.op === "neq") {
-      return value === null
-        ? sql`${column.fragment} is not null`
-        : sql`(${column.fragment} is null or ${column.fragment} <> ${value as string | number})`;
-    }
-    if (condition.op === "contains_text") {
-      return sql`position(${value as string} in ${column.fragment}) > 0`;
-    }
-    if (condition.op === "contains_any") {
-      return anyOf(
-        sql,
-        (value as readonly string[]).map(
-          (member) => sql`position(${member} in ${column.fragment}) > 0`,
-        ),
-      );
-    }
-    return sql`${column.fragment} ${comparison(sql, condition.op)} ${value as string | number}`;
-  }
-
-  const key = condition.key;
-  if (condition.op === "exists") return sql`properties ? ${key}`;
-  if (condition.op === "missing") return sql`not (properties ? ${key})`;
-  if (condition.op === "is_tag") return sql`properties -> ${key} = 'null'::jsonb`;
-  const hasValue = (member: string): Fragment => {
-    const arrayMatch = sql`(jsonb_typeof(properties -> ${key}) = 'array' and (properties -> ${key}) @> ${jsonbParam([member])}::text::jsonb)`;
-    return sql`(${arrayMatch} or (jsonb_typeof(properties -> ${key}) = 'string' and properties ->> ${key} = ${member}))`;
-  };
-  const containsText = (text: string): Fragment => sql`(
-    (jsonb_typeof(properties -> ${key}) = 'string' and position(${text} in properties ->> ${key}) > 0)
-    or (jsonb_typeof(properties -> ${key}) = 'array' and exists (
-      select 1 from jsonb_array_elements_text(properties -> ${key}) as member
-      where position(${text} in member) > 0
-    ))
-  )`;
-  if (condition.op === "has_value") return hasValue(value as string);
-  if (condition.op === "has_any") {
-    return anyOf(sql, (value as readonly string[]).map(hasValue));
-  }
-  if (condition.op === "has_all") {
-    return (value as readonly string[])
-      .map(hasValue)
-      .reduce((left, right) => sql`${left} and ${right}`);
-  }
-  if (condition.op === "contains_text") return containsText(value as string);
-  if (condition.op === "contains_any") {
-    return anyOf(sql, (value as readonly string[]).map(containsText));
-  }
-  return sql`false`;
-};
-
-const escapeLikePattern = (value: string): string =>
-  value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
-
-const queryOrder = (
-  sql: Sql,
-  order: QueryOrder,
-): {
-  readonly by: Fragment;
-  readonly afterCursor: CursorPredicate;
-  readonly cursorFor: (item: KevaItem) => Cursor;
-} => {
-  if (order === "created_at_desc") {
-    return {
-      by: sql`created_at desc, id desc`,
-      afterCursor: (cursor) =>
-        sql`(created_at, id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
-      cursorFor: (item) => [item.createdAt, item.id],
-    };
-  }
-  if (order === "created_at_asc") {
-    return {
-      by: sql`created_at asc, id asc`,
-      afterCursor: (cursor) =>
-        sql`(created_at, id) > (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)`,
-      cursorFor: (item) => [item.createdAt, item.id],
-    };
-  }
-  const size = sql`coalesce(size, declared_size)`;
-  if (order === "size_desc") {
-    return {
-      by: sql`${size} desc, id desc`,
-      afterCursor: (cursor) => sql`(${size}, id) < (${cursor[0]}::bigint, ${cursor[1]}::uuid)`,
-      cursorFor: (item) => [item.size ?? item.declaredSize, item.id],
-    };
-  }
-  return {
-    by: sql`${size} asc, id asc`,
-    afterCursor: (cursor) => sql`(${size}, id) > (${cursor[0]}::bigint, ${cursor[1]}::uuid)`,
-    cursorFor: (item) => [item.size ?? item.declaredSize, item.id],
-  };
-};
-
-// Reserve tenant storage inside an open transaction: locks the tenant_usage
-// row, checks the quota, and adds the declared size. Returns false (leaving the
-// transaction to roll back) when the quota would be exceeded.
-type ReservationOutcome =
-  | { readonly status: "ok"; readonly periodStart: string | null }
-  | { readonly status: "storage" | "items" | "uploads" | "subscription" };
-
-const reserveTenantQuota = async (
-  transaction: Sql,
-  tenantId: string,
-  declaredSize: number,
-): Promise<ReservationOutcome> => {
-  await transaction`
-    insert into tenant_usage (tenant_id, used_bytes, used_items, quota_bytes, quota_items)
-    values (${tenantId}, 0, 0, ${DEFAULT_STORAGE_QUOTA_BYTES}, null)
-    on conflict (tenant_id) do nothing
-  `;
-  const usage = await transaction<
-    {
-      used_bytes: string;
-      used_items: string;
-      quota_bytes: string | null;
-      quota_items: string | null;
-    }[]
-  >`
-    select used_bytes, used_items, quota_bytes, quota_items
-    from tenant_usage where tenant_id = ${tenantId} for update
-  `;
-  const current = usage[0]!;
-  const usedBytes = Number(current.used_bytes);
-  const usedItems = Number(current.used_items);
-  const quotaBytes = current.quota_bytes === null ? null : Number(current.quota_bytes);
-  const quotaItems = current.quota_items === null ? null : Number(current.quota_items);
-  const billing = await transaction<
-    {
-      status: string;
-      grace_ends_at: Date | string | null;
-      trial_ends_at: Date | string | null;
-      current_period_start: Date | string | null;
-      current_period_end: Date | string | null;
-      monthly_uploads_limit: string;
-    }[]
-  >`
-    select status, grace_ends_at, trial_ends_at, current_period_start, current_period_end,
-           monthly_uploads_limit
-    from tenant_billing where tenant_id = ${tenantId} for update
-  `;
-  let periodStart: string | null = null;
-  const entitlement = billing[0];
-  if (entitlement) {
-    const allowed =
-      entitlement.status === "active" ||
-      (entitlement.status === "trialing" &&
-        entitlement.trial_ends_at !== null &&
-        new Date(entitlement.trial_ends_at) > new Date()) ||
-      (entitlement.status === "past_due" &&
-        entitlement.grace_ends_at !== null &&
-        new Date(entitlement.grace_ends_at) > new Date());
-    if (!allowed || !entitlement.current_period_start || !entitlement.current_period_end) {
-      return { status: "subscription" };
-    }
-    if (quotaBytes !== null && usedBytes + declaredSize > quotaBytes) return { status: "storage" };
-    if (quotaItems !== null && usedItems + 1 > quotaItems) return { status: "items" };
-    periodStart = asIso(entitlement.current_period_start);
-    const periodEnd = asIso(entitlement.current_period_end);
-    await transaction`
-      insert into tenant_period_usage (
-        tenant_id, period_start, period_end, uploads_used, uploads_reserved, api_requests_used
-      ) values (${tenantId}, ${periodStart}, ${periodEnd}, 0, 0, 0)
-      on conflict (tenant_id, period_start) do nothing
-    `;
-    const periods = await transaction<{ uploads_used: string; uploads_reserved: string }[]>`
-      select uploads_used, uploads_reserved from tenant_period_usage
-      where tenant_id = ${tenantId} and period_start = ${periodStart}
-      for update
-    `;
-    const uploads = Number(periods[0]!.uploads_used) + Number(periods[0]!.uploads_reserved);
-    if (uploads + 1 > Number(entitlement.monthly_uploads_limit)) {
-      return { status: "uploads" };
-    }
-    await transaction`
-      update tenant_period_usage set uploads_reserved = uploads_reserved + 1
-      where tenant_id = ${tenantId} and period_start = ${periodStart}
-    `;
-  }
-  if (!entitlement) {
-    if (quotaBytes !== null && usedBytes + declaredSize > quotaBytes) return { status: "storage" };
-    if (quotaItems !== null && usedItems + 1 > quotaItems) return { status: "items" };
-  }
-  await transaction`
-    update tenant_usage
-    set used_bytes = used_bytes + ${declaredSize}, used_items = used_items + 1
-    where tenant_id = ${tenantId}
-  `;
-  return { status: "ok", periodStart };
-};
-
-const insertItemRow = async (
-  transaction: Sql,
-  item: KevaItem,
-  periodStart: string | null,
-): Promise<void> => {
-  const properties = canonicalizeProperties(item.properties);
-  await transaction`
-    insert into items (
-      id, tenant_id, name, content_type, declared_size, size, etag,
-      source, status, storage_key, staging_key, created_at,
-      updated_at, properties, upload_period_start, upload_reservation_state
-    ) values (
-      ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
-      ${item.declaredSize}, ${item.size}, ${item.etag},
-      ${item.source}, ${item.status}, ${item.storageKey},
-      ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
-      ${jsonbParam(properties)}::text::jsonb, ${periodStart}, ${periodStart ? "reserved" : null}
-    )
-  `;
-};
 
 export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   insert: (item) =>
