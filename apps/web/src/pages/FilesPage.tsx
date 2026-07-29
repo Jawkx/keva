@@ -952,7 +952,7 @@ function FilesPageContent({
           )}
         </div>
         {!selectMode && (
-          <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
+          <div className="flex h-[42px] min-w-0 shrink-0 flex-wrap items-center gap-1.5">
             {!viewId && (
               <div
                 className="base-ui-disable-scrollbar flex w-full max-w-full flex-nowrap items-center overflow-x-auto rounded-lg border border-border bg-muted/70 p-1 sm:w-fit sm:flex-wrap sm:overflow-visible"
@@ -1052,7 +1052,7 @@ function FilesPageContent({
         )}
       </div>
       {selectMode && (
-        <div className="flex shrink-0 flex-wrap items-center gap-3 px-1">
+        <div className="flex h-[42px] shrink-0 flex-wrap items-center gap-3 px-1">
           <span className="text-sm font-medium">{selectedCount} selected</span>
           <Button variant="ghost" onClick={() => setRowSelection({})}>
             Clear
