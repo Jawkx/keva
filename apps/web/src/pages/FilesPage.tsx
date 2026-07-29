@@ -466,7 +466,7 @@ function FilesPageContent({
       containerClassName="overflow-visible"
       className="table-fixed sm:table-auto [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_tr]:border-0"
     >
-      <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted/50 [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
+      <TableHeader className="[&_tr]:border-0 [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted/50 [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id} className="group">
             {group.headers.map((header) => (
