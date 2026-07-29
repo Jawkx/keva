@@ -38,7 +38,3 @@ when their configuration is incomplete.
 - Do not call `useEffect` directly — enforced by `pnpm lint:no-direct-use-effect`.
 - SDK base URL points at the `/api` prefix, not the server root.
 - Run `pnpm typecheck`, `pnpm lint`, and `pnpm format:check` before finishing changes.
-
-## Keep in mind
-
-- Never never NEVER save anything outside of this repo, if you need any temp file, save it in the repo, you have large chance of inablility to access stuff outside the repo, so one big frustration here is you save stuff out of the repo, I need to come in and give you permission, and while you do that, you block everything
