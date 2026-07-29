@@ -30,7 +30,7 @@ export const PAGE_SIZE = 50;
 export const QUICK_KINDS: ReadonlyArray<{ id: KindId | "all"; label: string }> = [
   { id: "all", label: "All" },
   { id: "document", label: "Document" },
-  { id: "image", label: "Photo" },
+  { id: "image", label: "Image" },
   { id: "video", label: "Video" },
   { id: "audio", label: "Audio" },
 ];
