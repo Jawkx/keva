@@ -106,11 +106,13 @@ export function TrashPage() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4">
-      <div className="flex min-h-10 items-center justify-between gap-3 px-1">
-        <div className="flex min-w-0 items-center gap-2 text-destructive">
-          <Trash2 className="size-5" />
-          <h1 className="font-heading text-xl font-medium">Trash</h1>
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300 md:p-4">
+      <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 px-1 sm:gap-3">
+        <div className="flex max-w-[24rem] min-w-0 items-center text-destructive">
+          <div className="flex size-8 shrink-0 items-center justify-center sm:size-9">
+            <Trash2 className="size-5 sm:size-6" />
+          </div>
+          <h1 className="truncate text-lg leading-none font-medium sm:text-[21px]">Trash</h1>
         </div>
         {selectedIds.length > 0 && (
           <div className="flex items-center gap-2">
