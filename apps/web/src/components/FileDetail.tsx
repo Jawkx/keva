@@ -1,4 +1,13 @@
-import { Download, Maximize2, Minimize2, Pencil, Trash2, TriangleAlert, X } from "lucide-react";
+import {
+  ArchiveRestore,
+  Download,
+  Maximize2,
+  Minimize2,
+  Pencil,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -71,10 +80,21 @@ const extensionStart = (name: string): number => {
 interface FileDetailProps {
   itemId: string;
   onClose?: () => void;
-  onDeleted: () => void;
+  onDeleted?: () => void;
+  onRestored?: () => void;
+  onPurged?: () => void;
+  variant?: "active" | "trash";
 }
 
-export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
+export function FileDetail({
+  itemId,
+  onClose,
+  onDeleted,
+  onRestored,
+  onPurged,
+  variant = "active",
+}: FileDetailProps) {
+  const trashMode = variant === "trash";
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
@@ -84,22 +104,22 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const itemQuery = useQuery({
-    queryKey: itemQueryKey(itemId),
-    queryFn: () => keva.get(itemId),
+    queryKey: trashMode ? ["trash-item", itemId] : itemQueryKey(itemId),
+    queryFn: () => (trashMode ? keva.getTrash(itemId) : keva.get(itemId)),
   });
   const item = itemQuery.data ?? null;
   const loading = itemQuery.isLoading;
   const error = itemQuery.error ? errorMessage(itemQuery.error) : null;
 
   const contentQuery = useQuery({
-    queryKey: itemContentQueryKey(itemId),
+    queryKey: trashMode ? ["trash-content", itemId] : itemContentQueryKey(itemId),
     enabled: Boolean(item) && isPreviewable(item!),
     staleTime: Infinity,
     gcTime: 0,
     queryFn: ({ signal }) =>
       runEffectPromise(
         loadPreviewContent(
-          keva.downloadBytesEffect(itemId),
+          trashMode ? keva.downloadTrashBytesEffect(itemId) : keva.downloadBytesEffect(itemId),
           item!.contentType,
           isImage(item!) || isPdf(item!),
         ),
@@ -120,7 +140,10 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     return { kind: "text", text: contentQuery.data.text };
   }, [item, contentQuery.data, itemId]);
 
-  const panels = useMemo(() => (item ? panelsFor(item) : []), [item]);
+  const panels = useMemo(
+    () => (item ? (trashMode ? (["preview"] as Panel[]) : panelsFor(item)) : []),
+    [item, trashMode],
+  );
 
   const paramPanel = searchParams.get("panel") as Panel | null;
   const activePanel: Panel =
@@ -142,7 +165,9 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
 
   const downloadMutation = useMutation({
     mutationFn: async () => {
-      const { url } = await keva.getDownloadUrl(itemId);
+      const { url } = await (trashMode
+        ? keva.getTrashDownloadUrl(itemId)
+        : keva.getDownloadUrl(itemId));
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = item?.name ?? itemId;
@@ -174,9 +199,30 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
       });
       removeDeletedItemsFromCache(queryClient, [itemId]);
       void queryClient.invalidateQueries({ queryKey: ["trash"] });
-      onDeleted();
+      onDeleted?.();
     },
     onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: () => keva.restore(itemId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["trash"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      toast.success(`Restored ${item?.name ?? "file"}`);
+      onRestored?.();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
+  const purgeMutation = useMutation({
+    mutationFn: () => keva.purge(itemId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["trash"] });
+      toast.success(`Permanently deleted ${item?.name ?? "file"}`);
+      onPurged?.();
+    },
+    onError: (error) => toast.error(errorMessage(error)),
   });
 
   const patchMutation = useMutation({
@@ -188,7 +234,11 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
     onError: (err) => toast.error(errorMessage(err)),
   });
 
-  const busy = downloadMutation.isPending || deleteMutation.isPending;
+  const busy =
+    downloadMutation.isPending ||
+    deleteMutation.isPending ||
+    restoreMutation.isPending ||
+    purgeMutation.isPending;
 
   const onPatch = async (set: Record<string, PropertyValue>, unset: string[]) => {
     return (await patchMutation.mutateAsync({ set, unset })).properties;
@@ -265,7 +315,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                 <span className="min-w-0 truncate">{nameStem}</span>
                 <span className="shrink-0">{nameExtension}</span>
               </h2>
-              {item && (
+              {item && !trashMode && (
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -342,6 +392,17 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
           </Tooltip>
 
           <Separator orientation="vertical" className="mx-1 h-5" />
+          {trashMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || !item}
+              onClick={() => restoreMutation.mutate()}
+            >
+              <ArchiveRestore data-icon="inline-start" />
+              Restore
+            </Button>
+          )}
           <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
             <Tooltip>
               <TooltipTrigger
@@ -352,7 +413,7 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                         variant="ghost"
                         size="icon"
                         className="text-destructive"
-                        aria-label="Delete"
+                        aria-label={trashMode ? "Delete forever" : "Delete"}
                         disabled={busy || !item}
                       />
                     }
@@ -361,13 +422,17 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
               >
                 <Trash2 />
               </TooltipTrigger>
-              <TooltipContent>Move to Trash</TooltipContent>
+              <TooltipContent>{trashMode ? "Delete forever" : "Move to Trash"}</TooltipContent>
             </Tooltip>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete “{item?.name}”?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {trashMode ? `Permanently delete “${item?.name}”?` : `Delete “${item?.name}”?`}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This moves the item to Trash, where you can restore it or delete it forever.
+                  {trashMode
+                    ? "This permanently removes the file and cannot be undone."
+                    : "This moves the item to Trash, where you can restore it or delete it forever."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -376,10 +441,11 @@ export function FileDetail({ itemId, onClose, onDeleted }: FileDetailProps) {
                   variant="destructive"
                   onClick={() => {
                     setConfirmOpen(false);
-                    deleteMutation.mutate();
+                    if (trashMode) purgeMutation.mutate();
+                    else deleteMutation.mutate();
                   }}
                 >
-                  Delete
+                  {trashMode ? "Delete forever" : "Delete"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

@@ -30,6 +30,7 @@ import {
   SharedInitiateUploadResult,
   SharedItem,
   SharedQueryResult,
+  TrashItem,
   TrashResult,
   UpdateView,
   UsageResult,
@@ -550,6 +551,22 @@ export class KevaClient {
   async listTrash(): Promise<TrashItemType[]> {
     const result = await this.#request("GET", "/trash", TrashResult);
     return [...result.items];
+  }
+
+  getTrash(id: string): Promise<TrashItemType> {
+    return this.#request("GET", `/trash/${encodeURIComponent(id)}`, TrashItem);
+  }
+
+  getTrashDownloadUrl(id: string): Promise<DownloadResultType> {
+    return this.#request("GET", `/trash/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
+  downloadTrashBytesEffect(id: string): Effect.Effect<Uint8Array, KevaClientError> {
+    return this.#requestEffect(
+      "GET",
+      `/trash/${encodeURIComponent(id)}/content`,
+      DownloadResult,
+    ).pipe(Effect.flatMap((target) => downloadBytesFromUrlEffect(this.#fetch, target.url)));
   }
 
   restore(id: string): Promise<KevaItemType> {

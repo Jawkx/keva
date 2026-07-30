@@ -279,7 +279,8 @@ export function AppShell() {
     location.pathname === "/" ||
     location.pathname.startsWith("/items/") ||
     location.pathname.startsWith("/v/") ||
-    location.pathname.startsWith("/shared/");
+    location.pathname.startsWith("/shared/") ||
+    location.pathname.startsWith("/trash");
 
   return (
     <SidebarProvider>

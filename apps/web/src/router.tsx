@@ -74,6 +74,7 @@ export const router = createBrowserRouter([
       { path: "/v/:viewId/shares", element: route(ViewSharesPage) },
       { path: "/shared", element: route(SharedWithMePage) },
       { path: "/trash", element: route(TrashPage) },
+      { path: "/trash/items/:id", element: route(TrashPage) },
       { path: "/shared/:grantId", element: route(SharedViewPage) },
       { path: "/query", element: <Navigate to="/" replace /> },
       { path: "/connection", element: route(ConnectionPage) },

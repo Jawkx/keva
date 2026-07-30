@@ -367,6 +367,28 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
     ),
   );
 
+  app.get("/api/trash/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        return toTrashItem(yield* makeKevaEngine(principal).getTrash(id));
+      }),
+    ),
+  );
+
+  app.get("/api/trash/:id/content", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(principal).downloadTrash(id);
+      }),
+    ),
+  );
+
   app.post("/api/trash/restore", (context) =>
     runRoute(
       context,

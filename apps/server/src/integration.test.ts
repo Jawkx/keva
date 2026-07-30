@@ -185,6 +185,16 @@ describe("server integration — HTTP roundtrip", () => {
       items: { id: string; deletedAt: string }[];
     };
     expect(trash.items.find((item) => item.id === id)?.deletedAt).toMatch(/Z$/);
+
+    const trashedItemResponse = await app.request(`/api/trash/${id}`, { headers: auth });
+    expect(trashedItemResponse.status).toBe(200);
+    expect(await trashedItemResponse.json()).toMatchObject({ id, name: "trash-roundtrip.txt" });
+
+    const trashedContentResponse = await app.request(`/api/trash/${id}/content`, { headers: auth });
+    expect(trashedContentResponse.status).toBe(200);
+    const trashedContent = (await trashedContentResponse.json()) as { url: string };
+    expect(await (await fetch(trashedContent.url)).text()).toBe("trash-roundtrip.txt");
+
     const usageTrashed = (await (await app.request("/api/usage", { headers: auth })).json()) as {
       accountedItems: number;
     };

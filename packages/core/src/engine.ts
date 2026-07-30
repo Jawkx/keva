@@ -38,6 +38,11 @@ const readyOrNotFound = (item: KevaItem | null) =>
     ? Effect.succeed(item)
     : Effect.fail(new NotFound({ message: "Item not found" }));
 
+const trashedReadyOrNotFound = (item: KevaItem | null) =>
+  item?.status === "ready" && item.deletedAt !== undefined
+    ? Effect.succeed(item as KevaItem & { readonly deletedAt: string })
+    : Effect.fail(new NotFound({ message: "Item not found in trash" }));
+
 // A share principal's grant context, or null for session/token principals. The
 // engine keys share-scoped enforcement off the *presence of the context*, not
 // the `via` discriminant alone.
@@ -464,6 +469,25 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* requireScope(principal, "read");
       const metadata = yield* MetadataStore;
       return yield* metadata.listTrash(principal.tenantId);
+    }),
+
+  getTrash: (id: string) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "read trash");
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      return yield* trashedReadyOrNotFound(yield* metadata.get(principal.tenantId, id));
+    }),
+
+  downloadTrash: (id: string) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "read trash");
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      const blobs = yield* BlobStore;
+      const item = yield* trashedReadyOrNotFound(yield* metadata.get(principal.tenantId, id));
+      const request = yield* blobs.presignDownload(item.storageKey);
+      return { url: request.url, expiresAt: request.expiresAt };
     }),
 
   restore: (id: string) =>
