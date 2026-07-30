@@ -55,7 +55,7 @@ export function SubscriptionCard() {
 
   if (billingQuery.isPending) {
     return (
-      <Card className="relative gap-0 overflow-hidden bg-transparent py-0 ring-0">
+      <Card className="relative gap-0 overflow-visible bg-transparent py-0 ring-0">
         <CardHeader className="px-0 pb-5">
           <Skeleton className="h-6 w-28" />
           <CardAction>
@@ -96,7 +96,7 @@ export function SubscriptionCard() {
   const renewal = status.trialEndsAt ?? status.currentPeriodEnd;
 
   return (
-    <Card className="relative gap-0 overflow-hidden bg-transparent py-0 ring-0">
+    <Card className="relative gap-0 overflow-visible bg-transparent py-0 ring-0">
       <CardHeader className="px-0 pb-5">
         <CardTitle className="text-xl font-semibold tracking-tight">Billing</CardTitle>
         <CardAction className="flex items-center gap-2">
