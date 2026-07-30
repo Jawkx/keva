@@ -1,6 +1,7 @@
 import type { AvatarRecipe } from "@keva/schema";
 import { CreditCard, HardDrive, Palette, ShieldCheck, UserRound } from "lucide-react";
 import { useState } from "react";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import { AppearanceCard } from "../components/AppearanceCard";
 import { AvatarEditor } from "../components/AvatarEditor";
@@ -16,6 +17,12 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+const SETTINGS_SECTIONS = ["profile", "security", "billing", "storage", "appearance"] as const;
+type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+const isSettingsSection = (value: string | undefined): value is SettingsSection =>
+  SETTINGS_SECTIONS.some((section) => section === value);
 
 const ACCOUNT_ITEMS = [
   { value: "profile", label: "Profile", icon: UserRound },
@@ -259,21 +266,28 @@ function SecuritySettings() {
 
 export function SettingsPage() {
   const { data } = authClient.useSession();
-  const initialTab =
-    new URLSearchParams(window.location.search).get("checkout") === "complete"
-      ? "billing"
-      : "profile";
+  const { section } = useParams<{ section: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const fallbackSection =
+    new URLSearchParams(location.search).get("checkout") === "complete" ? "billing" : "profile";
+  const activeSection = isSettingsSection(section) ? section : fallbackSection;
+
+  if (section !== activeSection) {
+    return <Navigate to={`/settings/${activeSection}${location.search}`} replace />;
+  }
 
   return (
     <Tabs
-      defaultValue={initialTab}
-      className="grid min-w-0 gap-6 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-8 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-10"
+      value={activeSection}
+      onValueChange={(value) => navigate(`/settings/${value}`)}
+      className="grid min-w-0 gap-6 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-8 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-10 2xl:grid-cols-[11rem_minmax(0,56rem)_11rem] 2xl:justify-between 2xl:gap-0"
     >
       <div className="pb-2 md:pb-0">
         <SettingsNavigation />
       </div>
 
-      <main className="mx-auto w-full min-w-0 max-w-4xl">
+      <main className="mx-auto w-full min-w-0 max-w-3xl 2xl:max-w-4xl">
         <TabsContent value="profile">
           {data?.user ? (
             <ProfileSettings

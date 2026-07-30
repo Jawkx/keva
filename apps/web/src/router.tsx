@@ -80,6 +80,7 @@ export const router = createBrowserRouter([
       { path: "/connection", element: route(ConnectionPage) },
       { path: "/tokens", element: <Navigate to="/connection" replace /> },
       { path: "/settings", element: route(SettingsPage) },
+      { path: "/settings/:section", element: route(SettingsPage) },
       { path: "*", element: route(NotFoundPage) },
     ],
   },
