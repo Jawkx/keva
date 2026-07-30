@@ -28,8 +28,18 @@ import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { FileDetail } from "../components/FileDetail";
 import { FileBrowserFrame } from "../components/file-browser/FileBrowserFrame";
+import {
+  FileTable,
+  FileTableBody,
+  FileTableCell,
+  FileTableFooter,
+  FileTableFrame,
+  FileTableHead,
+  FileTableHeader,
+  FileTableItemCount,
+  FileTableRow,
+} from "../components/file-browser/FileTable";
 import { NumberedPagination } from "../components/file-browser/NumberedPagination";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { FilterBar, FilterMenuButton } from "../components/FilterBar";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
@@ -108,14 +118,6 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { columns, responsiveColumnClass, type FileRow } from "./files/file-columns";
 import {
@@ -582,15 +584,12 @@ function FilesPageContent({
   };
 
   const tableInner = (
-    <Table
-      containerClassName="overflow-visible"
-      className="table-fixed sm:table-auto [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_tr]:border-0"
-    >
-      <TableHeader className="[&_tr]:border-0 [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted/50 [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
+    <FileTable>
+      <FileTableHeader>
         {table.getHeaderGroups().map((group) => (
-          <TableRow key={group.id} className="group">
+          <FileTableRow key={group.id} className="group">
             {group.headers.map((header) => (
-              <TableHead
+              <FileTableHead
                 key={header.id}
                 className={cn(
                   header.column.id === "select" && "w-10",
@@ -603,28 +602,28 @@ function FilesPageContent({
                 {header.isPlaceholder
                   ? null
                   : flexRender(header.column.columnDef.header, header.getContext())}
-              </TableHead>
+              </FileTableHead>
             ))}
-          </TableRow>
+          </FileTableRow>
         ))}
-      </TableHeader>
-      <TableBody>
+      </FileTableHeader>
+      <FileTableBody>
         {loading
           ? Array.from({ length: 8 }).map((_, i) => (
-              <TableRow key={`skeleton-${i}`}>
+              <FileTableRow key={`skeleton-${i}`}>
                 {table.getVisibleLeafColumns().map((col) => (
-                  <TableCell
+                  <FileTableCell
                     key={col.id}
                     className={cn(col.id === "select" && "w-10", responsiveColumnClass(col.id))}
                   >
                     {col.id !== "select" && <Skeleton className="h-5 w-full" />}
-                  </TableCell>
+                  </FileTableCell>
                 ))}
-              </TableRow>
+              </FileTableRow>
             ))
           : rows.map((row) => {
               const tableRow = (
-                <TableRow
+                <FileTableRow
                   data-state={
                     row.getIsSelected() || row.original.id === selectedId ? "selected" : undefined
                   }
@@ -639,7 +638,7 @@ function FilesPageContent({
                   }}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell
+                    <FileTableCell
                       key={cell.id}
                       className={cn(
                         cell.column.id === "select" && "w-10",
@@ -648,9 +647,9 @@ function FilesPageContent({
                       onClick={cell.column.id === "select" ? (e) => e.stopPropagation() : undefined}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+                    </FileTableCell>
                   ))}
-                </TableRow>
+                </FileTableRow>
               );
 
               if (row.original.upload) return <Fragment key={row.id}>{tableRow}</Fragment>;
@@ -705,8 +704,8 @@ function FilesPageContent({
                 </ContextMenu>
               );
             })}
-      </TableBody>
-    </Table>
+      </FileTableBody>
+    </FileTable>
   );
 
   const pageControls = (
@@ -1016,55 +1015,54 @@ function FilesPageContent({
   );
 
   const tablePane = (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl border">
-      <ScrollArea className="h-auto min-h-0 flex-1">
-        {!loading && rows.length === 0 ? (
-          <Empty className="h-full py-16">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                {!filtered && !hasItems ? <Files /> : <Search />}
-              </EmptyMedia>
-              <EmptyTitle>
-                {emptyPage
-                  ? "No items on this page"
-                  : !filtered && !hasItems
-                    ? "No items yet"
-                    : "No matches"}
-              </EmptyTitle>
-              <EmptyDescription>
-                {emptyPage
-                  ? "Items on this page may have been deleted. Use the pagination controls to continue browsing."
-                  : !filtered && !hasItems
-                    ? "Upload your first file, or drop one anywhere on this page."
-                    : "No items match your search and filters."}
-              </EmptyDescription>
-            </EmptyHeader>
-            {!filtered && !hasItems ? (
-              <Button onClick={() => uploadInputRef.current?.click()}>
-                <Upload data-icon="inline-start" />
-                Upload
-              </Button>
-            ) : filtered ? (
-              <Button variant="outline" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            ) : emptyPage ? (
-              <Button variant="outline" onClick={() => goToPage(1)}>
-                Return to first page
-              </Button>
-            ) : null}
-          </Empty>
-        ) : (
-          tableInner
-        )}
-      </ScrollArea>
-      <div className="flex shrink-0 items-center border-t">
-        {pageControls}
-        <span className="shrink-0 pr-3 text-sm text-muted-foreground tabular-nums">
-          {totalItems} {plural(totalItems)}
-        </span>
-      </div>
-    </div>
+    <FileTableFrame
+      footer={
+        <FileTableFooter>
+          {pageControls}
+          <FileTableItemCount count={totalItems} />
+        </FileTableFooter>
+      }
+    >
+      {!loading && rows.length === 0 ? (
+        <Empty className="h-full py-16">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              {!filtered && !hasItems ? <Files /> : <Search />}
+            </EmptyMedia>
+            <EmptyTitle>
+              {emptyPage
+                ? "No items on this page"
+                : !filtered && !hasItems
+                  ? "No items yet"
+                  : "No matches"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {emptyPage
+                ? "Items on this page may have been deleted. Use the pagination controls to continue browsing."
+                : !filtered && !hasItems
+                  ? "Upload your first file, or drop one anywhere on this page."
+                  : "No items match your search and filters."}
+            </EmptyDescription>
+          </EmptyHeader>
+          {!filtered && !hasItems ? (
+            <Button onClick={() => uploadInputRef.current?.click()}>
+              <Upload data-icon="inline-start" />
+              Upload
+            </Button>
+          ) : filtered ? (
+            <Button variant="outline" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          ) : emptyPage ? (
+            <Button variant="outline" onClick={() => goToPage(1)}>
+              Return to first page
+            </Button>
+          ) : null}
+        </Empty>
+      ) : (
+        tableInner
+      )}
+    </FileTableFrame>
   );
 
   return (

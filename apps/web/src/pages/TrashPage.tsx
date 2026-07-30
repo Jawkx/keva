@@ -24,21 +24,24 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { FileDetail } from "../components/FileDetail";
 import { FileBrowserFrame } from "../components/file-browser/FileBrowserFrame";
+import {
+  FileName,
+  FileTable,
+  FileTableBody,
+  FileTableCell,
+  FileTableFooter,
+  FileTableFrame,
+  FileTableHead,
+  FileTableHeader,
+  FileTableItemCount,
+  FileTableRow,
+} from "../components/file-browser/FileTable";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatRelative } from "../lib/format";
 import { itemListsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
-import { fileKindIcon } from "./files/file-columns";
 
 const trashQueryKey = ["trash"] as const;
 
@@ -164,120 +167,113 @@ export function TrashPage() {
           ) : null
         }
         list={
-          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border">
-            <div className="min-h-0 flex-1 overflow-auto">
-              {trashQuery.isPending ? (
-                <div className="flex flex-col gap-3 p-4" aria-busy="true">
-                  {Array.from({ length: 5 }).map((_, index) => (
-                    <Skeleton key={index} className="h-9 w-full" />
-                  ))}
-                </div>
-              ) : items.length === 0 ? (
-                <Empty className="py-20">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <Trash2 />
-                    </EmptyMedia>
-                    <EmptyTitle>Trash is empty</EmptyTitle>
-                    <EmptyDescription>
-                      Deleted files will stay here until you permanently remove them.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
+          <FileTableFrame
+            footer={
+              <FileTableFooter className="h-12 justify-end">
+                <FileTableItemCount count={items.length} />
+              </FileTableFooter>
+            }
+          >
+            {trashQuery.isPending ? (
+              <div className="flex flex-col gap-3 p-4" aria-busy="true">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <Skeleton key={index} className="h-9 w-full" />
+                ))}
+              </div>
+            ) : items.length === 0 ? (
+              <Empty className="h-full py-20">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Trash2 />
+                  </EmptyMedia>
+                  <EmptyTitle>Trash is empty</EmptyTitle>
+                  <EmptyDescription>
+                    Deleted files will stay here until you permanently remove them.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <FileTable>
+                <FileTableHeader>
+                  <FileTableRow>
+                    <FileTableHead className="w-10">
+                      <Checkbox
+                        aria-label="Select all files in Trash"
+                        checked={allSelected}
+                        onCheckedChange={() =>
+                          setSelected(
+                            allSelected ? new Set() : new Set(items.map((item) => item.id)),
+                          )
+                        }
+                      />
+                    </FileTableHead>
+                    <FileTableHead>Name</FileTableHead>
+                    <FileTableHead className="hidden sm:table-cell">Size</FileTableHead>
+                    <FileTableHead className="hidden md:table-cell">Deleted</FileTableHead>
+                    <FileTableHead className="w-40">
+                      <span className="sr-only">Actions</span>
+                    </FileTableHead>
+                  </FileTableRow>
+                </FileTableHeader>
+                <FileTableBody>
+                  {items.map((item) => (
+                    <FileTableRow
+                      key={item.id}
+                      data-state={
+                        selected.has(item.id) || item.id === itemId ? "selected" : undefined
+                      }
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/trash/items/${item.id}`)}
+                    >
+                      <FileTableCell onClick={(event) => event.stopPropagation()}>
                         <Checkbox
-                          aria-label="Select all files in Trash"
-                          checked={allSelected}
-                          onCheckedChange={() =>
-                            setSelected(
-                              allSelected ? new Set() : new Set(items.map((item) => item.id)),
-                            )
-                          }
+                          aria-label={`Select ${item.name}`}
+                          checked={selected.has(item.id)}
+                          onCheckedChange={() => toggle(item.id)}
                         />
-                      </TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="hidden sm:table-cell">Size</TableHead>
-                      <TableHead className="hidden md:table-cell">Deleted</TableHead>
-                      <TableHead className="w-40">
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((item) => {
-                      const KindIcon = fileKindIcon(item.contentType);
-                      return (
-                        <TableRow
-                          key={item.id}
-                          data-state={
-                            selected.has(item.id) || item.id === itemId ? "selected" : undefined
-                          }
-                          className="cursor-pointer"
-                          onClick={() => navigate(`/trash/items/${item.id}`)}
-                        >
-                          <TableCell onClick={(event) => event.stopPropagation()}>
-                            <Checkbox
-                              aria-label={`Select ${item.name}`}
-                              checked={selected.has(item.id)}
-                              onCheckedChange={() => toggle(item.id)}
-                            />
-                          </TableCell>
-                          <TableCell className="min-w-0">
-                            <div className="flex min-w-0 items-center gap-2.5">
-                              <KindIcon className="size-4 shrink-0 text-muted-foreground" />
-                              <span className="block max-w-[30rem] truncate" title={item.name}>
-                                {item.name}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden text-muted-foreground sm:table-cell">
-                            {formatBytes(item.size)}
-                          </TableCell>
-                          <TableCell
-                            className="hidden text-muted-foreground md:table-cell"
-                            title={new Date(item.deletedAt).toLocaleString()}
+                      </FileTableCell>
+                      <FileTableCell className="min-w-0 overflow-hidden">
+                        <FileName name={item.name} contentType={item.contentType} />
+                      </FileTableCell>
+                      <FileTableCell className="hidden text-muted-foreground sm:table-cell">
+                        {formatBytes(item.size)}
+                      </FileTableCell>
+                      <FileTableCell
+                        className="hidden text-muted-foreground md:table-cell"
+                        title={new Date(item.deletedAt).toLocaleString()}
+                      >
+                        {formatRelative(item.deletedAt)}
+                      </FileTableCell>
+                      <FileTableCell onClick={(event) => event.stopPropagation()}>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={restoreMutation.isPending}
+                            onClick={() => restoreMutation.mutate([item.id])}
                           >
-                            {formatRelative(item.deletedAt)}
-                          </TableCell>
-                          <TableCell onClick={(event) => event.stopPropagation()}>
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={restoreMutation.isPending}
-                                onClick={() => restoreMutation.mutate([item.id])}
-                              >
-                                Restore
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Permanently delete ${item.name}`}
-                                title="Delete forever"
-                                onClick={() => {
-                                  setSelected(new Set([item.id]));
-                                  setPurgeOpen(true);
-                                }}
-                              >
-                                <Trash2 />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
-            <div className="flex h-12 shrink-0 items-center justify-end border-t px-3 text-sm text-muted-foreground tabular-nums">
-              {items.length} {items.length === 1 ? "item" : "items"}
-            </div>
-          </div>
+                            Restore
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Permanently delete ${item.name}`}
+                            title="Delete forever"
+                            onClick={() => {
+                              setSelected(new Set([item.id]));
+                              setPurgeOpen(true);
+                            }}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      </FileTableCell>
+                    </FileTableRow>
+                  ))}
+                </FileTableBody>
+              </FileTable>
+            )}
+          </FileTableFrame>
         }
       />
 

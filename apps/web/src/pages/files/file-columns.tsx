@@ -1,19 +1,11 @@
-import {
-  File,
-  FileAudio,
-  FileText,
-  FileVideo,
-  Image,
-  LoaderCircle,
-  TriangleAlert,
-  type LucideIcon,
-} from "lucide-react";
+import { LoaderCircle, TriangleAlert } from "lucide-react";
 import { createColumnHelper, type RowData } from "@tanstack/react-table";
 import type { PropertyValue, QueryOrder } from "@keva/schema";
-import { formatPropertyValue, formatBytes, formatRelative } from "../../lib/format";
+import { formatBytes, formatRelative } from "../../lib/format";
 import { type UploadQueueRow } from "../../lib/use-upload-queue";
+import { FileName, FileProperties } from "../../components/file-browser/FileTable";
+import { fileKindIcon } from "../../components/file-browser/file-kind-icon";
 import { fileSortColumn, fileSortDirection, type FileSortColumn } from "../../lib/file-order";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -37,34 +29,7 @@ declare module "@tanstack/react-table" {
   }
 }
 
-const filenameParts = (name: string) => {
-  const dot = name.lastIndexOf(".");
-  return dot <= 0
-    ? { stem: name, extension: "" }
-    : { stem: name.slice(0, dot), extension: name.slice(dot) };
-};
-
-const propertyChipLabel = (key: string, value: PropertyValue): string => {
-  if (value === null) return key;
-  return `${key}:${formatPropertyValue(value)}`;
-};
-
-export const fileKindIcon = (contentType: string): LucideIcon => {
-  if (contentType.startsWith("image/")) return Image;
-  if (contentType.startsWith("video/")) return FileVideo;
-  if (contentType.startsWith("audio/")) return FileAudio;
-  if (
-    contentType.startsWith("text/") ||
-    contentType === "application/pdf" ||
-    contentType === "application/json" ||
-    contentType.includes("word") ||
-    contentType.includes("document") ||
-    contentType.includes("rtf")
-  ) {
-    return FileText;
-  }
-  return File;
-};
+export { fileKindIcon };
 
 const columnHelper = createColumnHelper<FileRow>();
 
@@ -196,25 +161,12 @@ const columns = [
           />
         );
       }
-      const KindIcon = fileKindIcon(row.original.contentType);
-      const filename = filenameParts(getValue());
       return (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <KindIcon className="size-4 shrink-0 text-muted-foreground" />
-          <button
-            type="button"
-            className="flex w-full min-w-0 text-left text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            title={getValue()}
-            aria-label={getValue()}
-            onClick={(event) => {
-              event.stopPropagation();
-              meta?.onOpenItem(row.original.id);
-            }}
-          >
-            <span className="min-w-0 truncate">{filename.stem}</span>
-            <span className="shrink-0">{filename.extension}</span>
-          </button>
-        </div>
+        <FileName
+          name={getValue()}
+          contentType={row.original.contentType}
+          onOpen={() => meta?.onOpenItem(row.original.id)}
+        />
       );
     },
   }),
@@ -252,31 +204,12 @@ const columns = [
     id: "properties",
     header: "Properties",
     cell: (ctx) => {
-      const { properties } = ctx.row.original;
-      const keys = Object.keys(properties).slice(0, 3);
-      if (keys.length === 0) return null;
       const onFilter = ctx.table.options.meta?.onFilterByProperty;
       return (
-        <div className="flex flex-wrap gap-1">
-          {keys.map((key) => {
-            const value = properties[key]!;
-            return (
-              <Badge
-                key={key}
-                variant="secondary"
-                render={<button type="button" />}
-                title={`Filter by ${propertyChipLabel(key, value)}`}
-                className="cursor-pointer transition-colors hover:bg-primary/15 hover:text-foreground"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onFilter?.(key, value);
-                }}
-              >
-                {propertyChipLabel(key, value)}
-              </Badge>
-            );
-          })}
-        </div>
+        <FileProperties
+          properties={ctx.row.original.properties}
+          {...(onFilter ? { onFilter } : {})}
+        />
       );
     },
   }),
