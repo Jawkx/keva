@@ -7,14 +7,8 @@ import { useApiError } from "../lib/useApiError";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +22,16 @@ const statusLabel = {
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const dateLabel = (value: string | null) => (value ? dateFormatter.format(new Date(value)) : null);
+
+async function startCheckout(slug: string) {
+  const result = await authClient.checkout({ slug });
+  if (result.error) toast.error(result.error.message ?? "Could not start checkout.");
+}
+
+async function openPortal() {
+  const result = await authClient.customer.portal();
+  if (result.error) toast.error(result.error.message ?? "Could not open billing.");
+}
 
 export function SubscriptionCard() {
   const handleError = useApiError();
@@ -49,28 +53,17 @@ export function SubscriptionCard() {
     onError: (error) => toast.error(handleError(error)),
   });
 
-  const startCheckout = async (slug: string) => {
-    const result = await authClient.checkout({ slug });
-    if (result.error) toast.error(result.error.message ?? "Could not start checkout.");
-  };
-
-  const openPortal = async () => {
-    const result = await authClient.customer.portal();
-    if (result.error) toast.error(result.error.message ?? "Could not open billing.");
-  };
-
   if (billingQuery.isPending) {
     return (
-      <Card className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-muted" />
-        <CardHeader>
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-5 w-full max-w-md" />
+      <Card className="relative gap-0 overflow-hidden bg-transparent py-0 ring-0">
+        <CardHeader className="px-0 pb-5">
+          <Skeleton className="h-6 w-28" />
           <CardAction>
             <Skeleton className="h-5 w-16 rounded-full" />
           </CardAction>
         </CardHeader>
-        <CardContent>
+        <Separator />
+        <CardContent className="px-0 pt-6">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="flex min-h-52 flex-col rounded-lg border p-4">
@@ -103,13 +96,9 @@ export function SubscriptionCard() {
   const renewal = status.trialEndsAt ?? status.currentPeriodEnd;
 
   return (
-    <Card className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,var(--chart-2),var(--chart-4),var(--chart-1))]" />
-      <CardHeader>
-        <CardTitle>Subscription</CardTitle>
-        <CardDescription>
-          Four fixed plans. Egress is free, and there are no usage overages.
-        </CardDescription>
+    <Card className="relative gap-0 overflow-hidden bg-transparent py-0 ring-0">
+      <CardHeader className="px-0 pb-5">
+        <CardTitle className="text-xl font-semibold tracking-tight">Billing</CardTitle>
         <CardAction className="flex items-center gap-2">
           <Badge variant={status.status === "past_due" ? "destructive" : "secondary"}>
             {statusLabel[status.status]}
@@ -122,7 +111,8 @@ export function SubscriptionCard() {
           )}
         </CardAction>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <Separator />
+      <CardContent className="flex flex-col gap-4 px-0 pt-6">
         {status.status === "unsubscribed" && (
           <Alert>
             <AlertTitle>Choose a plan to start your 14-day trial</AlertTitle>

@@ -302,7 +302,13 @@ export function AppShell() {
               <Outlet />
             ) : (
               <div className="min-h-0 flex-1 overflow-auto">
-                <div className="mx-auto w-full max-w-5xl p-4 md:p-6">
+                <div
+                  className={
+                    location.pathname === "/settings"
+                      ? "w-full p-4 md:p-6 lg:px-8"
+                      : "mx-auto w-full max-w-5xl p-4 md:p-6"
+                  }
+                >
                   <Outlet />
                 </div>
               </div>

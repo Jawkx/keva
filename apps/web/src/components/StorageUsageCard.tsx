@@ -1,7 +1,7 @@
 import type { UsageResult } from "@keva/sdk";
 import { formatBytes, formatContentType } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -53,12 +53,12 @@ export function StorageUsageCard() {
   const { data: usage, isPending, isError } = useUsage();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Storage</CardTitle>
-        <CardDescription>How much you've stored in keva.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div>
+      <header className="pb-5">
+        <h2 className="font-heading text-xl font-semibold tracking-tight">Storage</h2>
+      </header>
+      <Separator />
+      <section className="py-6">
         {isPending ? (
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -99,8 +99,8 @@ export function StorageUsageCard() {
         ) : (
           <UsageBreakdown usage={usage} />
         )}
-      </CardContent>
-    </Card>
+      </section>
+    </div>
   );
 }
 
