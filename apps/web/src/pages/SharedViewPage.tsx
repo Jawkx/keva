@@ -1,4 +1,4 @@
-import { Inbox, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
@@ -17,8 +17,10 @@ import { ShareContextProvider } from "./share/share-context";
 import { ShareUploadZone } from "./share/ShareUploadZone";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Spinner } from "@/components/ui/spinner";
 import { UserAvatar } from "../components/UserAvatar";
+import { viewIcon } from "../components/view-icons";
 
 function SharedViewBody({ grantId }: { grantId: string }) {
   const navigate = useNavigate();
@@ -51,6 +53,7 @@ function SharedViewBody({ grantId }: { grantId: string }) {
   const self = selfQuery.data;
   const canRead = self.scopes.includes("read");
   const canWrite = self.scopes.includes("write");
+  const ViewIcon = viewIcon(self.icon);
   return (
     <ShareContextProvider
       value={{
@@ -60,20 +63,39 @@ function SharedViewBody({ grantId }: { grantId: string }) {
         onGone: () => navigate("/shared"),
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
-            <Inbox className="size-5" />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
+        <div className="flex shrink-0 items-center gap-2 px-4 pt-4">
+          <div className="flex size-8 shrink-0 items-center justify-center sm:size-9">
+            <ViewIcon className="size-5 sm:size-6" />
           </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate font-heading text-lg font-medium">{self.name}</h1>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <h1 className="min-w-0 flex-1 truncate text-lg leading-none font-medium sm:text-[21px]">
+            {self.name}
+          </h1>
+          <HoverCard>
+            <HoverCardTrigger
+              delay={100}
+              closeDelay={100}
+              render={
+                <button
+                  type="button"
+                  aria-label={`Show access shared by ${self.owner.name}`}
+                  className="ml-auto flex min-w-0 max-w-[50%] shrink-0 items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                />
+              }
+            >
               <UserAvatar avatar={self.owner.avatar} name={self.owner.name} className="size-4" />
               <span className="truncate">Shared by {self.owner.name}</span>
-            </div>
-          </div>
-          {canRead && <Badge variant="secondary">View</Badge>}
-          {canWrite && <Badge variant="secondary">Upload</Badge>}
+            </HoverCardTrigger>
+            <HoverCardContent side="bottom" align="end" className="w-64">
+              <div className="flex flex-col gap-2 py-1">
+                <p className="font-medium">Access granted</p>
+                <div className="flex flex-wrap gap-1">
+                  {canRead && <Badge variant="secondary">View &amp; download</Badge>}
+                  {canWrite && <Badge variant="secondary">Upload</Badge>}
+                </div>
+              </div>
+            </HoverCardContent>
+          </HoverCard>
         </div>
         {canRead ? (
           <ShareReadView canWrite={canWrite} />

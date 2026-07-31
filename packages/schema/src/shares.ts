@@ -138,6 +138,7 @@ export type ShareSelf = typeof ShareSelf.Type;
 
 export const AccountShareSelf = Schema.Struct({
   ...ShareSelf.fields,
+  icon: Schema.NullOr(Schema.String),
   owner: SharePerson,
 });
 export type AccountShareSelf = typeof AccountShareSelf.Type;

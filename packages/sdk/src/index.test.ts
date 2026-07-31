@@ -647,6 +647,7 @@ describe("SharedViewClient", () => {
         if (url.endsWith("/shared-views/grant-account/self")) {
           return Response.json({
             name: "Client drop",
+            icon: "inbox",
             owner: {
               id: "owner",
               name: "Owner",
@@ -672,7 +673,7 @@ describe("SharedViewClient", () => {
       },
     });
 
-    await expect(client.self()).resolves.toMatchObject({ name: "Client drop" });
+    await expect(client.self()).resolves.toMatchObject({ name: "Client drop", icon: "inbox" });
     await expect(
       client.query({ where: [], limit: 10, offset: 0, order: "created_at_desc" }),
     ).resolves.toMatchObject({ totalCount: 0 });

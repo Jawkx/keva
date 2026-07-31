@@ -142,11 +142,12 @@ const createView = async (
   app: ReturnType<typeof makeApp>,
   conditions: QueryCondition[],
   name = "Alpha view",
+  icon?: string,
 ) => {
   const response = await app.request("/api/views", {
     method: "POST",
     headers: admin,
-    body: JSON.stringify({ name, conditions }),
+    body: JSON.stringify({ name, conditions, icon }),
   });
   return { status: response.status, view: (await response.json()) as ViewRecord };
 };
@@ -629,7 +630,7 @@ describe("server share subsystem", () => {
 
   it("binds an accepted shared view to the recipient account and owner tenant", async () => {
     const app = makeApp();
-    const { view } = await createView(app, ALPHA, "Client drop");
+    const { view } = await createView(app, ALPHA, "Client drop", "inbox");
     const invited = await app.request("/api/account-shares", {
       method: "POST",
       headers: admin,
@@ -689,6 +690,16 @@ describe("server share subsystem", () => {
     });
     expect(acceptedAgain.status).toBe(200);
     expect(await acceptedAgain.json()).toMatchObject({ status: "accepted" });
+
+    const sharedViewSelf = await app.request(`/api/shared-views/${grant.id}/self`, {
+      headers: { cookie: RECIPIENT_COOKIE },
+    });
+    expect(await sharedViewSelf.json()).toMatchObject({
+      name: "Client drop",
+      icon: "inbox",
+      scopes: ["read", "write"],
+      owner: { name: "Owner" },
+    });
 
     const propertyOverride = await app.request(`/api/shared-views/${grant.id}/items`, {
       method: "POST",
