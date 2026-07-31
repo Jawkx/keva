@@ -12,7 +12,7 @@ import { Suspense, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { PropertyValue } from "@keva/schema";
+import type { ItemPresentation, PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { FileActivity } from "./FileActivity";
 import { PropertiesEditor } from "./PropertiesEditor";
@@ -20,6 +20,7 @@ import { CopyButton } from "./CopyButton";
 import { CsvPreviewViewer } from "./viewers/CsvPreviewViewer";
 import { PdfPreviewViewer } from "./viewers/PdfPreviewViewer";
 import { FilePreviewSkeleton } from "./viewers/FilePreviewSkeleton";
+import { ImagePreviewViewer } from "./viewers/ImagePreviewViewer";
 import { HtmlPreviewViewer } from "./viewers/HtmlPreviewViewer";
 import { MarkdownPreviewViewer } from "./viewers/MarkdownPreviewViewer";
 import { errorMessage } from "../lib/errors";
@@ -97,7 +98,6 @@ export function FileDetail({
   const trashMode = variant === "trash";
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
   const [fullScreen, setFullScreen] = useState(false);
 
@@ -234,6 +234,43 @@ export function FileDetail({
     onError: (err) => toast.error(errorMessage(err)),
   });
 
+  const rotationMutation = useMutation({
+    mutationFn: ({
+      presentation,
+      expectedRevision,
+    }: {
+      presentation: ItemPresentation;
+      expectedRevision: number;
+    }) =>
+      keva.patch(itemId, {
+        expectedRevision,
+        set: {},
+        unset: [],
+        presentation,
+      }),
+    onMutate: async ({ presentation }) => {
+      await queryClient.cancelQueries({ queryKey: itemQueryKey(itemId) });
+      const previous = queryClient.getQueryData<KevaItem>(itemQueryKey(itemId));
+      if (previous) {
+        queryClient.setQueryData<KevaItem>(itemQueryKey(itemId), {
+          ...previous,
+          presentation,
+        });
+      }
+      return { previous };
+    },
+    onSuccess: (updated) => {
+      cachePatchedItem(queryClient, updated);
+    },
+    onError: (err, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(itemQueryKey(itemId), context.previous);
+      }
+      void queryClient.invalidateQueries({ queryKey: itemQueryKey(itemId) });
+      toast.error(errorMessage(err));
+    },
+  });
+
   const busy =
     downloadMutation.isPending ||
     deleteMutation.isPending ||
@@ -265,16 +302,22 @@ export function FileDetail({
     } catch {}
   };
 
-  const onImageLoad = useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
-    const image = event.currentTarget;
-    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-      setImageAspectRatio(image.naturalWidth / image.naturalHeight);
-    }
-  }, []);
-
   const nameExtensionStart = item ? extensionStart(item.name) : 0;
   const nameStem = item?.name.slice(0, nameExtensionStart) ?? "…";
   const nameExtension = item?.name.slice(nameExtensionStart) ?? "";
+  const imageRotation = item?.presentation?.image?.rotation ?? 0;
+
+  const rotateImage = (direction: -1 | 1) => {
+    if (!item || rotationMutation.isPending) return;
+    const rotation = ((((imageRotation + direction * 90) % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+    rotationMutation.mutate({
+      presentation: {
+        ...item.presentation,
+        image: { ...item.presentation?.image, rotation },
+      },
+      expectedRevision: item.revision,
+    });
+  };
 
   return (
     <div
@@ -495,17 +538,14 @@ export function FileDetail({
                 <FilePreviewSkeleton />
               )
             ) : preview?.kind === "image" ? (
-              <div
-                className="w-full max-w-full overflow-hidden rounded-md bg-muted/30"
-                style={{ aspectRatio: imageAspectRatio ?? 16 / 9 }}
-              >
-                <img
-                  src={preview.url}
-                  alt={item.name}
-                  className="h-full w-full object-contain"
-                  onLoad={onImageLoad}
-                />
-              </div>
+              <ImagePreviewViewer
+                key={preview.url}
+                src={preview.url}
+                alt={item.name}
+                rotation={imageRotation}
+                rotating={rotationMutation.isPending}
+                {...(trashMode ? {} : { onRotate: rotateImage })}
+              />
             ) : preview?.kind === "pdf" ? (
               <Suspense fallback={<FilePreviewSkeleton variant="viewer" />}>
                 <PdfPreviewViewer

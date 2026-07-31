@@ -12,6 +12,7 @@ import { Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
 import {
   MetadataStore,
+  type ItemPatchInput,
   type MetadataStoreService,
   DEFAULT_STORAGE_QUOTA_BYTES,
   SUGGESTION_KEY_LIMIT,
@@ -44,6 +45,11 @@ export interface PostgresConfig {
   readonly idleTimeoutSeconds?: number;
   readonly connectTimeoutSeconds?: number;
 }
+
+const patchTouchesUpdatedAt = (patch: ItemPatchInput): boolean =>
+  Object.keys(patch.fields).length > 0 ||
+  Object.keys(patch.set).length > 0 ||
+  patch.unset.length > 0;
 
 export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   insert: (item) =>
@@ -287,19 +293,17 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           const properties = { ...row.properties, ...patch.set };
           for (const key of patch.unset) delete properties[key];
           if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
-          // `updated_at` is always present, so `sql(values)` is never empty and
-          // the inline `properties` clause always has a valid leading comma.
-          const values: Record<string, unknown> = {
-            updated_at: updatedAt,
-            revision: row.revision + 1,
-          };
+          const presentation = patch.presentation ?? row.presentation;
+          const values: Record<string, unknown> = { revision: row.revision + 1 };
+          if (patchTouchesUpdatedAt(patch)) values.updated_at = updatedAt;
           for (const [key, value] of Object.entries(patch.fields)) {
             const field = FIELD_BY_KEY.get(key);
             if (field) values[field.column] = value;
           }
           const updated = await transaction<ItemRow[]>`
           update items
-          set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb
+          set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb,
+              presentation = ${jsonbParam(presentation)}::text::jsonb
           where tenant_id = ${tenantId} and id = ${id} and status = 'ready' and deleted_at is null
           returning *
         `;
@@ -331,16 +335,16 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           const properties = { ...row.properties, ...patch.set };
           for (const key of patch.unset) delete properties[key];
           if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
-          const values: Record<string, unknown> = {
-            updated_at: updatedAt,
-            revision: row.revision + 1,
-          };
+          const presentation = patch.presentation ?? row.presentation;
+          const values: Record<string, unknown> = { revision: row.revision + 1 };
+          if (patchTouchesUpdatedAt(patch)) values.updated_at = updatedAt;
           for (const [key, value] of Object.entries(patch.fields)) {
             const field = FIELD_BY_KEY.get(key);
             if (field) values[field.column] = value;
           }
           const updated = await transaction<ItemRow[]>`
-            update items set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb
+            update items set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb,
+              presentation = ${jsonbParam(presentation)}::text::jsonb
             where tenant_id = ${tenantId} and id = ${id} and status = 'ready' and deleted_at is null returning *
           `;
           if (!updated[0]) return { status: "missing" };

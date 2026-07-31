@@ -3,6 +3,7 @@ import type {
   PropertySuggestion,
   PropertySummary,
   PropertyValue,
+  ItemPresentation,
   ItemEvent,
   ItemEventsResult,
   KevaError,
@@ -61,6 +62,7 @@ export interface ItemPatchInput {
   readonly fields: Readonly<Record<string, PropertyValue>>;
   readonly set: Readonly<Record<string, PropertyValue>>;
   readonly unset: readonly string[];
+  readonly presentation?: ItemPresentation;
 }
 
 export interface UploadAttempt {

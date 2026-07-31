@@ -539,6 +539,30 @@ describe("KevaEngine item history", () => {
     expect(await Effect.runPromise(program)).toEqual(["updated", "uploaded"]);
   });
 
+  it("persists presentation metadata without recording activity", async () => {
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(actorPrincipal);
+      const item = yield* upload("tenant-a", "scan.jpg", new TextEncoder().encode("image"));
+      yield* Effect.sleep(2);
+      const updated = yield* engine.patch(item.id, {
+        set: {},
+        unset: [],
+        presentation: { image: { rotation: 90 } },
+      });
+      const fetched = yield* engine.get(item.id);
+      const { events } = yield* engine.events(item.id);
+      return { item, updated, fetched, events };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.updated.presentation).toEqual({ image: { rotation: 90 } });
+    expect(result.updated.updatedAt).toBe(result.item.updatedAt);
+    expect(result.updated.revision).toBe(result.item.revision + 1);
+    expect(result.fetched.presentation).toEqual({ image: { rotation: 90 } });
+    expect(result.fetched.updatedAt).toBe(result.item.updatedAt);
+    expect(result.events.map((event) => event.action)).toEqual(["uploaded"]);
+  });
+
   it("records a combined rename and property patch in one event", async () => {
     const program = Effect.gen(function* () {
       const engine = makeKevaEngine(actorPrincipal);

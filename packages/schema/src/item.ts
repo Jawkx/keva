@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { ItemId, ItemStatus } from "./common.js";
 import { Properties } from "./properties.js";
+import { ItemPresentation } from "./presentation.js";
 
 export const KevaItem = Schema.Struct({
   id: ItemId,
@@ -20,5 +21,6 @@ export const KevaItem = Schema.Struct({
   updatedAt: Schema.String,
   deletedAt: Schema.optional(Schema.String),
   properties: Properties,
+  presentation: Schema.optional(ItemPresentation),
 });
 export type KevaItem = typeof KevaItem.Type;

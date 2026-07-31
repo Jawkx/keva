@@ -3,6 +3,7 @@ import type {
   ItemEventAction,
   ItemEventPayload,
   Properties,
+  ItemPresentation,
   ItemStatus,
   QueryCondition,
   Scope,
@@ -50,6 +51,7 @@ export const items = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
     properties: jsonb("properties").$type<Properties>().notNull().default({}),
+    presentation: jsonb("presentation").$type<ItemPresentation>().notNull().default({}),
   },
   (table) => [
     uniqueIndex("items_tenant_id_id_unique").on(table.tenantId, table.id),

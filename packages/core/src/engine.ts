@@ -113,7 +113,10 @@ const patchItem = (principal: Principal, id: string, patch: ItemPatch) =>
     const patched = yield* metadata.patchWithEvent(
       principal.tenantId,
       id,
-      routed.routed,
+      {
+        ...routed.routed,
+        ...(patch.presentation === undefined ? {} : { presentation: patch.presentation }),
+      },
       now(),
       patch.expectedRevision,
       (previous, updated) => {

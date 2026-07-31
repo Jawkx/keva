@@ -3,6 +3,7 @@ import { AvatarRecipe } from "./avatar.js";
 import { IsoInstant, ItemId, ItemStatus } from "./common.js";
 import { type KevaItem } from "./item.js";
 import { Properties } from "./properties.js";
+import { ItemPresentation } from "./presentation.js";
 import { QueryCondition } from "./query.js";
 import { ShareScope } from "./share-context.js";
 import { CreateView, ViewRecord } from "./views.js";
@@ -170,6 +171,7 @@ const RedactedItemFields = {
   createdAt: Schema.String,
   updatedAt: Schema.String,
   properties: Properties,
+  presentation: Schema.optional(ItemPresentation),
 };
 
 export const SharedItem = Schema.Struct({
@@ -202,6 +204,7 @@ export const toOwnerItem = (item: KevaItem): OwnerItem => ({
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
   properties: item.properties,
+  ...(item.presentation === undefined ? {} : { presentation: item.presentation }),
 });
 
 export const toSharedItem = (item: KevaItem, canDelete = false): SharedItem => ({

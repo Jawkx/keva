@@ -11,6 +11,7 @@ import {
   encodeCursor,
   ItemEvent,
   ItemId,
+  ItemPatch,
   itemMatchesCondition,
   type KevaItem,
   Principal,
@@ -85,6 +86,19 @@ describe("schema", () => {
         payload: { set: { status: "done" } },
       }).action,
     ).toBe("properties_changed");
+  });
+
+  it("accepts quarter-turn presentation rotation and rejects other angles", () => {
+    expect(
+      Schema.decodeUnknownSync(ItemPatch)({
+        presentation: { image: { rotation: 270 } },
+      }).presentation,
+    ).toEqual({ image: { rotation: 270 } });
+    expect(() =>
+      Schema.decodeUnknownSync(ItemPatch)({
+        presentation: { image: { rotation: 45 } },
+      }),
+    ).toThrow();
   });
 
   it("rejects invalid arrays, legacy scalars, and reserved keys", () => {

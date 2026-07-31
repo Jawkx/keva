@@ -27,6 +27,7 @@ export interface ItemRow {
   readonly updated_at: Date | string;
   readonly deleted_at: Date | string | null;
   readonly properties: KevaItem["properties"];
+  readonly presentation: NonNullable<KevaItem["presentation"]>;
 }
 
 export const asIso = (value: Date | string): string =>
@@ -50,6 +51,7 @@ export const mapRow = (row: ItemRow): KevaItem => ({
   updatedAt: asIso(row.updated_at),
   ...(row.deleted_at === null ? {} : { deletedAt: asIso(row.deleted_at) }),
   properties: canonicalizeProperties(row.properties),
+  presentation: row.presentation,
 });
 
 export interface UploadAttemptRow {

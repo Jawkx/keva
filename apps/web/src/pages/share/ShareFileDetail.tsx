@@ -7,6 +7,7 @@ import { propertyListClass } from "../../components/PropertiesEditor";
 import { CsvPreviewViewer } from "../../components/viewers/CsvPreviewViewer";
 import { PdfPreviewViewer } from "../../components/viewers/PdfPreviewViewer";
 import { FilePreviewSkeleton } from "../../components/viewers/FilePreviewSkeleton";
+import { ImagePreviewViewer } from "../../components/viewers/ImagePreviewViewer";
 import { HtmlPreviewViewer } from "../../components/viewers/HtmlPreviewViewer";
 import { MarkdownPreviewViewer } from "../../components/viewers/MarkdownPreviewViewer";
 import { errorMessage } from "../../lib/errors";
@@ -60,7 +61,6 @@ interface ShareFileDetailProps {
 export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   const { client } = useShare();
   const queryClient = useQueryClient();
-  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
   const [activePanel, setActivePanel] = useState<Panel | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -132,13 +132,6 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
-
-  const onImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
-    const image = event.currentTarget;
-    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-      setImageAspectRatio(image.naturalWidth / image.naturalHeight);
-    }
-  };
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
@@ -239,17 +232,12 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
                 <FilePreviewSkeleton />
               )
             ) : preview?.kind === "image" ? (
-              <div
-                className="w-full max-w-full overflow-hidden rounded-md bg-muted/30"
-                style={{ aspectRatio: imageAspectRatio ?? 16 / 9 }}
-              >
-                <img
-                  src={preview.url}
-                  alt={item.name}
-                  className="h-full w-full object-contain"
-                  onLoad={onImageLoad}
-                />
-              </div>
+              <ImagePreviewViewer
+                key={preview.url}
+                src={preview.url}
+                alt={item.name}
+                rotation={item.presentation?.image?.rotation ?? 0}
+              />
             ) : preview?.kind === "pdf" ? (
               <Suspense fallback={<FilePreviewSkeleton variant="viewer" />}>
                 <PdfPreviewViewer

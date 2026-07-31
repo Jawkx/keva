@@ -113,6 +113,13 @@
       "when": 1785509028260,
       "tag": "0015_cultured_thunderbolt_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785515964638,
+      "tag": "0016_luxuriant_pyro",
+      "breakpoints": true
     }
   ]
 }

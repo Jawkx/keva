@@ -510,6 +510,31 @@ describe("KevaClient", () => {
     expect(called).toBe(false);
   });
 
+  it("sends and decodes presentation metadata patches", async () => {
+    let body: unknown;
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body));
+        return Response.json({ ...item, presentation: { image: { rotation: 90 } } });
+      },
+    });
+
+    const updated = await client.patch(item.id, {
+      set: {},
+      unset: [],
+      presentation: { image: { rotation: 90 } },
+    });
+
+    expect(body).toEqual({
+      set: {},
+      unset: [],
+      presentation: { image: { rotation: 90 } },
+    });
+    expect(updated.presentation).toEqual({ image: { rotation: 90 } });
+  });
+
   it("sends bulk patches with optional per-item revisions", async () => {
     const secondId = "22222222-2222-4222-8222-222222222222";
     let request: { url: string; method: string | undefined; body: unknown } | undefined;

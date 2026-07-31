@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { ItemId } from "./common.js";
 import { KevaItem } from "./item.js";
 import { Properties, PropertyValue } from "./properties.js";
+import { ItemPresentation } from "./presentation.js";
 
 export const BatchDelete = Schema.Struct({
   ids: Schema.Array(ItemId).pipe(Schema.minItems(1), Schema.maxItems(1000)),
@@ -49,6 +50,7 @@ export const ItemPatch = Schema.Struct({
   unset: Schema.optionalWith(Schema.Array(Schema.String), {
     default: () => [],
   }),
+  presentation: Schema.optional(ItemPresentation),
 });
 export type ItemPatch = typeof ItemPatch.Type;
 
