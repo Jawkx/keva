@@ -109,12 +109,12 @@ export const insertItemRow = async (
   await transaction`
     insert into items (
       id, tenant_id, name, content_type, declared_size, size, etag,
-      source, status, storage_key, staging_key, created_at,
+      source, uploaded_by_user_id, status, storage_key, staging_key, created_at,
       updated_at, properties, upload_period_start, upload_reservation_state
     ) values (
       ${item.id}, ${item.tenantId}, ${item.name}, ${item.contentType},
       ${item.declaredSize}, ${item.size}, ${item.etag},
-      ${item.source}, ${item.status}, ${item.storageKey},
+      ${item.source}, ${item.uploadedByUserId ?? null}, ${item.status}, ${item.storageKey},
       ${item.stagingKey}, ${item.createdAt}, ${item.updatedAt},
       ${jsonbParam(properties)}::text::jsonb, ${periodStart}, ${periodStart ? "reserved" : null}
     )

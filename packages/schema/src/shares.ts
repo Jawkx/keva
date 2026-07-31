@@ -15,6 +15,7 @@ export const ShareGrantRecord = Schema.Struct({
   scopes: Schema.Array(ShareScope),
   conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.NullOr(Properties),
+  allowOwnDelete: Schema.Boolean,
   maxItemBytes: Schema.NullOr(Schema.Number),
   maxTotalBytes: Schema.NullOr(Schema.Number),
   maxItems: Schema.NullOr(Schema.Number),
@@ -38,6 +39,7 @@ export const CreateShareGrant = Schema.Struct({
   view: Schema.optional(CreateView),
   scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
   writeStamp: Schema.optional(Properties),
+  allowOwnDelete: Schema.optional(Schema.Boolean),
   maxItemBytes: Schema.optional(PositiveInt),
   maxTotalBytes: Schema.optional(PositiveInt),
   maxItems: Schema.optional(PositiveInt),
@@ -48,6 +50,9 @@ export const CreateShareGrant = Schema.Struct({
   }),
   Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
     message: () => "Write grants require a writeStamp",
+  }),
+  Schema.filter((grant) => !grant.allowOwnDelete || grant.scopes.includes("write"), {
+    message: () => "Deleting own uploads requires write access",
   }),
 );
 export type CreateShareGrant = typeof CreateShareGrant.Type;
@@ -67,6 +72,7 @@ export const CreateAccountShare = Schema.Struct({
   viewId: Schema.NonEmptyString,
   scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
   writeStamp: Schema.optional(Properties),
+  allowOwnDelete: Schema.optional(Schema.Boolean),
   maxItemBytes: Schema.optional(PositiveInt),
   maxTotalBytes: Schema.optional(PositiveInt),
   maxItems: Schema.optional(PositiveInt),
@@ -74,6 +80,9 @@ export const CreateAccountShare = Schema.Struct({
 }).pipe(
   Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
     message: () => "Write grants require a writeStamp",
+  }),
+  Schema.filter((grant) => !grant.allowOwnDelete || grant.scopes.includes("write"), {
+    message: () => "Deleting own uploads requires write access",
   }),
 );
 export type CreateAccountShare = typeof CreateAccountShare.Type;
@@ -93,6 +102,7 @@ export const AccountShareRecord = Schema.Struct({
   scopes: Schema.Array(ShareScope),
   conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.NullOr(Properties),
+  allowOwnDelete: Schema.Boolean,
   maxItemBytes: Schema.NullOr(Schema.Number),
   maxTotalBytes: Schema.NullOr(Schema.Number),
   maxItems: Schema.NullOr(Schema.Number),
@@ -109,6 +119,7 @@ export const ReceivedShare = Schema.Struct({
   name: Schema.NonEmptyString,
   icon: Schema.NullOr(Schema.String),
   scopes: Schema.Array(ShareScope),
+  allowOwnDelete: Schema.Boolean,
   status: AccountShareStatus,
   owner: SharePerson,
   createdAt: Schema.String,
@@ -124,6 +135,7 @@ export const ShareSelf = Schema.Struct({
   name: Schema.NonEmptyString,
   scopes: Schema.Array(ShareScope),
   expiresAt: Schema.NullOr(Schema.String),
+  allowOwnDelete: Schema.Boolean,
   upload: Schema.NullOr(
     Schema.Struct({
       maxItemBytes: Schema.NullOr(Schema.Number),
@@ -143,10 +155,9 @@ export const AccountShareSelf = Schema.Struct({
 });
 export type AccountShareSelf = typeof AccountShareSelf.Type;
 
-// A KevaItem with the tenant-internal storage fields (tenantId, storageKey,
-// stagingKey) removed. Everything a share visitor receives is redacted to this
-// shape at the route boundary.
-export const SharedItem = Schema.Struct({
+// A KevaItem with tenant-internal storage and uploader identity removed.
+// Everything a share visitor receives is redacted to this shape at the route boundary.
+const RedactedItemFields = {
   id: ItemId,
   name: Schema.NonEmptyString,
   contentType: Schema.NonEmptyString,
@@ -159,10 +170,15 @@ export const SharedItem = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   properties: Properties,
+};
+
+export const SharedItem = Schema.Struct({
+  ...RedactedItemFields,
+  canDelete: Schema.Boolean,
 });
 export type SharedItem = typeof SharedItem.Type;
 
-export const OwnerItem = SharedItem;
+export const OwnerItem = Schema.Struct(RedactedItemFields);
 export type OwnerItem = typeof OwnerItem.Type;
 
 export const OwnerInitiateUploadResult = Schema.Struct({
@@ -173,7 +189,7 @@ export const OwnerInitiateUploadResult = Schema.Struct({
 });
 export type OwnerInitiateUploadResult = typeof OwnerInitiateUploadResult.Type;
 
-export const toSharedItem = (item: KevaItem): SharedItem => ({
+export const toOwnerItem = (item: KevaItem): OwnerItem => ({
   id: item.id,
   name: item.name,
   contentType: item.contentType,
@@ -188,7 +204,10 @@ export const toSharedItem = (item: KevaItem): SharedItem => ({
   properties: item.properties,
 });
 
-export const toOwnerItem = (item: KevaItem): OwnerItem => toSharedItem(item);
+export const toSharedItem = (item: KevaItem, canDelete = false): SharedItem => ({
+  ...toOwnerItem(item),
+  canDelete,
+});
 
 export const SharedQueryResult = Schema.Struct({
   items: Schema.Array(SharedItem),

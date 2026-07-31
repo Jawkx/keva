@@ -134,12 +134,15 @@ export function SharedWithMePage() {
                       <div className="flex flex-wrap gap-1">
                         {canRead && <Badge variant="secondary">View & download</Badge>}
                         {canWrite && <Badge variant="secondary">Upload</Badge>}
+                        {share.allowOwnDelete && (
+                          <Badge variant="secondary">Remove own uploads</Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {canRead && canWrite
-                          ? `You can view matching files and upload new ones to ${share.owner.name}’s space. They control organization, retention, and deletion.`
+                          ? `You can view matching files and upload new ones to ${share.owner.name}’s space. They control organization, retention, and permanent deletion.`
                           : canWrite
-                            ? `Files you upload become files in ${share.owner.name}’s space. They control organization, retention, and deletion.`
+                            ? `Files you upload become files in ${share.owner.name}’s space. They control organization, retention, and permanent deletion.`
                             : `You can view files matching this view in ${share.owner.name}’s space.`}
                       </p>
                       <div className="mt-auto flex justify-end gap-2">

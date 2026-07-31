@@ -4,6 +4,7 @@ import {
   ApiTokenStore,
   TokenAndStaticAuthFromStoreLive,
   makePostgresApiTokenStore,
+  type SessionIdentityResolver,
   type SessionResolver,
 } from "./auth.js";
 import { ShareGrantStore, makePostgresShareGrantStore } from "./shares.js";
@@ -16,6 +17,7 @@ export interface RuntimeConfig {
   readonly tenantId: string;
   readonly database: DatabaseUnit;
   readonly sessionResolver?: SessionResolver;
+  readonly sessionIdentityResolver?: SessionIdentityResolver;
   readonly billing?: BillingStore;
   readonly s3: {
     readonly endpoint: string;
@@ -41,6 +43,9 @@ export const makeRuntimeLayer = (config: RuntimeConfig) => {
       staticToken: config.staticToken,
       tenantId: config.tenantId,
       ...(config.sessionResolver ? { sessionResolver: config.sessionResolver } : {}),
+      ...(config.sessionIdentityResolver
+        ? { sessionIdentityResolver: config.sessionIdentityResolver }
+        : {}),
     }),
     stores,
   );

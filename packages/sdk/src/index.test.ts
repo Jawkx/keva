@@ -364,6 +364,7 @@ describe("KevaClient", () => {
       scopes: ["read", "write"] as const,
       conditions: [{ key: "project", op: "has_value" as const, value: "alpha" }],
       writeStamp: { project: "alpha" },
+      allowOwnDelete: true,
       maxItemBytes: null,
       maxTotalBytes: null,
       maxItems: null,
@@ -416,6 +417,7 @@ describe("KevaClient", () => {
       name: "Client drop",
       icon: null,
       scopes: ["write"] as const,
+      allowOwnDelete: true,
       status: "pending" as const,
       owner: {
         id: "owner",
@@ -435,6 +437,7 @@ describe("KevaClient", () => {
       scopes: received.scopes,
       conditions: [{ key: "project", op: "has_value" as const, value: "alpha" }],
       writeStamp: { project: "alpha" },
+      allowOwnDelete: true,
       maxItemBytes: null,
       maxTotalBytes: null,
       maxItems: null,
@@ -556,6 +559,7 @@ describe("ShareClient", () => {
     size: 5,
     etag: "etag",
     source: "share:grant1",
+    canDelete: true,
     status: "ready" as const,
     revision: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -577,8 +581,17 @@ describe("ShareClient", () => {
           queryBody = JSON.parse(String(init?.body));
           return Response.json({ items: [sharedItem], totalCount: 3 });
         }
+        if (url.endsWith(`/items/${sharedItem.id}`) && init?.method === "DELETE") {
+          return Response.json({ ok: true });
+        }
         if (url.endsWith("/shares/self"))
-          return Response.json({ name: "Alpha", scopes: ["read"], expiresAt: null, upload: null });
+          return Response.json({
+            name: "Alpha",
+            scopes: ["read"],
+            expiresAt: null,
+            allowOwnDelete: false,
+            upload: null,
+          });
         throw new Error(`unexpected ${url}`);
       },
     });
@@ -595,7 +608,12 @@ describe("ShareClient", () => {
     expect(queryBody).toMatchObject({ offset: 1 });
     expect(result.items[0]).not.toHaveProperty("storageKey");
     await withFetch.self();
-    expect(authHeaders).toEqual(["Bearer keva_sh_abc_def", "Bearer keva_sh_abc_def"]);
+    await withFetch.delete(sharedItem.id);
+    expect(authHeaders).toEqual([
+      "Bearer keva_sh_abc_def",
+      "Bearer keva_sh_abc_def",
+      "Bearer keva_sh_abc_def",
+    ]);
   });
 
   it("uploads a file: initiate → PUT → confirm, returning a SharedItem", async () => {
@@ -656,6 +674,7 @@ describe("SharedViewClient", () => {
             },
             scopes: ["write"],
             expiresAt: null,
+            allowOwnDelete: true,
             upload: {
               maxItemBytes: null,
               maxTotalBytes: null,

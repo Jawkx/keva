@@ -1,7 +1,15 @@
 import type { ReactNode } from "react";
+import { Link, useLocation } from "react-router";
 import { ModeToggle } from "../../components/ModeToggle";
+import { authClient } from "../../lib/auth";
+import { Button } from "@/components/ui/button";
 
 export function ShareShell({ name, children }: { name: string; children: ReactNode }) {
+  const { data, isPending } = authClient.useSession();
+  const location = useLocation();
+  const isVisitor = !data || data.user.isAnonymous;
+  const returnPath = `${location.pathname}${location.search}${location.hash}`;
+
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <header className="shrink-0 border-b bg-background/80 backdrop-blur">
@@ -12,7 +20,26 @@ export function ShareShell({ name, children }: { name: string; children: ReactNo
           <span className="min-w-0 truncate text-lg font-medium text-muted-foreground">
             / {name}
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {!isPending && isVisitor && (
+              <Button
+                size="sm"
+                variant="outline"
+                nativeButton={false}
+                render={<Link to="/login" state={{ from: returnPath }} />}
+              >
+                Sign in
+              </Button>
+            )}
+            {data?.user.isAnonymous && (
+              <Button
+                size="sm"
+                nativeButton={false}
+                render={<Link to="/signup" target="_blank" rel="noreferrer" />}
+              >
+                Create account
+              </Button>
+            )}
             <ModeToggle />
           </div>
         </div>

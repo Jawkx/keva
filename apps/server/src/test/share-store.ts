@@ -22,6 +22,7 @@ interface StoredGrant {
   name: string;
   scopes: ShareGrantRecord["scopes"];
   writeStamp: ShareGrantRecord["writeStamp"];
+  allowOwnDelete: boolean;
   maxItemBytes: number | null;
   maxTotalBytes: number | null;
   maxItems: number | null;
@@ -65,6 +66,7 @@ export const makeInMemoryShareGrantStore = (
     scopes: [...grant.scopes],
     conditions: conditionsFor(grant.viewId),
     writeStamp: grant.writeStamp,
+    allowOwnDelete: grant.allowOwnDelete,
     maxItemBytes: grant.maxItemBytes,
     maxTotalBytes: grant.maxTotalBytes,
     maxItems: grant.maxItems,
@@ -84,6 +86,7 @@ export const makeInMemoryShareGrantStore = (
     scopes: [...grant.scopes],
     conditions: conditionsFor(grant.viewId),
     writeStamp: grant.writeStamp,
+    allowOwnDelete: grant.allowOwnDelete,
     maxItemBytes: grant.maxItemBytes,
     maxTotalBytes: grant.maxTotalBytes,
     maxItems: grant.maxItems,
@@ -99,6 +102,7 @@ export const makeInMemoryShareGrantStore = (
     name: views.get(grant.viewId)?.name ?? grant.name,
     icon: views.get(grant.viewId)?.icon ?? null,
     scopes: [...grant.scopes],
+    allowOwnDelete: grant.allowOwnDelete,
     status: account.status,
     owner: sharePerson(account.owner),
     createdAt: account.createdAt,
@@ -124,6 +128,7 @@ export const makeInMemoryShareGrantStore = (
             grantId: g.id,
             conditions: conditionsFor(g.viewId),
             ...(g.writeStamp ? { writeStamp: g.writeStamp } : {}),
+            allowOwnDelete: g.allowOwnDelete,
             limits: {
               maxItemBytes: g.maxItemBytes,
               maxTotalBytes: g.maxTotalBytes,
@@ -179,6 +184,7 @@ export const makeInMemoryShareGrantStore = (
             name: input.name,
             scopes: [...input.scopes],
             writeStamp: input.writeStamp ?? null,
+            allowOwnDelete: input.allowOwnDelete ?? false,
             maxItemBytes: input.maxItemBytes ?? null,
             maxTotalBytes: input.maxTotalBytes ?? null,
             maxItems: input.maxItems ?? null,
@@ -272,6 +278,7 @@ export const makeInMemoryShareGrantStore = (
             name: view.name,
             scopes: [...input.scopes],
             writeStamp: input.writeStamp ?? null,
+            allowOwnDelete: input.allowOwnDelete ?? false,
             maxItemBytes: input.maxItemBytes ?? null,
             maxTotalBytes: input.maxTotalBytes ?? null,
             maxItems: input.maxItems ?? null,
@@ -397,8 +404,10 @@ export const makeInMemoryShareGrantStore = (
             },
             share: {
               grantId: grant.id,
+              identityId: recipient.id,
               conditions: conditionsFor(grant.viewId),
               ...(grant.writeStamp ? { writeStamp: grant.writeStamp } : {}),
+              allowOwnDelete: grant.allowOwnDelete,
               limits: {
                 maxItemBytes: grant.maxItemBytes,
                 maxTotalBytes: grant.maxTotalBytes,

@@ -1,6 +1,6 @@
-import { Download, LockKeyhole, TriangleAlert, X } from "lucide-react";
+import { Download, LockKeyhole, Trash2, TriangleAlert, X } from "lucide-react";
 import { type ReactNode, Suspense, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CopyButton } from "../../components/CopyButton";
 import { propertyListClass } from "../../components/PropertiesEditor";
@@ -11,13 +11,27 @@ import { HtmlPreviewViewer } from "../../components/viewers/HtmlPreviewViewer";
 import { MarkdownPreviewViewer } from "../../components/viewers/MarkdownPreviewViewer";
 import { errorMessage } from "../../lib/errors";
 import { formatBytes, formatDate, formatPropertyValue, formatRelative } from "../../lib/format";
-import { shareContentQueryKey, shareItemQueryKey } from "../../lib/items-cache";
+import {
+  removeDeletedShareItemFromCache,
+  shareContentQueryKey,
+  shareItemQueryKey,
+} from "../../lib/items-cache";
 import { objectUrlFor } from "../../lib/object-url-cache";
 import { isCsv, isHtml, isImage, isMarkdown, isPdf, isPreviewable } from "../../lib/preview";
 import { runEffectPromise } from "../../lib/effect-runtime";
 import { loadPreviewContent } from "../../lib/preview-content";
 import { useShare } from "./share-context";
 import { Alert, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,8 +59,10 @@ interface ShareFileDetailProps {
 
 export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
   const { client } = useShare();
+  const queryClient = useQueryClient();
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
   const [activePanel, setActivePanel] = useState<Panel | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const itemQuery = useQuery({
     queryKey: shareItemQueryKey(itemId),
@@ -90,6 +106,17 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
     [item],
   );
   const panel: Panel = activePanel && panels.includes(activePanel) ? activePanel : panels[0]!;
+
+  const deleteMutation = useMutation({
+    mutationFn: () => client.delete(itemId),
+    onSuccess: () => {
+      removeDeletedShareItemFromCache(queryClient, itemId);
+      setDeleteOpen(false);
+      toast.success(`Moved ${item?.name ?? "upload"} to the owner’s Trash`);
+      onClose?.();
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
 
   const download = useMutation({
     mutationFn: async () => {
@@ -149,6 +176,18 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
             </TooltipTrigger>
             <TooltipContent>Download</TooltipContent>
           </Tooltip>
+
+          {item?.canDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Move upload to Trash"
+              disabled={deleteMutation.isPending}
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 />
+            </Button>
+          )}
 
           {onClose && (
             <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
@@ -268,6 +307,28 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
           </section>
         )}
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Move “{item?.name}” to Trash?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes your upload from the shared view and moves it to the owner’s Trash. The
+              owner can restore it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
+              Move to Trash
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

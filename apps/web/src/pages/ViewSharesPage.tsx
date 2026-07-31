@@ -222,6 +222,9 @@ export function ViewSharesPage() {
                                   {scope}
                                 </Badge>
                               ))}
+                              {share.allowOwnDelete && (
+                                <Badge variant="secondary">remove own uploads</Badge>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -301,6 +304,9 @@ export function ViewSharesPage() {
                                     {scope}
                                   </Badge>
                                 ))}
+                                {share.allowOwnDelete && (
+                                  <Badge variant="secondary">remove own uploads</Badge>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground">

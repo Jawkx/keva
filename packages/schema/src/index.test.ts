@@ -413,6 +413,24 @@ describe("CreateShareGrant", () => {
     expect(grant.maxItems).toBe(10);
   });
 
+  it("allows removing own uploads only with write access", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(CreateShareGrant)({
+        ...base,
+        scopes: ["read"],
+        allowOwnDelete: true,
+      }),
+    ).toThrow();
+    expect(
+      Schema.decodeUnknownSync(CreateShareGrant)({
+        ...base,
+        scopes: ["write"],
+        writeStamp: { project: "alpha" },
+        allowOwnDelete: true,
+      }),
+    ).toMatchObject({ allowOwnDelete: true });
+  });
+
   it("rejects zero/negative quotas", () => {
     expect(() =>
       Schema.decodeUnknownSync(CreateShareGrant)({ ...base, scopes: ["read"], maxItems: 0 }),
@@ -486,6 +504,7 @@ describe("share principal + redaction", () => {
         grantId: "g1",
         conditions: [{ key: "project", op: "has_value", value: "alpha" }],
         writeStamp: { project: "alpha" },
+        allowOwnDelete: true,
         limits: { maxItemBytes: null, maxTotalBytes: 1000, maxItems: null },
       },
     });
@@ -496,7 +515,7 @@ describe("share principal + redaction", () => {
     ).toThrow();
   });
 
-  it("strips exactly the three tenant-internal fields from public item DTOs", () => {
+  it("redacts internal item fields and includes share capabilities", () => {
     const item = sampleItem();
     const shared = toSharedItem(item);
     const owner = toOwnerItem(item);
@@ -507,8 +526,9 @@ describe("share principal + redaction", () => {
     expect(owner).not.toHaveProperty("storageKey");
     expect(owner).not.toHaveProperty("stagingKey");
     expect(shared.id).toBe(item.id);
-    expect(owner).toEqual(shared);
+    expect(shared).toEqual({ ...owner, canDelete: false });
+    expect(toSharedItem(item, true).canDelete).toBe(true);
     expect(shared.properties).toEqual(item.properties);
-    expect(Object.keys(shared).length).toBe(Object.keys(item).length - 3);
+    expect(Object.keys(owner).length).toBe(Object.keys(item).length - 3);
   });
 });

@@ -106,6 +106,13 @@
       "when": 1785347541682,
       "tag": "0014_whole_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785509028260,
+      "tag": "0015_cultured_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

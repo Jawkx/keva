@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Effect } from "effect";
 import { useQueryClient } from "@tanstack/react-query";
 import { isUploadSessionExpired, type ShareUploadSession } from "@keva/sdk";
+import { authClient } from "../../lib/auth";
 import { errorMessage, isShareGone, type TaggedError } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { cacheConfirmedShareUpload } from "../../lib/items-cache";
@@ -23,6 +24,24 @@ const isQuotaError = (error: unknown): boolean =>
   error !== null &&
   "_tag" in error &&
   (error as TaggedError)._tag === "QuotaExceeded";
+
+let identityPromise: Promise<void> | null = null;
+
+const ensureShareIdentity = (): Promise<void> => {
+  identityPromise ??= authClient
+    .getSession()
+    .then(async (session) => {
+      if (session.data) return;
+      const signedIn = await authClient.signIn.anonymous();
+      if (signedIn.error) {
+        throw new Error(signedIn.error.message ?? "Could not start guest session");
+      }
+    })
+    .finally(() => {
+      identityPromise = null;
+    });
+  return identityPromise;
+};
 
 export interface ShareUpload {
   uploads: readonly UploadState[];
@@ -83,14 +102,30 @@ export function useShareUpload(): ShareUpload {
       }),
     );
 
+  const failUploads = (entries: readonly UploadState[], error: unknown) => {
+    const ids = new Set(entries.map((entry) => entry.id));
+    const message = errorMessage(error);
+    setUploads((prev) =>
+      prev.map((upload) =>
+        ids.has(upload.id) ? { ...upload, status: "error", error: message } : upload,
+      ),
+    );
+  };
+
   const runUploads = (entries: readonly UploadState[]) => {
-    const controller = new AbortController();
-    controllers.current.add(controller);
-    void Effect.runPromise(Effect.forEach(entries, uploadOne, { concurrency: 3, discard: true }), {
-      signal: controller.signal,
-    })
-      .catch(() => undefined)
-      .finally(() => controllers.current.delete(controller));
+    const identityReady = self.allowOwnDelete ? ensureShareIdentity() : Promise.resolve();
+    void identityReady
+      .then(() => {
+        const controller = new AbortController();
+        controllers.current.add(controller);
+        void Effect.runPromise(
+          Effect.forEach(entries, uploadOne, { concurrency: 3, discard: true }),
+          { signal: controller.signal },
+        )
+          .catch(() => undefined)
+          .finally(() => controllers.current.delete(controller));
+      })
+      .catch((error) => failUploads(entries, error));
   };
 
   const addFiles = (list: FileList | null) => {

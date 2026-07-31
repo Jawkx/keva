@@ -35,6 +35,7 @@ export const items = pgTable(
     size: bigint("size", { mode: "number" }),
     etag: text("etag"),
     source: text("source").notNull(),
+    uploadedByUserId: text("uploaded_by_user_id"),
     status: text("status").$type<ItemStatus>().notNull(),
     storageKey: text("storage_key").notNull(),
     stagingKey: text("staging_key").notNull(),
@@ -84,6 +85,7 @@ export const items = pgTable(
       .using("gin", sql`${table.contentType} gin_trgm_ops`)
       .where(sql`${table.status} = 'ready'`),
     index("items_tenant_source_idx").on(table.tenantId, table.source),
+    index("items_uploaded_by_user_idx").on(table.uploadedByUserId),
     index("items_staging_uncleaned_idx")
       .on(table.createdAt)
       .where(sql`${table.status} = 'ready' and ${table.stagingCleanedAt} is null`),
@@ -303,6 +305,7 @@ export const shareGrants = pgTable(
     secretHash: text("secret_hash").notNull(),
     scopes: jsonb("scopes").$type<ReadonlyArray<ShareScope>>().notNull(),
     writeStamp: jsonb("write_stamp").$type<Properties>(),
+    allowOwnDelete: boolean("allow_own_delete").notNull().default(false),
     maxItemBytes: bigint("max_item_bytes", { mode: "number" }),
     maxTotalBytes: bigint("max_total_bytes", { mode: "number" }),
     maxItems: integer("max_items"),

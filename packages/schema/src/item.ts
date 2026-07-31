@@ -11,6 +11,7 @@ export const KevaItem = Schema.Struct({
   size: Schema.NullOr(Schema.Number),
   etag: Schema.NullOr(Schema.String),
   source: Schema.NonEmptyString,
+  uploadedByUserId: Schema.optional(Schema.String),
   status: ItemStatus,
   storageKey: Schema.NonEmptyString,
   stagingKey: Schema.NonEmptyString,

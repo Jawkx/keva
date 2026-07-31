@@ -714,6 +714,7 @@ export interface ShareAccessClient {
   query(query?: QueryType): Promise<SharedQueryResultType>;
   get(id: string): Promise<SharedItemType>;
   getDownloadUrl(id: string): Promise<DownloadResultType>;
+  delete(id: string): Promise<void>;
   downloadBytes(id: string): Promise<Uint8Array>;
   startUpload(file: File): Promise<ShareUploadSession>;
   putUpload(session: ShareUploadSession, body: UploadBody): Promise<void>;
@@ -777,6 +778,14 @@ export class ShareClient {
 
   getDownloadUrl(id: string): Promise<DownloadResultType> {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.#request(
+      "DELETE",
+      `/items/${encodeURIComponent(id)}`,
+      Schema.Struct({ ok: Schema.Boolean }),
+    );
   }
 
   async downloadResponse(id: string): Promise<Response> {
@@ -944,6 +953,14 @@ export class SharedViewClient implements ShareAccessClient {
 
   getDownloadUrl(id: string): Promise<DownloadResultType> {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.#request(
+      "DELETE",
+      `/items/${encodeURIComponent(id)}`,
+      Schema.Struct({ ok: Schema.Boolean }),
+    );
   }
 
   async downloadBytes(id: string): Promise<Uint8Array> {

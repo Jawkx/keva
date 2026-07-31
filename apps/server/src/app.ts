@@ -1,4 +1,10 @@
-import { BlobStore, makeKevaEngine, MetadataStore, PROPERTY_SEARCH_LIMIT } from "@keva/core";
+import {
+  BlobStore,
+  canDeleteOwnShareUpload,
+  makeKevaEngine,
+  MetadataStore,
+  PROPERTY_SEARCH_LIMIT,
+} from "@keva/core";
 import {
   CreateAccountShare,
   BillingOverview,
@@ -470,7 +476,9 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
       Effect.gen(function* () {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
-        yield* makeKevaEngine(principal).delete(id);
+        const engine = makeKevaEngine(principal);
+        if (principal.via === "share") yield* engine.deleteOwnShareUpload(id);
+        else yield* engine.delete(id);
         return { ok: true };
       }),
     ),
@@ -513,7 +521,9 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           ...result,
           items:
             principal.via === "share"
-              ? result.items.map(toSharedItem)
+              ? result.items.map((item) =>
+                  toSharedItem(item, canDeleteOwnShareUpload(principal, item)),
+                )
               : result.items.map(toOwnerItem),
         };
       }),
@@ -858,6 +868,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           owner: access.received.owner,
           scopes: grant.scopes,
           expiresAt: grant.expiresAt,
+          allowOwnDelete: grant.allowOwnDelete,
           upload: canWrite
             ? {
                 maxItemBytes: grant.maxItemBytes,
@@ -882,7 +893,10 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         );
         const body = yield* decode(InitiateUpload, yield* jsonBody(context));
         const result = yield* makeKevaEngine(access.principal).initiate(body);
-        return { ...result, item: toSharedItem(result.item) };
+        return {
+          ...result,
+          item: toSharedItem(result.item, canDeleteOwnShareUpload(access.principal, result.item)),
+        };
       }),
     ),
   );
@@ -896,7 +910,8 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           context.req.param("grantId"),
         );
         const id = yield* itemIdParam(context);
-        return toSharedItem(yield* makeKevaEngine(access.principal).confirm(id));
+        const item = yield* makeKevaEngine(access.principal).confirm(id);
+        return toSharedItem(item, canDeleteOwnShareUpload(access.principal, item));
       }),
     ),
   );
@@ -910,7 +925,8 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           context.req.param("grantId"),
         );
         const id = yield* itemIdParam(context);
-        return toSharedItem(yield* makeKevaEngine(access.principal).get(id));
+        const item = yield* makeKevaEngine(access.principal).get(id);
+        return toSharedItem(item, canDeleteOwnShareUpload(access.principal, item));
       }),
     ),
   );
@@ -929,6 +945,21 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
     ),
   );
 
+  app.delete("/api/shared-views/:grantId/items/:id", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const id = yield* itemIdParam(context);
+        yield* makeKevaEngine(access.principal).deleteOwnShareUpload(id);
+        return { ok: true };
+      }),
+    ),
+  );
+
   app.post("/api/shared-views/:grantId/query", (context) =>
     runRoute(
       context,
@@ -939,7 +970,12 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         );
         const body = yield* decode(Query, yield* jsonBody(context));
         const result = yield* makeKevaEngine(access.principal).query(body);
-        return { ...result, items: result.items.map(toSharedItem) };
+        return {
+          ...result,
+          items: result.items.map((item) =>
+            toSharedItem(item, canDeleteOwnShareUpload(access.principal, item)),
+          ),
+        };
       }),
     ),
   );
@@ -970,6 +1006,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           name: grant.name,
           scopes: grant.scopes,
           expiresAt: grant.expiresAt,
+          allowOwnDelete: grant.allowOwnDelete,
           upload: canWrite
             ? {
                 maxItemBytes: grant.maxItemBytes,

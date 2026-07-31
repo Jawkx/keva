@@ -16,6 +16,7 @@ export interface ItemRow {
   readonly size: number | string | null;
   readonly etag: string | null;
   readonly source: string;
+  readonly uploaded_by_user_id: string | null;
   readonly status: "pending" | "confirming" | "ready" | "deleting";
   readonly storage_key: string;
   readonly staging_key: string;
@@ -40,6 +41,7 @@ export const mapRow = (row: ItemRow): KevaItem => ({
   size: row.size === null ? null : Number(row.size),
   etag: row.etag,
   source: row.source,
+  ...(row.uploaded_by_user_id === null ? {} : { uploadedByUserId: row.uploaded_by_user_id }),
   status: row.status,
   storageKey: row.storage_key,
   stagingKey: row.staging_key,

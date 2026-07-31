@@ -26,6 +26,7 @@ import { jsonbParam } from "./postgres-json.js";
 import { avatarForUser } from "./avatar.js";
 import {
   type AuthStrategy,
+  type SessionIdentityResolver,
   hasStoragePermissions,
   hashSecret,
   randomTokenPart,
@@ -115,6 +116,7 @@ interface ShareRow {
   readonly scopes: ReadonlyArray<ShareScope>;
   readonly view_conditions: ReadonlyArray<QueryCondition>;
   readonly write_stamp: Properties | null;
+  readonly allow_own_delete: boolean;
   // bigint columns arrive as strings from postgres.js; integer as a number.
   readonly max_item_bytes: number | string | null;
   readonly max_total_bytes: number | string | null;
@@ -174,6 +176,7 @@ const shareRecord = (row: ShareRow): ShareGrantRecord => ({
   scopes: [...row.scopes],
   conditions: [...row.view_conditions],
   writeStamp: row.write_stamp ?? null,
+  allowOwnDelete: row.allow_own_delete,
   maxItemBytes: numOrNull(row.max_item_bytes),
   maxTotalBytes: numOrNull(row.max_total_bytes),
   maxItems: numOrNull(row.max_items),
@@ -190,6 +193,7 @@ const accountRecord = (row: AccountShareRow): AccountShareRecord => ({
   scopes: [...row.scopes],
   conditions: [...row.view_conditions],
   writeStamp: row.write_stamp ?? null,
+  allowOwnDelete: row.allow_own_delete,
   maxItemBytes: numOrNull(row.max_item_bytes),
   maxTotalBytes: numOrNull(row.max_total_bytes),
   maxItems: numOrNull(row.max_items),
@@ -210,6 +214,7 @@ const receivedRecord = (row: AccountShareRow): ReceivedShare => ({
   name: row.view_name,
   icon: row.view_icon,
   scopes: [...row.scopes],
+  allowOwnDelete: row.allow_own_delete,
   status: row.account_status,
   owner: {
     id: row.owner_id,
@@ -245,8 +250,10 @@ const shareGrantPrincipal = (
   },
   share: {
     grantId: row.id,
+    ...(user ? { identityId: user.id } : {}),
     conditions: [...row.view_conditions],
     ...(row.write_stamp ? { writeStamp: row.write_stamp } : {}),
+    allowOwnDelete: row.allow_own_delete,
     limits: {
       maxItemBytes: numOrNull(row.max_item_bytes),
       maxTotalBytes: numOrNull(row.max_total_bytes),
@@ -355,12 +362,12 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
             const rows = await transaction<ShareRow[]>`
           with g as (
             insert into share_grants (
-              id, tenant_id, view_id, name, secret_hash, scopes, write_stamp,
+              id, tenant_id, view_id, name, secret_hash, scopes, write_stamp, allow_own_delete,
               max_item_bytes, max_total_bytes, max_items, created_at, expires_at
             ) values (
               ${id}, ${tenantId}, ${view.id}, ${input.name}, ${secretHash},
               ${jsonbParam(input.scopes)}::jsonb,
-              ${jsonbParam(input.writeStamp)}::jsonb,
+              ${jsonbParam(input.writeStamp)}::jsonb, ${input.allowOwnDelete ?? false},
               ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},
               ${input.maxItems ?? null}, now(), ${input.expiresAt ?? null}
             )
@@ -474,12 +481,12 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
             const unreachableSecretHash = await hashSecret(randomTokenPart(32));
             const grants = await transaction<ShareRow[]>`
               insert into share_grants (
-                id, tenant_id, view_id, kind, name, secret_hash, scopes, write_stamp,
+                id, tenant_id, view_id, kind, name, secret_hash, scopes, write_stamp, allow_own_delete,
                 max_item_bytes, max_total_bytes, max_items, created_at, expires_at
               ) values (
                 ${id}, ${tenantId}, ${view.id}, 'account', ${view.name}, ${unreachableSecretHash},
                 ${jsonbParam(input.scopes)}::jsonb,
-                ${jsonbParam(input.writeStamp)}::jsonb,
+                ${jsonbParam(input.writeStamp)}::jsonb, ${input.allowOwnDelete ?? false},
                 ${input.maxItemBytes ?? null}, ${input.maxTotalBytes ?? null},
                 ${input.maxItems ?? null}, now(), ${input.expiresAt ?? null}
               )
@@ -774,11 +781,35 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
 });
 
 export const shareStrategy =
-  (store: ShareGrantStoreService): AuthStrategy =>
+  (store: ShareGrantStoreService, resolveIdentity?: SessionIdentityResolver): AuthStrategy =>
   ({ headers }) => {
     const authorization = headers.get("authorization");
     if (!authorization?.startsWith("Bearer keva_sh_")) {
       return Effect.succeed(null);
     }
-    return store.resolve(authorization.slice(7));
+    return store.resolve(authorization.slice(7)).pipe(
+      Effect.flatMap((principal) => {
+        if (!principal || principal.via !== "share" || !resolveIdentity || !headers.get("cookie")) {
+          return Effect.succeed(principal);
+        }
+        return Effect.tryPromise(() => resolveIdentity(headers)).pipe(
+          Effect.orElseSucceed(() => null),
+          Effect.map((identity) =>
+            identity
+              ? {
+                  ...principal,
+                  actor: {
+                    ...principal.actor,
+                    user: {
+                      id: identity.isAnonymous ? `guest:${principal.share.grantId}` : identity.id,
+                      name: identity.name,
+                    },
+                  },
+                  share: { ...principal.share, identityId: identity.id },
+                }
+              : principal,
+          ),
+        );
+      }),
+    );
   };

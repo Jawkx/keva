@@ -71,6 +71,20 @@ const shareVisible = (principal: Principal, item: KevaItem): Effect.Effect<KevaI
     : Effect.fail(new NotFound({ message: "Item not found" }));
 };
 
+export const canDeleteOwnShareUpload = (principal: Principal, item: KevaItem): boolean => {
+  const share = shareOf(principal);
+  const identityId = share?.identityId;
+  return Boolean(
+    share?.allowOwnDelete &&
+    principal.scopes.includes("write") &&
+    identityId &&
+    item.status === "ready" &&
+    item.deletedAt === undefined &&
+    item.source === shareSource(share.grantId) &&
+    item.uploadedByUserId === identityId,
+  );
+};
+
 const eventFor = (
   principal: Principal,
   item: KevaItem,
@@ -194,6 +208,7 @@ export const makeKevaEngine = (principal: Principal) => ({
         size: null,
         etag: null,
         source,
+        ...(share?.identityId ? { uploadedByUserId: share.identityId } : {}),
         status: "pending",
         storageKey: `items/${principal.tenantId}/${id}`,
         stagingKey: `staging/${principal.tenantId}/${attemptId}`,
@@ -208,6 +223,7 @@ export const makeKevaEngine = (principal: Principal) => ({
         contentType: input.contentType,
         size: input.size,
         source,
+        uploadedByUserId: item.uploadedByUserId ?? null,
         properties: canonicalizeProperties(properties),
       });
       const created = yield* metadata.createUpload(
@@ -524,6 +540,27 @@ export const makeKevaEngine = (principal: Principal) => ({
           .pipe(Effect.zipRight(metadata.removeUploadAttempt(attempt.id))),
       );
       yield* metadata.remove(principal.tenantId, id, "deleting");
+    }),
+
+  deleteOwnShareUpload: (id: string) =>
+    Effect.gen(function* () {
+      const share = shareOf(principal);
+      if (!share?.allowOwnDelete || !principal.scopes.includes("write")) {
+        return yield* new Forbidden({ message: "This share cannot delete uploads" });
+      }
+      if (!share.identityId) {
+        return yield* new Forbidden({ message: "A visitor identity is required" });
+      }
+      const metadata = yield* MetadataStore;
+      const current = yield* metadata.get(principal.tenantId, id);
+      if (!current || !canDeleteOwnShareUpload(principal, current)) {
+        return yield* new NotFound({ message: "Item not found" });
+      }
+      const deletedAt = now();
+      const deleted = yield* metadata.trash(principal.tenantId, id, deletedAt, (updated) =>
+        eventFor(principal, updated, "deleted", {}),
+      );
+      if (!deleted) return yield* new NotFound({ message: "Item not found" });
     }),
 
   delete: (id: string) =>

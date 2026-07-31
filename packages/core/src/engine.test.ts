@@ -2,7 +2,7 @@ import { testEffect } from "@keva/effect-test";
 import { StorageUnavailable, type Principal, type SharePrincipal } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeKevaEngine, reapPending, sweepDeleting } from "./engine.js";
+import { canDeleteOwnShareUpload, makeKevaEngine, reapPending, sweepDeleting } from "./engine.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
 import { S3BlobStoreLive } from "./s3.js";
 import { BlobStore, MetadataStore, type BlobStoreService } from "./services.js";
@@ -57,6 +57,8 @@ type ShareOptions = {
   readonly grantId?: string;
   readonly conditions?: SharePrincipal["share"]["conditions"];
   readonly writeStamp?: SharePrincipal["share"]["writeStamp"];
+  readonly allowOwnDelete?: boolean;
+  readonly user?: { readonly id: string; readonly name: string };
   readonly limits?: SharePrincipal["share"]["limits"];
 };
 
@@ -64,10 +66,20 @@ const sharePrincipal = (tenantId: string, options: ShareOptions = {}): Principal
   tenantId,
   scopes: options.scopes ?? ["read"],
   via: "share",
+  ...(options.user
+    ? {
+        actor: {
+          user: options.user,
+          share: { grantId: options.grantId ?? "grant-1", name: "Test share" },
+        },
+      }
+    : {}),
   share: {
     grantId: options.grantId ?? "grant-1",
+    ...(options.user ? { identityId: options.user.id } : {}),
     conditions: options.conditions ?? [{ key: "project", op: "has_value", value: "alpha" }],
     ...(options.writeStamp === undefined ? {} : { writeStamp: options.writeStamp }),
+    allowOwnDelete: options.allowOwnDelete ?? false,
     ...(options.limits === undefined ? {} : { limits: options.limits }),
   },
 });
@@ -791,6 +803,66 @@ describe("KevaEngine share access", () => {
     const result = await Effect.runPromise(program);
     expect(result._tag).toBe("Left");
     if (result._tag === "Left") expect(result.left._tag).toBe("NotFound");
+  });
+
+  it("lets a share visitor trash only uploads attributed to their identity and grant", async () => {
+    const program = Effect.gen(function* () {
+      const uploader = sharePrincipal("tenant-own-delete", {
+        scopes: ["read", "write"],
+        grantId: "grant-own",
+        writeStamp: { project: "alpha" },
+        allowOwnDelete: true,
+        user: { id: "user-a", name: "Uploader" },
+      });
+      const item = yield* shareUpload(uploader, "mine.txt", new TextEncoder().encode("mine"));
+      const wrongUser = makeKevaEngine(
+        sharePrincipal("tenant-own-delete", {
+          scopes: ["read", "write"],
+          grantId: "grant-own",
+          writeStamp: { project: "alpha" },
+          allowOwnDelete: true,
+          user: { id: "user-b", name: "Someone else" },
+        }),
+      );
+      const wrongGrant = makeKevaEngine(
+        sharePrincipal("tenant-own-delete", {
+          scopes: ["read", "write"],
+          grantId: "grant-other",
+          writeStamp: { project: "alpha" },
+          allowOwnDelete: true,
+          user: { id: "user-a", name: "Uploader" },
+        }),
+      );
+      const disabled = makeKevaEngine(
+        sharePrincipal("tenant-own-delete", {
+          scopes: ["read", "write"],
+          grantId: "grant-own",
+          writeStamp: { project: "alpha" },
+          user: { id: "user-a", name: "Uploader" },
+        }),
+      );
+      const denied = {
+        wrongUser: yield* Effect.either(wrongUser.deleteOwnShareUpload(item.id)),
+        wrongGrant: yield* Effect.either(wrongGrant.deleteOwnShareUpload(item.id)),
+        disabled: yield* Effect.either(disabled.deleteOwnShareUpload(item.id)),
+      };
+      yield* makeKevaEngine(uploader).deleteOwnShareUpload(item.id);
+      const metadata = yield* MetadataStore;
+      return {
+        item,
+        denied,
+        deleted: yield* metadata.get("tenant-own-delete", item.id),
+        canDelete: canDeleteOwnShareUpload(uploader, item),
+      };
+    }).pipe(Effect.provide(testLayer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.item.uploadedByUserId).toBe("user-a");
+    expect(result.canDelete).toBe(true);
+    expect(result.denied.wrongUser).toMatchObject({ _tag: "Left", left: { _tag: "NotFound" } });
+    expect(result.denied.wrongGrant).toMatchObject({ _tag: "Left", left: { _tag: "NotFound" } });
+    expect(result.denied.disabled).toMatchObject({ _tag: "Left", left: { _tag: "Forbidden" } });
+    expect(result.deleted?.deletedAt).toMatch(/Z$/);
   });
 
   it("forbids reading item history", async () => {

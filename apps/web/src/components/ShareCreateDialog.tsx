@@ -70,6 +70,7 @@ export function ShareCreateDialog({
   const [name, setName] = useState("");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
+  const [allowOwnDelete, setAllowOwnDelete] = useState(true);
   const [stamp, setStamp] = useState<PropertyStampChip[]>([]);
   const [maxItems, setMaxItems] = useState("");
   const [maxTotalMb, setMaxTotalMb] = useState("");
@@ -142,7 +143,7 @@ export function ShareCreateDialog({
         toast.error(built.error);
         return;
       }
-      Object.assign(grant, { writeStamp: built });
+      Object.assign(grant, { writeStamp: built, allowOwnDelete });
       const items = Number(maxItems);
       if (maxItems.trim() && Number.isFinite(items) && items > 0) {
         Object.assign(grant, { maxItems: Math.floor(items) });
@@ -263,6 +264,18 @@ export function ShareCreateDialog({
                       Can upload
                     </FieldLabel>
                   </Field>
+                  {canWrite && !writeBlocked && (
+                    <Field orientation="horizontal" className="ml-6 w-auto">
+                      <Checkbox
+                        id="share-own-delete"
+                        checked={allowOwnDelete}
+                        onCheckedChange={(value) => setAllowOwnDelete(Boolean(value))}
+                      />
+                      <FieldLabel htmlFor="share-own-delete" className="font-normal">
+                        Can move their own uploads to Trash
+                      </FieldLabel>
+                    </Field>
+                  )}
                   {writeBlocked ? (
                     <p className="text-xs text-muted-foreground">
                       Uploads are available for views filtered by properties, so incoming files can

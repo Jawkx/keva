@@ -1,5 +1,8 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { items } from "@keva/core/postgres";
 import {
+  betterAuthIdentityResolver,
+  betterAuthSessionResolver,
   createBetterAuth,
   isAllowedMcpRedirectUri,
   makeConnectionStore,
@@ -56,6 +59,71 @@ describe("MCP OAuth registration", () => {
 
     expect(metadata.scopes_supported).toContain("keva:read");
     expect(metadata.scopes_supported).toContain("keva:delete");
+  });
+});
+
+describe("anonymous account linking", () => {
+  it("keeps guests out of personal tenants and transfers upload attribution on signup", async () => {
+    const suffix = crypto.randomUUID();
+    const anonymousResponse = await auth.handler(
+      new Request("http://localhost:8787/api/auth/sign-in/anonymous", { method: "POST" }),
+    );
+    expect(anonymousResponse.status).toBe(200);
+    const anonymousCookie = anonymousResponse.headers.get("set-cookie")?.split(";")[0];
+    expect(anonymousCookie).toBeTruthy();
+    const anonymousBody = (await anonymousResponse.json()) as { user: { id: string } };
+    const headers = new Headers({ cookie: anonymousCookie! });
+
+    await expect(betterAuthIdentityResolver(auth)(headers)).resolves.toMatchObject({
+      id: anonymousBody.user.id,
+      name: "Guest",
+      isAnonymous: true,
+    });
+    await expect(betterAuthSessionResolver(auth, database.db)(headers)).resolves.toBeNull();
+
+    const itemId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await database.db.insert(items).values({
+      id: itemId,
+      tenantId: `tenant-${suffix}`,
+      name: "guest-upload.txt",
+      contentType: "text/plain",
+      declaredSize: 1,
+      size: 1,
+      etag: "etag",
+      source: `share:${suffix}`,
+      uploadedByUserId: anonymousBody.user.id,
+      status: "ready",
+      storageKey: `items/${suffix}`,
+      stagingKey: `staging/${suffix}`,
+      createdAt: now,
+      updatedAt: now,
+      properties: {},
+    });
+
+    const email = `claimed-${suffix}@example.com`;
+    const signUp = await auth.handler(
+      new Request("http://localhost:8787/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: anonymousCookie! },
+        body: JSON.stringify({ name: "Claimed User", email, password: "password@1" }),
+      }),
+    );
+    expect(signUp.status).toBe(200);
+    const signUpBody = (await signUp.json()) as { user: { id: string } };
+    const [claimedItem] = await database.db
+      .select({ uploadedByUserId: items.uploadedByUserId })
+      .from(items)
+      .where(eq(items.id, itemId));
+    expect(claimedItem?.uploadedByUserId).toBe(signUpBody.user.id);
+    const oldGuest = await database.db
+      .select({ id: authSchema.user.id })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.id, anonymousBody.user.id));
+    expect(oldGuest).toEqual([]);
+
+    await database.db.delete(items).where(eq(items.id, itemId));
+    await database.db.delete(authSchema.user).where(eq(authSchema.user.email, email));
   });
 });
 

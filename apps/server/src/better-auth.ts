@@ -1,10 +1,12 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { items } from "@keva/core/postgres";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import type { Polar } from "@polar-sh/sdk";
 import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
 import { betterAuth } from "better-auth/minimal";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import {
+  anonymous,
   mcp,
   oAuthDiscoveryMetadata,
   oAuthProtectedResourceMetadata,
@@ -220,6 +222,14 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
       }),
     },
     plugins: [
+      anonymous({
+        onLinkAccount: async ({ anonymousUser, newUser }) => {
+          await config.database
+            .update(items)
+            .set({ uploadedByUserId: newUser.user.id })
+            .where(eq(items.uploadedByUserId, anonymousUser.user.id));
+        },
+      }),
       organization(),
       ...(config.polar
         ? [
@@ -389,11 +399,34 @@ export const makeMcpAuthorizationServer = (auth: KevaAuth): McpAuthorizationServ
   };
 };
 
+type ResolvedAuthUser = {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+  readonly isAnonymous?: boolean | undefined;
+};
+
+const authSession = async (
+  auth: KevaAuth,
+  headers: Headers,
+): Promise<{ readonly user: ResolvedAuthUser } | null> =>
+  (await auth.api.getSession({ headers })) as { readonly user: ResolvedAuthUser } | null;
+
+export const betterAuthIdentityResolver = (auth: KevaAuth) => async (headers: Headers) => {
+  const result = await authSession(auth, headers);
+  if (!result) return null;
+  return {
+    id: result.user.id,
+    name: result.user.isAnonymous ? "Guest" : result.user.name?.trim() || result.user.email,
+    isAnonymous: Boolean(result.user.isAnonymous),
+  };
+};
+
 export const betterAuthSessionResolver =
   (auth: KevaAuth, db: PostgresJsDatabase<typeof authSchema>): SessionResolver =>
   async (headers) => {
-    const result = await auth.api.getSession({ headers });
-    if (!result) return null;
+    const result = await authSession(auth, headers);
+    if (!result || result.user.isAnonymous) return null;
 
     const tenantId = await resolvePersonalOrganization(
       db,

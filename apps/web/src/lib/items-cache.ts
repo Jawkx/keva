@@ -128,6 +128,16 @@ export function removeDeletedItemsFromCache(queryClient: QueryClient, ids: Itera
   invalidatePropertyDiscovery(queryClient);
 }
 
+export function removeDeletedShareItemFromCache(queryClient: QueryClient, itemId: string) {
+  queryClient.setQueriesData<ItemsCache>({ queryKey: shareItemsQueryRoot }, (old) =>
+    old ? removeItemsFromPages(old, [itemId]) : old,
+  );
+  queryClient.removeQueries({ queryKey: shareItemQueryKey(itemId), exact: true });
+  queryClient.removeQueries({ queryKey: shareContentQueryKey(itemId), exact: true });
+  revokeObjectUrl("share", itemId);
+  void queryClient.invalidateQueries({ queryKey: shareItemsQueryRoot });
+}
+
 export function cacheConfirmedShareUpload(
   queryClient: QueryClient,
   selfQueryKey: readonly unknown[] = shareSelfQueryKey,

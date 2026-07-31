@@ -11,8 +11,10 @@ export type ShareScope = typeof ShareScope.Type;
 // (null = unlimited); the engine reads current usage separately.
 export const ShareGrantContext = Schema.Struct({
   grantId: Schema.NonEmptyString,
+  identityId: Schema.optional(Schema.String),
   conditions: Schema.Array(QueryCondition),
   writeStamp: Schema.optional(Properties),
+  allowOwnDelete: Schema.Boolean,
   limits: Schema.optional(
     Schema.Struct({
       maxItemBytes: Schema.NullOr(Schema.Number),

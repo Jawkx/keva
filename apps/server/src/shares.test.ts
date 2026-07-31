@@ -21,6 +21,8 @@ const TENANT = "acme";
 const ADMIN_COOKIE = "keva_session=admin";
 const RECIPIENT_COOKIE = "keva_session=recipient";
 const OTHER_COOKIE = "keva_session=other";
+const GUEST_A_COOKIE = "keva_session=guest-a";
+const GUEST_B_COOKIE = "keva_session=guest-b";
 const USERS = [
   { id: "owner-user", name: "Owner", email: "owner@example.com" },
   { id: "recipient-user", name: "Recipient", email: "recipient@example.com" },
@@ -65,6 +67,13 @@ const sessionResolver = async (headers: Headers) =>
           }
         : null;
 
+const sessionIdentityResolver = async (headers: Headers) =>
+  headers.get("cookie")?.includes(GUEST_A_COOKIE)
+    ? { id: "guest-a", name: "Guest", isAnonymous: true }
+    : headers.get("cookie")?.includes(GUEST_B_COOKIE)
+      ? { id: "guest-b", name: "Guest", isAnonymous: true }
+      : null;
+
 const makeApp = (scopedTokenScopes?: ReadonlyArray<Scope>) => {
   const views = new Map<string, ViewRecord>();
   const tokens = Layer.succeed(ApiTokenStore, {
@@ -82,6 +91,7 @@ const makeApp = (scopedTokenScopes?: ReadonlyArray<Scope>) => {
     staticToken: STATIC,
     tenantId: TENANT,
     sessionResolver,
+    sessionIdentityResolver,
   }).pipe(Layer.provide(Layer.merge(tokens, shares)));
   return createApp({
     layer: Layer.mergeAll(
@@ -503,6 +513,69 @@ describe("server share subsystem", () => {
     expect(names).toContain("drop.txt");
   });
 
+  it("lets anonymous visitors trash only uploads created by their own session", async () => {
+    const app = makeApp();
+    const { body } = await shareAlpha(app, { allowOwnDelete: true });
+    const token = body.token;
+    const bytes = new TextEncoder().encode("owned by guest a");
+    const guestAHeaders = {
+      ...bearer(token),
+      cookie: GUEST_A_COOKIE,
+      "content-type": "application/json",
+    };
+    const initiatedResponse = await app.request("/api/items", {
+      method: "POST",
+      headers: guestAHeaders,
+      body: JSON.stringify({
+        name: "guest-a.txt",
+        contentType: "text/plain",
+        size: bytes.byteLength,
+      }),
+    });
+    const initiated = (await initiatedResponse.json()) as {
+      item: { id: string };
+      uploadUrl: string;
+      headers: Record<string, string>;
+    };
+    await putToStorage(initiated.uploadUrl, {
+      method: "PUT",
+      headers: initiated.headers,
+      body: bytes,
+    });
+    const confirmed = await app.request(`/api/items/${initiated.item.id}/confirm`, {
+      method: "POST",
+      headers: guestAHeaders,
+    });
+    expect(confirmed.status).toBe(200);
+    expect(await confirmed.json()).toMatchObject({ canDelete: true });
+    const activity = await app.request(`/api/items/${initiated.item.id}/events`, {
+      headers: bearer(STATIC),
+    });
+    expect(await activity.json()).toMatchObject({
+      events: [{ actor: { user: { id: `guest:${body.record.id}`, name: "Guest" } } }],
+    });
+
+    const guestBItem = await app.request(`/api/items/${initiated.item.id}`, {
+      headers: { ...bearer(token), cookie: GUEST_B_COOKIE },
+    });
+    expect(await guestBItem.json()).toMatchObject({ canDelete: false });
+    const denied = await app.request(`/api/items/${initiated.item.id}`, {
+      method: "DELETE",
+      headers: { ...bearer(token), cookie: GUEST_B_COOKIE },
+    });
+    expect(denied.status).toBe(404);
+
+    const deleted = await app.request(`/api/items/${initiated.item.id}`, {
+      method: "DELETE",
+      headers: { ...bearer(token), cookie: GUEST_A_COOKIE },
+    });
+    expect(deleted.status).toBe(200);
+    const trash = await app.request("/api/trash", { headers: bearer(STATIC) });
+    expect(await trash.json()).toMatchObject({
+      items: [{ id: initiated.item.id, name: "guest-a.txt" }],
+    });
+  });
+
   it("rejects caller-supplied properties on a share upload", async () => {
     const app = makeApp();
     const { body } = await shareAlpha(app);
@@ -639,6 +712,7 @@ describe("server share subsystem", () => {
         viewId: view.id,
         scopes: ["read", "write"],
         writeStamp: { project: "alpha" },
+        allowOwnDelete: true,
       }),
     });
     expect(invited.status).toBe(200);
@@ -698,6 +772,7 @@ describe("server share subsystem", () => {
       name: "Client drop",
       icon: "inbox",
       scopes: ["read", "write"],
+      allowOwnDelete: true,
       owner: { name: "Owner" },
     });
 
@@ -734,7 +809,10 @@ describe("server share subsystem", () => {
       { method: "POST", headers: { cookie: RECIPIENT_COOKIE } },
     );
     expect(confirmed.status).toBe(200);
-    expect(await confirmed.json()).toMatchObject({ properties: { project: "alpha" } });
+    expect(await confirmed.json()).toMatchObject({
+      properties: { project: "alpha" },
+      canDelete: true,
+    });
 
     const ownerItem = await app.request(`/api/items/${initiated.item.id}`, {
       headers: bearer(STATIC),
@@ -773,9 +851,15 @@ describe("server share subsystem", () => {
       body: JSON.stringify({ offset: 0 }),
     });
     expect(await queried.json()).toMatchObject({
-      items: [{ id: initiated.item.id }],
+      items: [{ id: initiated.item.id, canDelete: true }],
       totalCount: 1,
     });
+
+    const deleted = await app.request(`/api/shared-views/${grant.id}/items/${initiated.item.id}`, {
+      method: "DELETE",
+      headers: { cookie: RECIPIENT_COOKIE },
+    });
+    expect(deleted.status).toBe(200);
 
     const revoked = await app.request(`/api/account-shares/${grant.id}`, {
       method: "DELETE",

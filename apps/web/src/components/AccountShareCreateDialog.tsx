@@ -63,6 +63,7 @@ export function AccountShareCreateDialog({
   const [email, setEmail] = useState("");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
+  const [allowOwnDelete, setAllowOwnDelete] = useState(true);
   const [stamp, setStamp] = useState<PropertyStampChip[]>([]);
   const [maxItems, setMaxItems] = useState("");
   const [maxTotalMb, setMaxTotalMb] = useState("");
@@ -108,7 +109,7 @@ export function AccountShareCreateDialog({
         toast.error("The upload properties must match every filter in this view");
         return;
       }
-      Object.assign(input, { writeStamp });
+      Object.assign(input, { writeStamp, allowOwnDelete });
       const items = Number(maxItems);
       if (maxItems.trim() && Number.isFinite(items) && items > 0) {
         Object.assign(input, { maxItems: Math.floor(items) });
@@ -175,6 +176,18 @@ export function AccountShareCreateDialog({
                   Can upload
                 </FieldLabel>
               </Field>
+              {canWrite && !writeBlocked && (
+                <Field orientation="horizontal" className="ml-6 w-auto">
+                  <Checkbox
+                    id="account-share-own-delete"
+                    checked={allowOwnDelete}
+                    onCheckedChange={(value) => setAllowOwnDelete(Boolean(value))}
+                  />
+                  <FieldLabel htmlFor="account-share-own-delete" className="font-normal">
+                    Can move their own uploads to Trash
+                  </FieldLabel>
+                </Field>
+              )}
               {writeBlocked && (
                 <p className="text-xs text-muted-foreground">
                   Upload access requires a view filtered only by custom properties.
@@ -247,7 +260,7 @@ export function AccountShareCreateDialog({
               Files stay in your space
             </div>
             Uploaded files use your storage and remain under your control. Invitees cannot edit
-            properties or delete files.
+            properties or permanently delete files.
           </div>
         </div>
 

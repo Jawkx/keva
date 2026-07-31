@@ -92,6 +92,7 @@ function SharedViewBody({ grantId }: { grantId: string }) {
                 <div className="flex flex-wrap gap-1">
                   {canRead && <Badge variant="secondary">View &amp; download</Badge>}
                   {canWrite && <Badge variant="secondary">Upload</Badge>}
+                  {self.allowOwnDelete && <Badge variant="secondary">Remove own uploads</Badge>}
                 </div>
               </div>
             </HoverCardContent>

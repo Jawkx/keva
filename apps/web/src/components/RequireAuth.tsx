@@ -15,7 +15,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!data) {
+  if (!data || data.user.isAnonymous) {
     return (
       <Navigate
         to="/login"

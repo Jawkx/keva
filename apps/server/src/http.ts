@@ -1,3 +1,4 @@
+import { canDeleteOwnShareUpload } from "@keva/core";
 import {
   Internal,
   ItemId,
@@ -93,4 +94,6 @@ export const sessionUser = (principal: Principal) =>
 // happens here at the boundary (not in the engine) so internal callers keep the
 // full KevaItem shape and only the wire response is trimmed.
 export const redactItem = (principal: Principal, item: KevaItem) =>
-  principal.via === "share" ? toSharedItem(item) : toOwnerItem(item);
+  principal.via === "share"
+    ? toSharedItem(item, canDeleteOwnShareUpload(principal, item))
+    : toOwnerItem(item);

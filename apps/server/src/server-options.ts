@@ -1,5 +1,6 @@
 import type { AppServiceOptions } from "./app.js";
 import {
+  betterAuthIdentityResolver,
   betterAuthSessionResolver,
   createBetterAuth,
   makeAuthHandler,
@@ -86,6 +87,7 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
   const database = makeDatabaseUnit(config.databaseUrl);
   const auth = databaseAuth(config, database);
   const baseSessionResolver = auth ? betterAuthSessionResolver(auth.auth, database.db) : undefined;
+  const sessionIdentityResolver = auth ? betterAuthIdentityResolver(auth.auth) : undefined;
   const sessionResolver =
     auth && baseSessionResolver
       ? async (headers: Headers) => {
@@ -101,6 +103,7 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
     tenantId: config.tenantId,
     database,
     ...(sessionResolver ? { sessionResolver } : {}),
+    ...(sessionIdentityResolver ? { sessionIdentityResolver } : {}),
     ...(auth?.billing ? { billing: auth.billing } : {}),
     s3: config.s3,
   });

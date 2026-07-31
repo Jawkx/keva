@@ -273,10 +273,19 @@ export const TokenAndStaticAuthLive = (config: {
     }),
   ]);
 
+export interface SessionIdentity {
+  readonly id: string;
+  readonly name: string;
+  readonly isAnonymous: boolean;
+}
+
+export type SessionIdentityResolver = (headers: Headers) => Promise<SessionIdentity | null>;
+
 export const TokenAndStaticAuthFromStoreLive = (config: {
   readonly staticToken: string;
   readonly tenantId: string;
   readonly sessionResolver?: SessionResolver;
+  readonly sessionIdentityResolver?: SessionIdentityResolver;
 }): Layer.Layer<Authenticator, never, ApiTokenStore | ShareGrantStore> =>
   Layer.effect(
     Authenticator,
@@ -288,7 +297,7 @@ export const TokenAndStaticAuthFromStoreLive = (config: {
       // final fallback. Share resolution sits alongside the API-token strategy.
       const strategies = [
         tokenStrategy(store),
-        shareStrategy(shares),
+        shareStrategy(shares, config.sessionIdentityResolver),
         ...(config.sessionResolver ? [sessionStrategy(config.sessionResolver)] : []),
         staticTokenStrategy({
           token: config.staticToken,
