@@ -21,7 +21,6 @@ import {
   getCoreRowModel,
   useReactTable,
   type RowSelectionState,
-  type VisibilityState,
 } from "@tanstack/react-table";
 import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
@@ -312,11 +311,6 @@ function FilesPageContent({
   const serverItems = itemsQuery.data?.items ?? EMPTY_FILE_ROWS;
   const totalItems = itemsQuery.data?.totalCount ?? serverItems.length;
 
-  const columnVisibility: VisibilityState = {
-    updatedAt: !selectedId,
-    properties: !selectedId,
-  };
-
   const selectMode = Object.values(rowSelection).some(Boolean);
   const filtered = activeSearch.trim().length > 0 || activeWhere.length > 0;
   const draftActive =
@@ -360,7 +354,7 @@ function FilesPageContent({
   const table = useReactTable({
     data: tableData,
     columns,
-    state: { columnVisibility, rowSelection },
+    state: { rowSelection },
     getRowId: (row) => row.id,
     enableRowSelection: (row) => !row.original.upload,
     onRowSelectionChange: setRowSelection,
