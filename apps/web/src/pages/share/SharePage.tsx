@@ -18,7 +18,7 @@ import { ShareFileDetail } from "./ShareFileDetail";
 import { ShareItemList } from "./ShareItemList";
 import { ShareShell } from "./ShareShell";
 import { ShareUnavailable } from "./ShareUnavailable";
-import { ShareUploadButton, ShareUploadProgress, ShareUploadZone } from "./ShareUploadZone";
+import { ShareUploadButton, ShareUploadZone } from "./ShareUploadZone";
 import { useShareUpload } from "./use-share-upload";
 import { FileBrowserFrame } from "../../components/file-browser/FileBrowserFrame";
 import { Spinner } from "@/components/ui/spinner";
@@ -40,9 +40,8 @@ export function ShareReadView({ canWrite }: { canWrite: boolean }) {
           <ShareUploadButton onFiles={upload.addFiles} quotaHint={upload.quotaHint} />
         ) : undefined
       }
-      notice={
-        canWrite ? <ShareUploadProgress uploads={upload.uploads} retry={upload.retry} /> : undefined
-      }
+      uploads={canWrite ? upload.uploads : []}
+      onRetryUpload={upload.retry}
     />
   );
 

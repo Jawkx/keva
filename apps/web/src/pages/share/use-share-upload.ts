@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Effect } from "effect";
 import { useQueryClient } from "@tanstack/react-query";
-import { isUploadSessionExpired, type ShareUploadSession } from "@keva/sdk";
+import { isUploadSessionExpired, type SharedItem, type ShareUploadSession } from "@keva/sdk";
 import { authClient } from "../../lib/auth";
 import { errorMessage, isShareGone, type TaggedError } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
@@ -17,6 +17,7 @@ export interface UploadState {
   readonly session?: ShareUploadSession | undefined;
   readonly phase: "put" | "confirm";
   readonly error?: string;
+  readonly item?: SharedItem;
 }
 
 const isQuotaError = (error: unknown): boolean =>
@@ -93,11 +94,17 @@ export function useShareUpload(): ShareUpload {
             ),
           );
         },
-        onSuccess: () => {
+        onSuccess: (item) => {
           setUploads((prev) =>
-            prev.map((upload) => (upload.id === entry.id ? { ...upload, status: "done" } : upload)),
+            prev.map((upload) =>
+              upload.id === entry.id ? { ...upload, status: "done", item } : upload,
+            ),
           );
-          cacheConfirmedShareUpload(queryClient, selfQueryKey);
+          void cacheConfirmedShareUpload(queryClient, selfQueryKey).then(() => {
+            if (self.scopes.includes("read")) {
+              setUploads((prev) => prev.filter((upload) => upload.id !== entry.id));
+            }
+          });
         },
       }),
     );

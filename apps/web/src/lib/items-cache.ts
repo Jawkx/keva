@@ -142,6 +142,8 @@ export function cacheConfirmedShareUpload(
   queryClient: QueryClient,
   selfQueryKey: readonly unknown[] = shareSelfQueryKey,
 ) {
-  void queryClient.invalidateQueries({ queryKey: shareItemsQueryRoot });
-  void queryClient.invalidateQueries({ queryKey: selfQueryKey });
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: shareItemsQueryRoot }),
+    queryClient.invalidateQueries({ queryKey: selfQueryKey }),
+  ]);
 }
