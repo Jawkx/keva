@@ -6,10 +6,14 @@ import {
   QueryCache,
   QueryClient,
   QueryClientProvider,
+  useMutation,
   useQuery,
 } from "@tanstack/react-query";
-import { keva } from "../lib/keva";
+import { toast } from "sonner";
+import { leaveReceivedShare, receivedSharesQueryKey } from "../lib/account-shares";
 import { errorMessage, isShareGone, isUnauthorized } from "../lib/errors";
+import { keva } from "../lib/keva";
+import { queryClient as appQueryClient } from "../lib/query-client";
 import { revokeScopeObjectUrls } from "../lib/object-url-cache";
 import { useMountEffect } from "../lib/useMountEffect";
 import { ShareReadView } from "./share/SharePage";
@@ -17,6 +21,7 @@ import { ShareContextProvider } from "./share/share-context";
 import { ShareUploadZone } from "./share/ShareUploadZone";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Spinner } from "@/components/ui/spinner";
 import { UserAvatar } from "../components/UserAvatar";
@@ -28,6 +33,15 @@ function SharedViewBody({ grantId }: { grantId: string }) {
   const selfQuery = useQuery({
     queryKey: ["shared-view-self", grantId],
     queryFn: () => client.self(),
+  });
+  const leaveMutation = useMutation({
+    mutationFn: () => leaveReceivedShare(grantId),
+    onSuccess: () => {
+      void appQueryClient.invalidateQueries({ queryKey: receivedSharesQueryKey });
+      toast.success("Shared view removed");
+      void navigate("/", { replace: true });
+    },
+    onError: (error) => toast.error(errorMessage(error)),
   });
 
   if (selfQuery.isLoading) {
@@ -60,7 +74,7 @@ function SharedViewBody({ grantId }: { grantId: string }) {
         client,
         self,
         selfQueryKey: ["shared-view-self", grantId],
-        onGone: () => navigate("/shared"),
+        onGone: () => navigate("/"),
       }}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
@@ -86,14 +100,35 @@ function SharedViewBody({ grantId }: { grantId: string }) {
               <UserAvatar avatar={self.owner.avatar} name={self.owner.name} className="size-4" />
               <span className="truncate">Shared by {self.owner.name}</span>
             </HoverCardTrigger>
-            <HoverCardContent side="bottom" align="end" className="w-64">
-              <div className="flex flex-col gap-2 py-1">
-                <p className="font-medium">Access granted</p>
-                <div className="flex flex-wrap gap-1">
-                  {canRead && <Badge variant="secondary">View &amp; download</Badge>}
-                  {canWrite && <Badge variant="secondary">Upload</Badge>}
-                  {self.allowOwnDelete && <Badge variant="secondary">Remove own uploads</Badge>}
+            <HoverCardContent side="bottom" align="end" className="w-72">
+              <div className="flex flex-col gap-3 py-1">
+                <div className="flex items-center gap-2">
+                  <UserAvatar
+                    avatar={self.owner.avatar}
+                    name={self.owner.name}
+                    className="size-8"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{self.owner.name}</p>
+                    <p className="text-xs text-muted-foreground">Shared this view with you</p>
+                  </div>
                 </div>
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs font-medium text-muted-foreground">Your access</p>
+                  <div className="flex flex-wrap gap-1">
+                    {canRead && <Badge variant="secondary">View &amp; download</Badge>}
+                    {canWrite && <Badge variant="secondary">Upload</Badge>}
+                    {self.allowOwnDelete && <Badge variant="secondary">Remove own uploads</Badge>}
+                  </div>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={leaveMutation.isPending}
+                  onClick={() => leaveMutation.mutate()}
+                >
+                  {leaveMutation.isPending ? "Removing…" : "Remove access"}
+                </Button>
               </div>
             </HoverCardContent>
           </HoverCard>
@@ -125,7 +160,7 @@ function SharedViewSession({ grantId }: { grantId: string }) {
         client.clear();
         void navigate("/login", { replace: true });
       } else if (isShareGone(error)) {
-        void navigate("/shared", { replace: true });
+        void navigate("/", { replace: true });
       }
     };
     client = new QueryClient({

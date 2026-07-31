@@ -1,17 +1,35 @@
-import { Database, Files, Inbox, LogOut, PanelLeft, Plug, Settings, Trash2 } from "lucide-react";
+import { Database, Files, LogOut, PanelLeft, Plug, Settings, Trash2 } from "lucide-react";
 import { type MouseEvent, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ReceivedShare } from "@keva/sdk";
+import { toast } from "sonner";
 import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";
-import { formatBytes } from "../lib/format";
-import { listReceivedShares, receivedSharesQueryKey } from "../lib/account-shares";
+import { errorMessage } from "../lib/errors";
+import { formatBytes, formatDate } from "../lib/format";
+import {
+  acceptReceivedShare,
+  declineReceivedShare,
+  listReceivedShares,
+  receivedSharesQueryKey,
+} from "../lib/account-shares";
 import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
 import { viewIcon } from "./view-icons";
 import { UserAvatar } from "./UserAvatar";
 import { avatarRecipeForUser } from "../lib/avatar";
 import { GlobalSearch } from "./GlobalSearch";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +57,95 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
+function InvitationDialog({
+  invitation,
+  onClose,
+}: {
+  invitation: ReceivedShare | null;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const acceptMutation = useMutation({
+    mutationFn: acceptReceivedShare,
+    onSuccess: (share) => {
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: receivedSharesQueryKey });
+      toast.success("Shared view added");
+      void navigate(`/shared/${share.id}`);
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const declineMutation = useMutation({
+    mutationFn: declineReceivedShare,
+    onSuccess: () => {
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: receivedSharesQueryKey });
+      toast.success("Invitation declined");
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const isPending = acceptMutation.isPending || declineMutation.isPending;
+  const canRead = invitation?.scopes.includes("read") ?? false;
+  const canWrite = invitation?.scopes.includes("write") ?? false;
+
+  return (
+    <Dialog open={invitation !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        {invitation && (
+          <>
+            <DialogHeader>
+              <div className="flex items-center gap-3 pr-8">
+                <UserAvatar
+                  avatar={invitation.owner.avatar}
+                  name={invitation.owner.name}
+                  className="size-10"
+                />
+                <div className="min-w-0">
+                  <DialogTitle className="truncate">{invitation.name}</DialogTitle>
+                  <p className="mt-1 truncate text-sm text-muted-foreground">
+                    From {invitation.owner.name} · {formatDate(invitation.createdAt)}
+                  </p>
+                </div>
+              </div>
+              <DialogDescription>
+                {invitation.owner.name} invited you to access this shared view.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-3 py-1">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Access included
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {canRead && <Badge variant="secondary">View &amp; download</Badge>}
+                {canWrite && <Badge variant="secondary">Upload</Badge>}
+                {invitation.allowOwnDelete && <Badge variant="secondary">Remove own uploads</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {canWrite
+                  ? `Uploads become files in ${invitation.owner.name}’s space. They control organization, retention, and permanent deletion.`
+                  : `You can view files matching this view in ${invitation.owner.name}’s space.`}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={isPending}
+                onClick={() => declineMutation.mutate(invitation.id)}
+              >
+                Decline
+              </Button>
+              <Button disabled={isPending} onClick={() => acceptMutation.mutate(invitation.id)}>
+                Accept invitation
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AppSidebar() {
   const { data: usage } = useUsage();
   const { data: views } = useQuery({ queryKey: viewsQueryKey, queryFn: listViews });
@@ -48,11 +155,12 @@ function AppSidebar() {
     refetchInterval: 60_000,
   });
   const location = useLocation();
-  const { state, toggleSidebar, setOpen } = useSidebar();
+  const [selectedInvitationId, setSelectedInvitationId] = useState<string | null>(null);
+  const { state, toggleSidebar, setOpen, isMobile, setOpenMobile } = useSidebar();
   const acceptedShares = (receivedShares ?? []).filter((share) => share.status === "accepted");
-  const pendingShareCount = (receivedShares ?? []).filter(
-    (share) => share.status === "pending",
-  ).length;
+  const pendingShares = (receivedShares ?? []).filter((share) => share.status === "pending");
+  const selectedInvitation =
+    pendingShares.find((share) => share.id === selectedInvitationId) ?? null;
   const isActive = (url: string, exact: boolean) =>
     exact ? location.pathname === url : location.pathname.startsWith(url);
 
@@ -64,7 +172,7 @@ function AppSidebar() {
         }
       : undefined;
 
-  return (
+  const sidebar = (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="relative h-12 overflow-hidden transition-[height] duration-200 group-data-[collapsible=icon]:h-8">
@@ -129,24 +237,36 @@ function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>
-          <SidebarGroupLabel>Shared</SidebarGroupLabel>
+          <SidebarGroupLabel>
+            <span>Shared</span>
+            {pendingShares.length > 0 && (
+              <Badge variant="secondary" className="ml-auto tabular-nums">
+                {pendingShares.length}
+              </Badge>
+            )}
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location.pathname === "/shared"}
-                  tooltip="Shared with me"
-                  render={<Link to="/shared" />}
-                >
-                  <Inbox />
-                  <span>Shared with me</span>
-                  {pendingShareCount > 0 && (
-                    <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                      {pendingShareCount}
-                    </span>
-                  )}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {pendingShares.map((share) => {
+                const Icon = viewIcon(share.icon);
+                return (
+                  <SidebarMenuItem key={share.id}>
+                    <SidebarMenuButton
+                      tooltip={`${share.name} · Invitation from ${share.owner.name}`}
+                      onClick={() => {
+                        setSelectedInvitationId(share.id);
+                        if (isMobile) setOpenMobile(false);
+                      }}
+                    >
+                      <Icon />
+                      <span className="min-w-0 flex-1 truncate">{share.name}</span>
+                      <Badge variant="outline" className="ml-auto shrink-0">
+                        Pending
+                      </Badge>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
               {acceptedShares.map((share) => {
                 const Icon = viewIcon(share.icon);
                 return (
@@ -217,6 +337,16 @@ function AppSidebar() {
         )}
       </SidebarFooter>
     </Sidebar>
+  );
+
+  return (
+    <>
+      {sidebar}
+      <InvitationDialog
+        invitation={selectedInvitation}
+        onClose={() => setSelectedInvitationId(null)}
+      />
+    </>
   );
 }
 

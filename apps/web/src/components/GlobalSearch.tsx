@@ -2,7 +2,6 @@ import {
   Files,
   File,
   History,
-  Inbox,
   PanelLeft,
   Plug,
   Search,
@@ -52,7 +51,6 @@ const PAGES: ReadonlyArray<{
   icon: LucideIcon;
 }> = [
   { title: "All files", url: "/", keywords: "home files", icon: Files },
-  { title: "Shared with me", url: "/shared", keywords: "inbox shared", icon: Inbox },
   { title: "Trash", url: "/trash", keywords: "deleted restore", icon: Trash2 },
   { title: "Connection", url: "/connection", keywords: "mcp api tokens", icon: Plug },
   { title: "Settings", url: "/settings", keywords: "account appearance storage", icon: Settings },
