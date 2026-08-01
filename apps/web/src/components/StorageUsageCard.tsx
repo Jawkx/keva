@@ -1,6 +1,9 @@
+import { ArrowRight, HardDrive } from "lucide-react";
+import { Link } from "react-router";
 import type { UsageResult } from "@keva/sdk";
 import { formatBytes, formatContentType } from "../lib/format";
 import { useUsage } from "../lib/use-usage";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -96,10 +99,30 @@ export function StorageUsageCard() {
           </div>
         ) : isError ? (
           <p className="text-sm text-muted-foreground">Couldn't load storage usage.</p>
+        ) : usage.quotaBytes === 0 ? (
+          <NoStoragePlan />
         ) : (
           <UsageBreakdown usage={usage} />
         )}
       </section>
+    </div>
+  );
+}
+
+function NoStoragePlan() {
+  return (
+    <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed bg-muted/15 px-6 py-12 text-center">
+      <div className="flex size-14 items-center justify-center rounded-full border bg-background shadow-sm">
+        <HardDrive className="size-6 text-muted-foreground" aria-hidden="true" />
+      </div>
+      <h3 className="mt-5 font-heading text-lg font-semibold">No storage plan</h3>
+      <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted-foreground">
+        Choose a plan to activate storage and start your 14-day trial.
+      </p>
+      <Button className="mt-5" nativeButton={false} render={<Link to="/settings/billing" />}>
+        View billing plans
+        <ArrowRight data-icon="inline-end" />
+      </Button>
     </div>
   );
 }
@@ -111,7 +134,10 @@ function UsageBreakdown({ usage }: { readonly usage: UsageResult }) {
     usage.quotaBytes === null || usage.remainingBytes === null
       ? usage.totalBytes
       : usage.quotaBytes - usage.remainingBytes;
-  const usagePct = usage.quotaBytes === null ? null : (accountedBytes / usage.quotaBytes) * 100;
+  const usagePct =
+    usage.quotaBytes === null || usage.quotaBytes <= 0
+      ? null
+      : (accountedBytes / usage.quotaBytes) * 100;
   const meterPct = usagePct === null ? 0 : Math.min(100, usagePct);
   const isAtLimit = usagePct !== null && usagePct >= 100;
   const isNearLimit = usagePct !== null && usagePct >= 80;

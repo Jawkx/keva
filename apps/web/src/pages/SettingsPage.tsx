@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const SETTINGS_SECTIONS = ["profile", "security", "billing", "storage", "appearance"] as const;
+const SETTINGS_FADE_IN = "motion-safe:animate-[settings-fade-in_300ms_ease-out_both]";
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const isSettingsSection = (value: string | undefined): value is SettingsSection =>
@@ -281,14 +282,14 @@ export function SettingsPage() {
     <Tabs
       value={activeSection}
       onValueChange={(value) => navigate(`/settings/${value}`)}
-      className="grid min-w-0 gap-6 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-8 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-10 2xl:grid-cols-[11rem_minmax(0,56rem)_11rem] 2xl:justify-between 2xl:gap-0"
+      className={`grid min-w-0 gap-6 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-8 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-10 2xl:grid-cols-[11rem_minmax(0,56rem)_11rem] 2xl:justify-between 2xl:gap-0 ${SETTINGS_FADE_IN}`}
     >
       <div className="pb-2 md:pb-0">
         <SettingsNavigation />
       </div>
 
       <main className="mx-auto w-full min-w-0 max-w-3xl 2xl:max-w-4xl">
-        <TabsContent value="profile">
+        <TabsContent value="profile" className={SETTINGS_FADE_IN}>
           {data?.user ? (
             <ProfileSettings
               key={data.user.id}
@@ -306,16 +307,16 @@ export function SettingsPage() {
             </div>
           )}
         </TabsContent>
-        <TabsContent value="security">
+        <TabsContent value="security" className={SETTINGS_FADE_IN}>
           <SecuritySettings />
         </TabsContent>
-        <TabsContent value="billing">
+        <TabsContent value="billing" className={SETTINGS_FADE_IN}>
           <SubscriptionCard />
         </TabsContent>
-        <TabsContent value="storage">
+        <TabsContent value="storage" className={SETTINGS_FADE_IN}>
           <StorageUsageCard />
         </TabsContent>
-        <TabsContent value="appearance">
+        <TabsContent value="appearance" className={SETTINGS_FADE_IN}>
           <AppearanceCard />
         </TabsContent>
       </main>
