@@ -193,6 +193,11 @@ export const tenantBilling = pgTable(
     currentPeriodStart: timestamp("current_period_start", { withTimezone: true, mode: "string" }),
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "string" }),
     trialEndsAt: timestamp("trial_ends_at", { withTimezone: true, mode: "string" }),
+    pendingPlanSlug: text("pending_plan_slug").$type<"100gb" | "500gb" | "1tb" | "2tb">(),
+    pendingPlanAppliesAt: timestamp("pending_plan_applies_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
     graceEndsAt: timestamp("grace_ends_at", { withTimezone: true, mode: "string" }),
     cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
     lastPolarEventAt: timestamp("last_polar_event_at", { withTimezone: true, mode: "string" }),

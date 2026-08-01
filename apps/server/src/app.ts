@@ -178,10 +178,30 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         Effect.gen(function* () {
           const principal = yield* principalEffect(context.req.raw.headers);
           yield* sessionUser(principal);
-          return yield* Effect.tryPromise({
+          const overview = yield* Effect.tryPromise({
             try: () => billing.store.getOverview(principal.tenantId),
             catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
-          }).pipe(Effect.flatMap((overview) => decode(BillingOverview, overview)));
+          }).pipe(Effect.flatMap((value) => decode(BillingOverview, value)));
+          if (overview.status.pendingPlan || !overview.status.subscriptionId) return overview;
+          const subscription = yield* Effect.promise(() =>
+            billing.polar.subscriptions
+              .get({ id: overview.status.subscriptionId! })
+              .catch(() => null),
+          );
+          const pending = subscription?.pendingUpdate;
+          const plan = pending?.productId
+            ? overview.plans.find((candidate) => candidate.productId === pending.productId)
+            : undefined;
+          if (!pending || !plan) return overview;
+          const appliesAt = pending.appliesAt.toISOString();
+          yield* Effect.tryPromise({
+            try: () => billing.store.setPendingPlan(principal.tenantId, plan.slug, appliesAt),
+            catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
+          });
+          return {
+            ...overview,
+            status: { ...overview.status, pendingPlan: plan.slug, pendingPlanAppliesAt: appliesAt },
+          };
         }),
         runtime,
       );
@@ -202,7 +222,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
             catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
           });
           if (!current) return yield* new Conflict({ message: "No active subscription" });
-          if (current.plan === input.plan) return { changed: false };
+          if (current.plan === input.plan) return { changed: false, effectiveAt: null };
           const plans = BILLING_PLANS;
           const currentIndex = plans.findIndex((plan) => plan.slug === current.plan);
           const nextIndex = plans.findIndex((plan) => plan.slug === input.plan);
@@ -223,7 +243,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           });
           const productId = overview.plans.find((plan) => plan.slug === input.plan)?.productId;
           if (!productId) return yield* new ValidationError({ message: "Unknown billing plan" });
-          yield* Effect.tryPromise({
+          const subscription = yield* Effect.tryPromise({
             try: () =>
               billing.polar.subscriptions.update({
                 id: current.id,
@@ -234,7 +254,49 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
               }),
             catch: () => new StorageUnavailable({ message: "Could not update subscription" }),
           });
-          return { changed: true };
+          const effectiveAt = subscription.pendingUpdate?.appliesAt.toISOString() ?? null;
+          yield* Effect.tryPromise({
+            try: () =>
+              billing.store.setPendingPlan(
+                principal.tenantId,
+                effectiveAt ? input.plan : null,
+                effectiveAt,
+              ),
+            catch: () => new StorageUnavailable({ message: "Could not save plan change" }),
+          });
+          return { changed: true, effectiveAt };
+        }),
+        runtime,
+      );
+    }),
+  );
+
+  app.delete("/api/billing/plan", (context) =>
+    withServices(context, ({ runtime, billing }) => {
+      if (!billing) return context.notFound();
+      return execute(
+        context,
+        Effect.gen(function* () {
+          const principal = yield* principalEffect(context.req.raw.headers);
+          yield* sessionUser(principal);
+          const current = yield* Effect.tryPromise({
+            try: () => billing.store.currentSubscription(principal.tenantId),
+            catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
+          });
+          if (!current) return yield* new Conflict({ message: "No active subscription" });
+          yield* Effect.tryPromise({
+            try: () =>
+              billing.polar.subscriptions.update({
+                id: current.id,
+                subscriptionUpdate: { pendingUpdate: null },
+              }),
+            catch: () => new StorageUnavailable({ message: "Could not cancel plan change" }),
+          });
+          yield* Effect.tryPromise({
+            try: () => billing.store.setPendingPlan(principal.tenantId, null, null),
+            catch: () => new StorageUnavailable({ message: "Could not save plan change" }),
+          });
+          return { canceled: true };
         }),
         runtime,
       );

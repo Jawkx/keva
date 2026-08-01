@@ -88,6 +88,8 @@ export const BillingStatus = Schema.Struct({
   currentPeriodStart: Schema.NullOr(Schema.String),
   currentPeriodEnd: Schema.NullOr(Schema.String),
   trialEndsAt: Schema.NullOr(Schema.String),
+  pendingPlan: Schema.NullOr(BillingPlanSlug),
+  pendingPlanAppliesAt: Schema.NullOr(Schema.String),
   cancelAtPeriodEnd: Schema.Boolean,
   graceEndsAt: Schema.NullOr(Schema.String),
 });
@@ -101,3 +103,12 @@ export type BillingOverview = typeof BillingOverview.Type;
 
 export const ChangeBillingPlan = Schema.Struct({ plan: BillingPlanSlug });
 export type ChangeBillingPlan = typeof ChangeBillingPlan.Type;
+
+export const ChangeBillingPlanResult = Schema.Struct({
+  changed: Schema.Boolean,
+  effectiveAt: Schema.NullOr(Schema.String),
+});
+export type ChangeBillingPlanResult = typeof ChangeBillingPlanResult.Type;
+
+export const CancelBillingPlanChangeResult = Schema.Struct({ canceled: Schema.Boolean });
+export type CancelBillingPlanChangeResult = typeof CancelBillingPlanChangeResult.Type;

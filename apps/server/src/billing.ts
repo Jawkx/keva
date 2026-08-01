@@ -33,6 +33,8 @@ interface BillingRow {
   readonly current_period_start: Date | string | null;
   readonly current_period_end: Date | string | null;
   readonly trial_ends_at: Date | string | null;
+  readonly pending_plan_slug: BillingPlanSlug | null;
+  readonly pending_plan_applies_at: Date | string | null;
   readonly cancel_at_period_end: boolean;
   readonly grace_ends_at: Date | string | null;
 }
@@ -52,6 +54,8 @@ const statusFromRow = (row?: BillingRow): BillingStatus => ({
   currentPeriodStart: iso(row?.current_period_start ?? null),
   currentPeriodEnd: iso(row?.current_period_end ?? null),
   trialEndsAt: iso(row?.trial_ends_at ?? null),
+  pendingPlan: row?.pending_plan_slug ?? null,
+  pendingPlanAppliesAt: iso(row?.pending_plan_applies_at ?? null),
   cancelAtPeriodEnd: row?.cancel_at_period_end ?? false,
   graceEndsAt: iso(row?.grace_ends_at ?? null),
 });
@@ -72,6 +76,17 @@ const metadataMatches = (subscription: Subscription, plan: BillingPlanDefinition
   );
 };
 
+const pendingPlanFromSubscription = (
+  config: BillingConfig,
+  subscription: Subscription,
+): { readonly plan: BillingPlanSlug | null; readonly appliesAt: string | null } => {
+  const pending = subscription.pendingUpdate;
+  if (!pending?.productId) return { plan: null, appliesAt: null };
+  const plan = planForProduct(config, pending.productId);
+  if (!plan) throw new Error(`Unknown pending Polar product ${pending.productId}`);
+  return { plan: plan.slug, appliesAt: pending.appliesAt.toISOString() };
+};
+
 export interface BillingStore {
   readonly ensureUnsubscribed: (userId: string, tenantId: string) => Promise<void>;
   readonly getOverview: (tenantId: string) => Promise<BillingOverview>;
@@ -86,6 +101,11 @@ export interface BillingStore {
     tenantId: string,
   ) => Promise<{ readonly id: string; readonly plan: BillingPlanSlug } | null>;
   readonly canDowngrade: (tenantId: string, plan: BillingPlanSlug) => Promise<boolean>;
+  readonly setPendingPlan: (
+    tenantId: string,
+    plan: BillingPlanSlug | null,
+    appliesAt: string | null,
+  ) => Promise<void>;
 }
 
 export interface BillingMeterService {
@@ -128,7 +148,7 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
     const rows = await sql<BillingRow[]>`
       select status, plan_slug, polar_product_id, polar_subscription_id,
              current_period_start, current_period_end, trial_ends_at,
-             cancel_at_period_end, grace_ends_at
+             pending_plan_slug, pending_plan_applies_at, cancel_at_period_end, grace_ends_at
       from tenant_billing where tenant_id = ${tenantId}
     `;
     return {
@@ -147,6 +167,7 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
     const status = ["active", "trialing", "past_due"].includes(subscription.status)
       ? subscription.status
       : "canceled";
+    const pending = pendingPlanFromSubscription(config, subscription);
     const limits =
       status === "trialing"
         ? TRIAL_LIMITS
@@ -167,14 +188,15 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
           tenant_id, user_id, polar_customer_id, polar_subscription_id,
           polar_product_id, plan_slug, status, monthly_uploads_limit,
           monthly_api_requests_limit, current_period_start, current_period_end,
-          trial_ends_at, grace_ends_at, cancel_at_period_end,
-          last_polar_event_at, updated_at
+          trial_ends_at, pending_plan_slug, pending_plan_applies_at, grace_ends_at,
+          cancel_at_period_end, last_polar_event_at, updated_at
         ) values (
           ${tenantId}, ${userId}, ${subscription.customerId}, ${subscription.id},
           ${subscription.productId}, ${plan.slug}, ${status}, ${limits.monthlyUploads},
           ${limits.monthlyApiRequests}, ${subscription.currentPeriodStart.toISOString()},
           ${subscription.currentPeriodEnd.toISOString()}, ${iso(subscription.trialEnd)},
-          ${graceEndsAt}, ${subscription.cancelAtPeriodEnd}, ${eventAt.toISOString()}, now()
+          ${pending.plan}, ${pending.appliesAt}, ${graceEndsAt}, ${subscription.cancelAtPeriodEnd},
+          ${eventAt.toISOString()}, now()
         )
         on conflict (tenant_id) do update set
           user_id = excluded.user_id,
@@ -188,6 +210,8 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
           current_period_start = excluded.current_period_start,
           current_period_end = excluded.current_period_end,
           trial_ends_at = excluded.trial_ends_at,
+          pending_plan_slug = excluded.pending_plan_slug,
+          pending_plan_applies_at = excluded.pending_plan_applies_at,
           grace_ends_at = excluded.grace_ends_at,
           cancel_at_period_end = excluded.cancel_at_period_end,
           last_polar_event_at = excluded.last_polar_event_at,
@@ -307,6 +331,13 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
       !row ||
       (Number(row.used_bytes) <= plan.storageBytes && Number(row.used_items) <= plan.storedItems)
     );
+  },
+  setPendingPlan: async (tenantId, plan, appliesAt) => {
+    await sql`
+      update tenant_billing
+      set pending_plan_slug = ${plan}, pending_plan_applies_at = ${appliesAt}, updated_at = now()
+      where tenant_id = ${tenantId}
+    `;
   },
 });
 

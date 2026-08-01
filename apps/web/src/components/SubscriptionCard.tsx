@@ -2,9 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CreditCard, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { authClient } from "../lib/auth";
-import { BILLING_QUERY_KEY, changeBillingPlan, getBillingOverview } from "../lib/billing";
+import {
+  BILLING_QUERY_KEY,
+  cancelBillingPlanChange,
+  changeBillingPlan,
+  getBillingOverview,
+} from "../lib/billing";
 import { useApiError } from "../lib/useApiError";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,10 +50,21 @@ export function SubscriptionCard() {
   });
   const changeMutation = useMutation({
     mutationFn: changeBillingPlan,
-    onSuccess: () => {
-      toast.success("Plan change submitted");
+    onSuccess: (result) => {
+      if (!result.changed) toast.info("Already on this plan");
+      else if (result.effectiveAt)
+        toast.success(`Plan change scheduled for ${dateLabel(result.effectiveAt)}`);
+      else toast.success("Plan changed");
       void queryClient.invalidateQueries({ queryKey: BILLING_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ["usage"] });
+    },
+    onError: (error) => toast.error(handleError(error)),
+  });
+  const cancelChangeMutation = useMutation({
+    mutationFn: cancelBillingPlanChange,
+    onSuccess: () => {
+      toast.success("Scheduled plan change canceled");
+      void queryClient.invalidateQueries({ queryKey: BILLING_QUERY_KEY });
     },
     onError: (error) => toast.error(handleError(error)),
   });
@@ -64,7 +80,7 @@ export function SubscriptionCard() {
         </CardHeader>
         <Separator />
         <CardContent className="px-0 pt-6">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="flex min-h-52 flex-col rounded-lg border p-4">
                 <Skeleton className="h-5 w-20" />
@@ -94,6 +110,7 @@ export function SubscriptionCard() {
 
   const { status, plans } = billingQuery.data;
   const renewal = status.trialEndsAt ?? status.currentPeriodEnd;
+  const pendingPlan = plans.find((plan) => plan.slug === status.pendingPlan);
 
   return (
     <Card className="relative gap-0 overflow-visible bg-transparent py-0 ring-0">
@@ -132,6 +149,25 @@ export function SubscriptionCard() {
             </AlertDescription>
           </Alert>
         )}
+        {pendingPlan && status.pendingPlanAppliesAt && (
+          <Alert className="pr-32">
+            <AlertTitle>Plan change scheduled</AlertTitle>
+            <AlertDescription>
+              Your plan changes to {pendingPlan.name} on {dateLabel(status.pendingPlanAppliesAt)}.
+              Your current limits remain active until then.
+            </AlertDescription>
+            <AlertAction>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={cancelChangeMutation.isPending || changeMutation.isPending}
+                onClick={() => cancelChangeMutation.mutate()}
+              >
+                {cancelChangeMutation.isPending ? "Canceling…" : "Cancel change"}
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
         {status.plan && renewal && (
           <p className="text-sm text-muted-foreground">
             {status.status === "trialing" ? "Trial ends" : "Current period ends"}{" "}
@@ -139,19 +175,22 @@ export function SubscriptionCard() {
             {status.cancelAtPeriodEnd ? "; cancellation scheduled" : ""}.
           </p>
         )}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2">
           {plans.map((plan) => {
             const selected = status.plan === plan.slug;
             const currentPrice = plans.find(
               (candidate) => candidate.slug === status.plan,
             )?.priceCents;
             const downgrade = currentPrice !== undefined && plan.priceCents < currentPrice;
+            const scheduled = status.pendingPlan === plan.slug;
             return (
               <div
                 key={plan.slug}
                 className={cn(
                   "flex min-h-52 flex-col rounded-lg border p-4 transition-colors",
-                  selected ? "border-foreground bg-muted/45" : "border-border hover:bg-muted/25",
+                  selected || scheduled
+                    ? "border-foreground bg-muted/45"
+                    : "border-border hover:bg-muted/25",
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -163,6 +202,7 @@ export function SubscriptionCard() {
                     </p>
                   </div>
                   {selected && <Check className="size-4" aria-label="Current plan" />}
+                  {scheduled && <Badge variant="outline">Scheduled</Badge>}
                 </div>
                 <div className="mt-5 space-y-1 text-xs text-muted-foreground">
                   <p>{plan.storedItems.toLocaleString()} stored items</p>
@@ -173,14 +213,22 @@ export function SubscriptionCard() {
                   className="mt-auto"
                   size="sm"
                   variant={selected || downgrade ? "outline" : "default"}
-                  disabled={selected || changeMutation.isPending}
-                  onClick={() =>
-                    status.subscriptionId
-                      ? changeMutation.mutate(plan.slug)
-                      : void startCheckout(plan.slug)
-                  }
+                  disabled={selected || changeMutation.isPending || cancelChangeMutation.isPending}
+                  onClick={() => {
+                    if (scheduled) cancelChangeMutation.mutate();
+                    else if (status.subscriptionId) changeMutation.mutate(plan.slug);
+                    else void startCheckout(plan.slug);
+                  }}
                 >
-                  {selected ? "Current plan" : downgrade ? "Downgrade" : "Choose plan"}
+                  {selected
+                    ? "Current plan"
+                    : scheduled
+                      ? cancelChangeMutation.isPending
+                        ? "Canceling…"
+                        : "Cancel change"
+                      : downgrade
+                        ? "Downgrade"
+                        : "Choose plan"}
                 </Button>
               </div>
             );
