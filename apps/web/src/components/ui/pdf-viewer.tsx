@@ -2229,7 +2229,10 @@ function PDFViewerInner({
                       </Button>
                     </ToolbarTooltip>
                   </div>
-                  <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                  <Separator
+                    orientation="vertical"
+                    className="mx-1 h-4 data-vertical:self-center"
+                  />
                 </>
               ) : null}
               <div className="flex flex-none items-center gap-1">
@@ -2289,7 +2292,7 @@ function PDFViewerInner({
                   </Button>
                 </ToolbarTooltip>
               </div>
-              <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+              <Separator orientation="vertical" className="mx-1 h-4 data-vertical:self-center" />
               <PDFViewerSearchControl
                 key={documentId}
                 documentId={documentId}
@@ -2297,13 +2300,19 @@ function PDFViewerInner({
               />
               {toolbarActions ? (
                 <>
-                  <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                  <Separator
+                    orientation="vertical"
+                    className="mx-1 h-4 data-vertical:self-center"
+                  />
                   {toolbarActions}
                 </>
               ) : null}
               {showDownload || showUpload ? (
                 <>
-                  <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                  <Separator
+                    orientation="vertical"
+                    className="mx-1 h-4 data-vertical:self-center"
+                  />
                   <PDFViewerFileActionsMenu
                     downloadDisabled={downloadDisabled}
                     isPreparingDownload={isPreparingDownload}

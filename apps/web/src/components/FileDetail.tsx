@@ -399,7 +399,7 @@ export function FileDetail({
             <TooltipContent>Download</TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="mx-1 h-5" />
+          <Separator orientation="vertical" className="mx-1 h-5 data-vertical:self-center" />
           {trashMode && (
             <Button
               variant="outline"

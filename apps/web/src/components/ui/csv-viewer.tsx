@@ -723,7 +723,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
             </div>
             {search ? (
               <>
-                <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                <Separator orientation="vertical" className="mx-1 h-4 data-vertical:self-center" />
                 <CsvSearchPopover
                   key={dataIdentity}
                   headers={parsed.headers}
@@ -734,7 +734,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
                 />
               </>
             ) : null}
-            <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+            <Separator orientation="vertical" className="mx-1 h-4 data-vertical:self-center" />
             <input
               ref={inputRef}
               type="file"
