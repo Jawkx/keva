@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "Neon": {
+      "url": "https://mcp.neon.tech/mcp"
+    },
+    "polar-sandbox": {
+      "url": "https://mcp.polar.sh/mcp/polar-sandbox"
+    },
+    "polar-mcp": {
+      "url": "https://mcp.polar.sh/mcp/polar-mcp"
+    }
+  }
+}
