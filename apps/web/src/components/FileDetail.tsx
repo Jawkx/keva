@@ -1,13 +1,4 @@
-import {
-  ArchiveRestore,
-  Download,
-  Maximize2,
-  Minimize2,
-  Pencil,
-  Trash2,
-  TriangleAlert,
-  X,
-} from "lucide-react";
+import { ArchiveRestore, Download, Pencil, Trash2, TriangleAlert, X } from "lucide-react";
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -99,7 +90,6 @@ export function FileDetail({
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
-  const [fullScreen, setFullScreen] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -320,13 +310,7 @@ export function FileDetail({
   };
 
   return (
-    <div
-      className={
-        fullScreen
-          ? "fixed inset-0 z-50 flex min-h-0 min-w-0 flex-col bg-background"
-          : "flex h-full min-h-0 w-full min-w-0 flex-col"
-      }
-    >
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <header className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           {loading ? (
@@ -397,25 +381,6 @@ export function FileDetail({
             >
               <X />
             </Button>
-          )}
-          {item && activePanel === "preview" && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={fullScreen ? "Exit full screen" : "Open full-screen preview"}
-                    onClick={() => setFullScreen((current) => !current)}
-                  />
-                }
-              >
-                {fullScreen ? <Minimize2 /> : <Maximize2 />}
-              </TooltipTrigger>
-              <TooltipContent>
-                {fullScreen ? "Exit full screen" : "Full-screen preview"}
-              </TooltipContent>
-            </Tooltip>
           )}
           <Tooltip>
             <TooltipTrigger
