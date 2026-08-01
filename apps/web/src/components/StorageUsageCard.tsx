@@ -111,7 +111,7 @@ export function StorageUsageCard() {
 
 function NoStoragePlan() {
   return (
-    <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed bg-muted/15 px-6 py-12 text-center">
+    <div className="flex min-h-64 flex-col items-center justify-center px-6 py-12 text-center">
       <div className="flex size-14 items-center justify-center rounded-full border bg-background shadow-sm">
         <HardDrive className="size-6 text-muted-foreground" aria-hidden="true" />
       </div>
