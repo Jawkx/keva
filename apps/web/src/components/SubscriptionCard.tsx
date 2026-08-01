@@ -38,7 +38,7 @@ async function openPortal() {
   if (result.error) toast.error(result.error.message ?? "Could not open billing.");
 }
 
-export function SubscriptionCard() {
+export function SubscriptionCard({ showHeader = true }: { readonly showHeader?: boolean }) {
   const handleError = useApiError();
   const queryClient = useQueryClient();
   const checkoutReturn = new URLSearchParams(window.location.search).get("checkout") === "complete";
@@ -72,14 +72,18 @@ export function SubscriptionCard() {
   if (billingQuery.isPending) {
     return (
       <Card className="relative gap-0 overflow-visible bg-transparent py-0 ring-0">
-        <CardHeader className="px-0 pb-5">
-          <Skeleton className="h-6 w-28" />
-          <CardAction>
-            <Skeleton className="h-5 w-16 rounded-full" />
-          </CardAction>
-        </CardHeader>
-        <Separator />
-        <CardContent className="px-0 pt-6">
+        {showHeader && (
+          <>
+            <CardHeader className="px-0 pb-5">
+              <Skeleton className="h-6 w-28" />
+              <CardAction>
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </CardAction>
+            </CardHeader>
+            <Separator />
+          </>
+        )}
+        <CardContent className={cn("px-0", showHeader && "pt-6")}>
           <div className="grid gap-3 md:grid-cols-2">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="flex min-h-52 flex-col rounded-lg border p-4">
@@ -114,22 +118,26 @@ export function SubscriptionCard() {
 
   return (
     <Card className="relative gap-0 overflow-visible bg-transparent py-0 ring-0">
-      <CardHeader className="px-0 pb-5">
-        <CardTitle className="text-xl font-semibold tracking-tight">Billing</CardTitle>
-        <CardAction className="flex items-center gap-2">
-          <Badge variant={status.status === "past_due" ? "destructive" : "secondary"}>
-            {statusLabel[status.status]}
-          </Badge>
-          {status.subscriptionId && (
-            <Button size="sm" variant="outline" onClick={() => void openPortal()}>
-              <CreditCard data-icon="inline-start" />
-              Manage
-            </Button>
-          )}
-        </CardAction>
-      </CardHeader>
-      <Separator />
-      <CardContent className="flex flex-col gap-4 px-0 pt-6">
+      {showHeader && (
+        <>
+          <CardHeader className="px-0 pb-5">
+            <CardTitle className="text-xl font-semibold tracking-tight">Billing</CardTitle>
+            <CardAction className="flex items-center gap-2">
+              <Badge variant={status.status === "past_due" ? "destructive" : "secondary"}>
+                {statusLabel[status.status]}
+              </Badge>
+              {status.subscriptionId && (
+                <Button size="sm" variant="outline" onClick={() => void openPortal()}>
+                  <CreditCard data-icon="inline-start" />
+                  Manage
+                </Button>
+              )}
+            </CardAction>
+          </CardHeader>
+          <Separator />
+        </>
+      )}
+      <CardContent className={cn("flex flex-col gap-4 px-0", showHeader && "pt-6")}>
         {status.status === "unsubscribed" && (
           <Alert>
             <AlertTitle>Choose a plan to start your 14-day trial</AlertTitle>

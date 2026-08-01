@@ -24,7 +24,9 @@ import {
 } from "@tanstack/react-table";
 import { toast } from "sonner";
 import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
+import type { UsageResult } from "@keva/sdk";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
+import { BillingRequiredDialog } from "../components/BillingRequiredDialog";
 import { FileDetail } from "../components/FileDetail";
 import { FileBrowserFrame } from "../components/file-browser/FileBrowserFrame";
 import {
@@ -52,13 +54,19 @@ import {
 } from "../lib/file-order";
 import { buildFilterWhere, decodeFilterParam, draftFromConditions } from "../lib/item-filters";
 import { inferPropertyValue, validateKey } from "../lib/properties";
-import { cachePatchedItem, removeDeletedItemsFromCache, itemsQueryKey } from "../lib/items-cache";
+import {
+  cachePatchedItem,
+  removeDeletedItemsFromCache,
+  itemsQueryKey,
+  usageQueryKey,
+} from "../lib/items-cache";
 import { keva } from "../lib/keva";
 import { listShares, sharesQueryKey } from "../lib/shares";
 import { uploadStampFrom } from "../lib/upload-stamp";
 import { useFileFilters } from "../lib/use-file-filters";
 import { useMountEffect } from "../lib/useMountEffect";
 import { useUploadQueue } from "../lib/use-upload-queue";
+import { useUsage } from "../lib/use-usage";
 import {
   createView,
   deleteView,
@@ -215,11 +223,8 @@ function FilesPageContent({
   };
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  useMountEffect(() => {
-    const openUpload = () => uploadInputRef.current?.click();
-    window.addEventListener("keva:upload", openUpload);
-    return () => window.removeEventListener("keva:upload", openUpload);
-  });
+  const [billingRequiredOpen, setBillingRequiredOpen] = useState(false);
+  useUsage();
   const [shareOpen, setShareOpen] = useState(false);
   const [shareKey, setShareKey] = useState(0);
   const openShare = () => {
@@ -326,6 +331,20 @@ function FilesPageContent({
     order,
     uploadStamp,
   });
+  const requestUpload = (files?: File[]) => {
+    const usage = queryClient.getQueryData<UsageResult>(usageQueryKey);
+    if (usage?.quotaBytes === 0) {
+      setBillingRequiredOpen(true);
+      return;
+    }
+    if (files) startUploads(files);
+    else uploadInputRef.current?.click();
+  };
+  useMountEffect(() => {
+    const openUpload = () => requestUpload();
+    window.addEventListener("keva:upload", openUpload);
+    return () => window.removeEventListener("keva:upload", openUpload);
+  });
   const tableData = useMemo<FileRow[]>(
     () => [...(pageIndex === 0 ? uploads : []), ...serverItems],
     [pageIndex, serverItems, uploads],
@@ -396,7 +415,7 @@ function FilesPageContent({
     dragDepth.current = 0;
     setPageDragging(false);
     const dropped = Array.from(e.dataTransfer.files);
-    if (dropped.length > 0) startUploads(dropped);
+    if (dropped.length > 0) requestUpload(dropped);
   };
 
   const closeDetail = () => {
@@ -809,7 +828,7 @@ function FilesPageContent({
                     closeDelay={100}
                     render={
                       <Button
-                        onClick={() => uploadInputRef.current?.click()}
+                        onClick={() => requestUpload()}
                         className="h-7 px-2 text-[0.8rem] sm:h-8 sm:px-2.5 sm:text-sm [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-4"
                       />
                     }
@@ -828,7 +847,7 @@ function FilesPageContent({
                 </HoverCard>
               ) : (
                 <Button
-                  onClick={() => uploadInputRef.current?.click()}
+                  onClick={() => requestUpload()}
                   className="h-7 px-2 text-[0.8rem] sm:h-8 sm:px-2.5 sm:text-sm [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-4"
                 >
                   <Upload data-icon="inline-start" />
@@ -1039,7 +1058,7 @@ function FilesPageContent({
             </EmptyDescription>
           </EmptyHeader>
           {!filtered && !hasItems ? (
-            <Button onClick={() => uploadInputRef.current?.click()}>
+            <Button onClick={() => requestUpload()}>
               <Upload data-icon="inline-start" />
               Upload
             </Button>
@@ -1163,10 +1182,12 @@ function FilesPageContent({
         multiple
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
-          if (files.length > 0) startUploads(files);
+          if (files.length > 0) requestUpload(files);
           e.target.value = "";
         }}
       />
+
+      <BillingRequiredDialog open={billingRequiredOpen} onOpenChange={setBillingRequiredOpen} />
 
       <ShareCreateDialog
         key={`share-${shareKey}`}
