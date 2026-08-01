@@ -29,6 +29,11 @@ export interface BetterAuthConfig {
     readonly email: string;
     readonly url: string;
   }) => Promise<void>;
+  readonly googleOAuth?: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly requireLocalEmailVerified: boolean;
+  };
   readonly polar?: {
     readonly client: Polar;
     readonly webhookSecret: string;
@@ -150,6 +155,24 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
       enabled: true,
       requireEmailVerification: Boolean(config.sendVerificationEmail),
     },
+    ...(config.googleOAuth
+      ? {
+          socialProviders: {
+            google: {
+              clientId: config.googleOAuth.clientId,
+              clientSecret: config.googleOAuth.clientSecret,
+            },
+          },
+          account: {
+            accountLinking: {
+              enabled: true,
+              disableImplicitLinking: false,
+              requireLocalEmailVerified: config.googleOAuth.requireLocalEmailVerified,
+              allowDifferentEmails: false,
+            },
+          },
+        }
+      : {}),
     user: {
       additionalFields: {
         avatar: {

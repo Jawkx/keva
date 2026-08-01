@@ -5,6 +5,7 @@ import { s3ConfigFor } from "./s3-config.js";
 import { createServerOptions, type ServerOptionsConfig } from "./server-options.js";
 import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
+import { googleOAuthConfigFor } from "./google-oauth-config.js";
 
 interface AssetsBinding {
   readonly fetch: (request: Request) => Promise<Response>;
@@ -22,6 +23,8 @@ interface Env {
   readonly KEVA_ENVIRONMENT?: string;
   readonly RESEND_API_KEY?: string;
   readonly RESEND_FROM?: string;
+  readonly GOOGLE_CLIENT_ID?: string;
+  readonly GOOGLE_CLIENT_SECRET?: string;
   readonly POLAR_ACCESS_TOKEN?: string;
   readonly POLAR_WEBHOOK_SECRET?: string;
   readonly POLAR_SERVER?: string;
@@ -76,6 +79,7 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
   const { databaseUrl, s3 } = persistentConfigFor(env);
   const emailVerification = emailVerificationConfigFor(env);
+  const googleOAuth = googleOAuthConfigFor(env);
   const polar = billingConfigFor(env);
 
   return {
@@ -86,6 +90,7 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
     ...(env.BETTER_AUTH_SECRET ? { betterAuthSecret: env.BETTER_AUTH_SECRET } : {}),
     ...(env.BETTER_AUTH_URL ? { betterAuthUrl: env.BETTER_AUTH_URL } : {}),
     ...(emailVerification ? { emailVerification } : {}),
+    ...(googleOAuth ? { googleOAuth } : {}),
     ...(polar ? { polar } : {}),
     trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
     s3,

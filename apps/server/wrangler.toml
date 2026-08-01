@@ -51,6 +51,11 @@ S3_ENDPOINT = "https://90203c49970ccbafedc99866c91c1b9f.r2.cloudflarestorage.com
 S3_REGION = "auto"
 S3_BUCKET = "keva-production"
 S3_FORCE_PATH_STYLE = "true"
+POLAR_SERVER = "production"
+POLAR_PRODUCT_100GB_ID = "e9c6cd24-8e57-49f8-813e-8071c8d664f5"
+POLAR_PRODUCT_500GB_ID = "dae6fa43-b1bf-496b-a32a-ae26bdcbd4fa"
+POLAR_PRODUCT_1TB_ID = "6cfbe810-174b-496d-b8f0-a3539fb2dd82"
+POLAR_PRODUCT_2TB_ID = "a35ca8f9-6eae-4f8c-907c-2dabc443bab5"
 
 [[env.production.routes]]
 pattern = "app.usekeva.com"

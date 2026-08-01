@@ -2,38 +2,55 @@ import { MailCheck, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { authClient } from "../lib/auth";
-import { oauthContinuation } from "../lib/oauth";
+import {
+  authContinuationSearch,
+  authErrorMessage,
+  signupContinuation,
+} from "../lib/auth-continuation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AuthLayout } from "../components/AuthLayout";
+import { GoogleAuthButton } from "../components/GoogleAuthButton";
 import { PasswordInput } from "../components/PasswordInput";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { BILLING_PLANS } from "@keva/schema";
-
-const planContinuation = (): string | null => {
-  const plan = new URLSearchParams(window.location.search).get("plan");
-  return BILLING_PLANS.some((candidate) => candidate.slug === plan)
-    ? `/settings?plan=${encodeURIComponent(plan!)}`
-    : null;
-};
 
 export function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(() => authErrorMessage(window.location.search));
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const continuationSearch = authContinuationSearch(window.location.search);
+  const destination = signupContinuation(continuationSearch);
+  const authPage = `${window.location.pathname}${continuationSearch}`;
+  const busy = passwordBusy || googleBusy;
+
+  const onGoogleSignIn = async () => {
+    setError(null);
+    setGoogleBusy(true);
+    try {
+      const result = await authClient.signIn.social({
+        provider: "google",
+        callbackURL: destination,
+        errorCallbackURL: authPage,
+      });
+      if (result.error) setError(result.error.message ?? "Google sign-up failed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-up failed.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    setBusy(true);
+    setPasswordBusy(true);
     try {
-      const continuation = oauthContinuation(window.location.search);
-      const destination = continuation ?? planContinuation() ?? "/";
       const result = await authClient.signUp.email({
         email,
         password,
@@ -52,7 +69,7 @@ export function SignupPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed.");
     } finally {
-      setBusy(false);
+      setPasswordBusy(false);
     }
   };
 
@@ -74,7 +91,7 @@ export function SignupPage() {
         <p className="text-center text-sm text-muted-foreground">
           Already verified?{" "}
           <Link
-            to={{ pathname: "/login", search: window.location.search }}
+            to={{ pathname: "/login", search: continuationSearch }}
             className="font-medium text-primary hover:underline"
           >
             Sign in
@@ -92,6 +109,7 @@ export function SignupPage() {
           Your structured home for files — set it up in seconds.
         </p>
       </div>
+      <GoogleAuthButton busy={googleBusy} disabled={busy} onClick={onGoogleSignIn} />
       <form onSubmit={onSubmit}>
         <FieldGroup>
           {error && (
@@ -133,15 +151,15 @@ export function SignupPage() {
             />
           </Field>
           <Button type="submit" disabled={busy}>
-            {busy && <Spinner data-icon="inline-start" />}
-            {busy ? "Creating…" : "Create account"}
+            {passwordBusy && <Spinner data-icon="inline-start" />}
+            {passwordBusy ? "Creating…" : "Create account"}
           </Button>
         </FieldGroup>
       </form>
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}
         <Link
-          to={{ pathname: "/login", search: window.location.search }}
+          to={{ pathname: "/login", search: continuationSearch }}
           className="font-medium text-primary hover:underline"
         >
           Sign in

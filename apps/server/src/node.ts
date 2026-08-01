@@ -5,6 +5,7 @@ import { s3ConfigFor } from "./s3-config.js";
 import { createServerOptions } from "./server-options.js";
 import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
+import { googleOAuthConfigFor } from "./google-oauth-config.js";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -38,6 +39,11 @@ const emailVerification = emailVerificationConfigFor({
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   RESEND_FROM: process.env.RESEND_FROM,
 });
+const googleOAuth = googleOAuthConfigFor({
+  KEVA_ENVIRONMENT: process.env.KEVA_ENVIRONMENT,
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+});
 const polar = billingConfigFor({
   POLAR_ACCESS_TOKEN: process.env.POLAR_ACCESS_TOKEN,
   POLAR_WEBHOOK_SECRET: process.env.POLAR_WEBHOOK_SECRET,
@@ -59,6 +65,7 @@ const appOptions = createServerOptions({
       }
     : {}),
   ...(emailVerification ? { emailVerification } : {}),
+  ...(googleOAuth ? { googleOAuth } : {}),
   ...(polar ? { polar } : {}),
   trustedOrigins,
   s3,

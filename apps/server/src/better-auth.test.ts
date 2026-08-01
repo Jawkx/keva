@@ -19,6 +19,16 @@ const auth = createBetterAuth({
   secret: "test-only-better-auth-secret-at-least-32-characters",
   baseURL: "http://localhost:8787",
 });
+const googleAuth = createBetterAuth({
+  database: database.db,
+  secret: "test-only-better-auth-secret-at-least-32-characters",
+  baseURL: "http://localhost:8787",
+  googleOAuth: {
+    clientId: "google-client-id",
+    clientSecret: "google-client-secret",
+    requireLocalEmailVerified: true,
+  },
+});
 
 afterAll(async () => database.dispose());
 
@@ -59,6 +69,27 @@ describe("MCP OAuth registration", () => {
 
     expect(metadata.scopes_supported).toContain("keva:read");
     expect(metadata.scopes_supported).toContain("keva:delete");
+  });
+});
+
+describe("Google OAuth", () => {
+  it("starts Google authorization with the configured callback", async () => {
+    const response = await googleAuth.handler(
+      new Request("http://localhost:8787/api/auth/sign-in/social", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "google", callbackURL: "/settings" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { url: string; redirect: boolean };
+    const authorizationUrl = new URL(body.url);
+    expect(body.redirect).toBe(true);
+    expect(authorizationUrl.hostname).toBe("accounts.google.com");
+    expect(authorizationUrl.searchParams.get("client_id")).toBe("google-client-id");
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:8787/api/auth/callback/google",
+    );
   });
 });
 

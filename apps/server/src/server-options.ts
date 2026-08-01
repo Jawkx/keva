@@ -29,6 +29,11 @@ export interface ServerOptionsConfig {
   readonly betterAuthUrl?: string;
   readonly trustedOrigins?: ReadonlyArray<string>;
   readonly emailVerification?: EmailVerificationConfig;
+  readonly googleOAuth?: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly requireLocalEmailVerified: boolean;
+  };
   readonly polar?: BillingConfig & {
     readonly accessToken: string;
     readonly webhookSecret: string;
@@ -55,6 +60,7 @@ const databaseAuth = (config: ServerOptionsConfig, database: DatabaseUnit) => {
     ...(config.emailVerification
       ? { sendVerificationEmail: createVerificationEmailSender(config.emailVerification) }
       : {}),
+    ...(config.googleOAuth ? { googleOAuth: config.googleOAuth } : {}),
     ...(config.polar && polarClient && billing
       ? {
           polar: {
