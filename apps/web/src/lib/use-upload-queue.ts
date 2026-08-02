@@ -13,6 +13,7 @@ import { cacheConfirmedItemUpload, itemsQueryKey } from "./items-cache";
 import { keva } from "./keva";
 import { useMountEffect } from "./useMountEffect";
 import { uploadFileEffect } from "./upload-workflow";
+import { generateVideoThumbnail, type VideoThumbnail } from "./video-thumbnail";
 
 export type PendingUpload = {
   readonly status: "uploading" | "error";
@@ -26,6 +27,8 @@ export type PendingUpload = {
 export type UploadQueueRow = KevaItem & {
   upload?: PendingUpload;
 };
+
+const thumbnailJobs = new WeakMap<File, Promise<VideoThumbnail | null>>();
 
 const optimisticRow = (id: string, file: File, upload: PendingUpload): UploadQueueRow => {
   const now = new Date().toISOString();
@@ -66,8 +69,14 @@ export function useUploadQueue({
     for (const controller of controllers.current) controller.abort();
   });
 
-  const uploadOne = (id: string, upload: PendingUpload) =>
-    uploadFileEffect(
+  const uploadOne = (id: string, upload: PendingUpload) => {
+    let thumbnailJob = thumbnailJobs.get(upload.file);
+    if (!thumbnailJob) {
+      thumbnailJob = generateVideoThumbnail(upload.file).catch(() => null);
+      thumbnailJobs.set(upload.file, thumbnailJob);
+    }
+
+    return uploadFileEffect(
       {
         start: keva.startUploadEffect({
           name: upload.file.name,
@@ -114,9 +123,21 @@ export function useUploadQueue({
             refetchLists: true,
           });
           setUploads((prev) => prev.filter((row) => row.id !== id));
+          void thumbnailJob
+            .then((thumbnail) =>
+              thumbnail
+                ? keva.setThumbnail(
+                    item.id,
+                    { contentType: thumbnail.contentType, size: thumbnail.blob.size },
+                    thumbnail.blob,
+                  )
+                : undefined,
+            )
+            .catch(() => undefined);
         },
       }),
     );
+  };
 
   const runUploads = (
     entries: ReadonlyArray<{ readonly id: string; readonly upload: PendingUpload }>,
