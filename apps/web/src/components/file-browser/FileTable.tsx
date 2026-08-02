@@ -28,7 +28,9 @@ export function FileTableFrame({
       )}
       {...props}
     >
-      <ScrollArea className="h-auto min-h-0 flex-1">{children}</ScrollArea>
+      <ScrollArea className="h-auto min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar][data-orientation=vertical]]:!top-10">
+        {children}
+      </ScrollArea>
       {footer}
     </div>
   );
@@ -55,7 +57,7 @@ export function FileTableHeader({ className, ...props }: ComponentProps<typeof T
   return (
     <TableHeader
       className={cn(
-        "[&_tr]:border-0 [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted/50 [&_th]:shadow-[inset_0_-1px_0_var(--border)]",
+        "[&_tr]:border-0 [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted [&_th]:shadow-[inset_0_-1px_0_var(--border)]",
         className,
       )}
       {...props}
