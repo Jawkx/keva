@@ -1,5 +1,5 @@
 import { ArchiveRestore, Download, Pencil, Trash2, TriangleAlert, X } from "lucide-react";
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -22,7 +22,7 @@ import {
   itemQueryKey,
   removeDeletedItemsFromCache,
 } from "../lib/items-cache";
-import { isCsv, isHtml, isImage, isMarkdown, isPdf, isPreviewable } from "../lib/preview";
+import { isCsv, isHtml, isImage, isMarkdown, isPdf, isPreviewable, isVideo } from "../lib/preview";
 import { keva } from "../lib/keva";
 import { objectUrlFor } from "../lib/object-url-cache";
 import { runEffectPromise } from "../lib/effect-runtime";
@@ -46,6 +46,12 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+const VideoPreviewViewer = lazy(() =>
+  import("./viewers/VideoPreviewViewer").then((module) => ({
+    default: module.VideoPreviewViewer,
+  })),
+);
 
 type Preview =
   | { kind: "image"; url: string }
@@ -103,7 +109,7 @@ export function FileDetail({
 
   const contentQuery = useQuery({
     queryKey: trashMode ? ["trash-content", itemId] : itemContentQueryKey(itemId),
-    enabled: Boolean(item) && isPreviewable(item!),
+    enabled: Boolean(item) && isPreviewable(item!) && !isVideo(item!),
     staleTime: Infinity,
     gcTime: 0,
     queryFn: ({ signal }) =>
@@ -151,6 +157,11 @@ export function FileDetail({
       );
     },
     [setSearchParams],
+  );
+
+  const loadVideoSource = useCallback(
+    () => (trashMode ? keva.getTrashDownloadUrl(itemId) : keva.getDownloadUrl(itemId)),
+    [itemId, trashMode],
   );
 
   const downloadMutation = useMutation({
@@ -494,7 +505,16 @@ export function FileDetail({
           <p className="text-sm text-muted-foreground">Not found.</p>
         ) : activePanel === "preview" ? (
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-            {previewLoading ? (
+            {isVideo(item) ? (
+              <Suspense fallback={<FilePreviewSkeleton variant="image" />}>
+                <VideoPreviewViewer
+                  key={itemId}
+                  itemId={itemId}
+                  fileName={item.name}
+                  loadSource={loadVideoSource}
+                />
+              </Suspense>
+            ) : previewLoading ? (
               isImage(item) ? (
                 <FilePreviewSkeleton variant="image" />
               ) : isPdf(item) || isCsv(item) ? (

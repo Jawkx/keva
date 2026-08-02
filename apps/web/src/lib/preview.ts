@@ -12,6 +12,7 @@ const PDF_MAX = 25 * 1024 * 1024;
 const TEXT_MAX = 256 * 1024;
 
 export const isImage = (o: Previewable) => o.contentType.startsWith("image/");
+export const isVideo = (o: Previewable) => o.contentType.startsWith("video/");
 export const isPdf = (o: Previewable) => o.contentType === "application/pdf";
 export const isCsv = (o: Previewable) =>
   o.contentType === "text/csv" ||
@@ -26,6 +27,7 @@ export const isText = (o: Previewable) =>
   o.contentType === "application/json" ||
   o.contentType === "application/xml";
 export const isPreviewable = (o: Previewable) =>
+  isVideo(o) ||
   (isImage(o) && (o.size ?? Infinity) <= IMAGE_MAX) ||
   (isPdf(o) && (o.size ?? Infinity) <= PDF_MAX) ||
   (isText(o) && (o.size ?? Infinity) <= TEXT_MAX);

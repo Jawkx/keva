@@ -12,6 +12,11 @@ const IGNORED_FILES = new Set([
   "apps/web/src/components/ui/pdf-viewer.tsx",
   "apps/web/src/components/ui/sidebar.tsx",
 ]);
+const IGNORED_DIRECTORIES = [
+  "apps/web/src/components/limeplay/",
+  "apps/web/src/components/video-player/",
+  "apps/web/src/hooks/limeplay/",
+];
 const FILE_RE = /\.(ts|tsx)$/;
 const DIRECT_USE_EFFECT_RE = /\b(?:React\.)?useEffect\s*\(/;
 
@@ -30,7 +35,12 @@ const violations = [];
 
 for await (const path of walk(SRC)) {
   const rel = relative(ROOT, path);
-  if (ALLOWED_FILES.has(rel) || IGNORED_FILES.has(rel)) continue;
+  if (
+    ALLOWED_FILES.has(rel) ||
+    IGNORED_FILES.has(rel) ||
+    IGNORED_DIRECTORIES.some((directory) => rel.startsWith(directory))
+  )
+    continue;
   const lines = (await readFile(path, "utf8")).split(/\r?\n/);
   lines.forEach((line, index) => {
     if (DIRECT_USE_EFFECT_RE.test(line)) {

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { isHtml, isMarkdown } from "./preview";
+import { isHtml, isMarkdown, isPreviewable, isVideo } from "./preview";
+
+describe("video previews", () => {
+  it("streams videos without applying an in-memory size limit", () => {
+    const video = { contentType: "video/mp4", size: 10 * 1024 * 1024 * 1024 };
+
+    expect(isVideo(video)).toBe(true);
+    expect(isPreviewable(video)).toBe(true);
+    expect(isVideo({ contentType: "image/mp4", size: 10 })).toBe(false);
+  });
+});
 
 describe("isMarkdown", () => {
   it("recognizes markdown MIME types and common filename extensions", () => {
