@@ -68,7 +68,7 @@ export function prependItemToPages(data: ItemsCache, item: KevaItem): ItemsCache
   };
 }
 
-const invalidatePropertyDiscovery = (queryClient: QueryClient) => {
+export const invalidatePropertyDiscovery = (queryClient: QueryClient) => {
   void queryClient.invalidateQueries({ queryKey: propertySummaryQueryKey });
   void queryClient.invalidateQueries({ queryKey: propertyKeysQueryKey });
   void queryClient.invalidateQueries({ queryKey: propertyValuesQueryRoot });

@@ -1,6 +1,15 @@
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import type { KevaItem, QueryResult } from "@keva/sdk";
-import { prependItemToPages, removeItemsFromPages, replaceItemInPages } from "./items-cache";
+import {
+  invalidatePropertyDiscovery,
+  prependItemToPages,
+  propertyKeysQueryKey,
+  propertySummaryQueryKey,
+  propertyValuesQueryKey,
+  removeItemsFromPages,
+  replaceItemInPages,
+} from "./items-cache";
 
 const item = (id: string, name = id): KevaItem => ({
   id,
@@ -38,5 +47,17 @@ describe("items cache", () => {
 
     expect(updated.items.map(({ id }) => id)).toEqual(["one", "two"]);
     expect(updated.totalCount).toBe(2);
+  });
+
+  it("invalidates every property discovery query", () => {
+    const queryClient = new QueryClient();
+    const keys = [propertySummaryQueryKey, propertyKeysQueryKey, propertyValuesQueryKey("project")];
+    for (const key of keys) queryClient.setQueryData(key, []);
+
+    invalidatePropertyDiscovery(queryClient);
+
+    for (const key of keys) {
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+    }
   });
 });

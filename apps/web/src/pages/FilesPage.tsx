@@ -56,6 +56,7 @@ import { buildFilterWhere, decodeFilterParam, draftFromConditions } from "../lib
 import { inferPropertyValue, validateKey } from "../lib/properties";
 import {
   cachePatchedItem,
+  invalidatePropertyDiscovery,
   removeDeletedItemsFromCache,
   itemsQueryKey,
   usageQueryKey,
@@ -488,8 +489,10 @@ function FilesPageContent({
       setBulkPropertyValue("");
       setRowSelection({});
       void queryClient.invalidateQueries({ queryKey: ["items"] });
-      if (result.updated.length > 0)
+      if (result.updated.length > 0) {
+        invalidatePropertyDiscovery(queryClient);
         toast.success(`Updated ${result.updated.length} ${plural(result.updated.length)}`);
+      }
       if (result.failed.length > 0)
         toast.error(`Could not update ${result.failed.length} ${plural(result.failed.length)}`);
     },
