@@ -47,6 +47,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 const VideoPreview = lazy(() => import("./viewers/VideoPreview"));
 
@@ -93,6 +94,7 @@ export function FileDetail({
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const isRenaming = renameDraft !== null;
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -291,14 +293,15 @@ export function FileDetail({
     return (await patchMutation.mutateAsync({ set, unset })).properties;
   };
 
-  // Focus the rename field as it mounts and pre-select the stem. A stable
-  // callback ref (not an effect) so it fires once on mount, not every render.
-  const renameInputRef = useCallback((node: HTMLInputElement | null) => {
-    if (node) {
-      node.focus();
-      node.setSelectionRange(0, extensionStart(node.value));
-    }
-  }, []);
+  const renameInputRef = useCallback(
+    (node: HTMLInputElement | null) => {
+      if (node && isRenaming) {
+        node.focus();
+        node.setSelectionRange(0, extensionStart(node.value));
+      }
+    },
+    [isRenaming],
+  );
 
   const commitRename = async () => {
     const next = renameDraft?.trim() ?? "";
@@ -338,53 +341,69 @@ export function FileDetail({
               <Skeleton className="h-5 w-40 max-w-full" />
               <Skeleton className="size-7 shrink-0" />
             </div>
-          ) : renameDraft !== null ? (
-            <input
-              ref={renameInputRef}
-              value={renameDraft}
-              onChange={(event) => setRenameDraft(event.target.value)}
-              onBlur={() => setRenameDraft(null)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void commitRename();
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  setRenameDraft(null);
-                }
-              }}
-              aria-label="Rename file"
-              className="w-full rounded-sm border border-input bg-transparent px-1.5 py-0.5 font-heading text-base font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
           ) : (
-            <div className="flex min-w-0 items-center gap-1">
-              <h2 className="flex min-w-0 font-heading text-base font-medium" title={item?.name}>
-                <span className="min-w-0 truncate">{nameStem}</span>
-                <span className="shrink-0">{nameExtension}</span>
-              </h2>
-              {item && !trashMode && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Rename"
-                        className="shrink-0 text-muted-foreground"
-                        onClick={() => setRenameDraft(item.name)}
-                      />
-                    }
-                  >
-                    <Pencil />
-                  </TooltipTrigger>
-                  <TooltipContent>Rename</TooltipContent>
-                </Tooltip>
-              )}
+            <div className="relative h-7 min-w-0">
+              <div
+                aria-hidden={isRenaming}
+                inert={isRenaming}
+                className={cn(
+                  "absolute inset-0 flex min-w-0 items-center gap-1 transition-[filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none",
+                  isRenaming ? "pointer-events-none opacity-0 blur-[2px]" : "opacity-100 blur-0",
+                )}
+              >
+                <h2
+                  className="flex min-w-0 font-heading text-base leading-6 font-medium"
+                  title={item?.name}
+                >
+                  <span className="min-w-0 truncate">{nameStem}</span>
+                  <span className="shrink-0">{nameExtension}</span>
+                </h2>
+                {item && !trashMode && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Rename"
+                          className="shrink-0 text-muted-foreground"
+                          onClick={() => setRenameDraft(item.name)}
+                        />
+                      }
+                    >
+                      <Pencil />
+                    </TooltipTrigger>
+                    <TooltipContent>Rename</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+              <input
+                ref={renameInputRef}
+                value={renameDraft ?? item?.name ?? ""}
+                disabled={!isRenaming}
+                aria-hidden={!isRenaming}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                onBlur={() => setRenameDraft(null)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void commitRename();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    setRenameDraft(null);
+                  }
+                }}
+                aria-label="Rename file"
+                className={cn(
+                  "absolute -inset-x-2 inset-y-0 h-7 appearance-none rounded-sm border-0 bg-transparent px-2 py-0 font-heading text-base leading-6 font-medium outline-none ring-1 ring-inset ring-input transition-[filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                  isRenaming ? "opacity-100 blur-0" : "pointer-events-none opacity-0 blur-[2px]",
+                )}
+              />
             </div>
           )}
           {loading ? (
             <Skeleton className="mt-1 h-5 w-32" />
-          ) : item && renameDraft === null ? (
+          ) : item ? (
             <p className="truncate text-sm text-muted-foreground">
               {item.contentType} · {formatBytes(item.size)}
             </p>
