@@ -1,9 +1,16 @@
+import { Effect } from "effect";
 import React from "react";
 
 import type { MediaEventSlice, MediaFeature } from "@/components/limeplay/media-provider";
 
 import { useMediaStore } from "@/hooks/limeplay/use-media";
 import { noop, off, on } from "@/lib/utils";
+import {
+  enterPictureInPictureEffect,
+  exitPictureInPictureEffect,
+  isWebkitPictureInPictureSupported,
+  type PictureInPictureMedia,
+} from "@/hooks/limeplay/workflows/picture-in-picture-effect";
 import {
   useMediaEvents,
   useMediaFeatureApi,
@@ -27,44 +34,34 @@ export interface PictureInPictureStore extends MediaEventSlice<PictureInPictureE
   };
 }
 
-interface ExtendedHTMLVideoElement extends HTMLVideoElement {
-  webkitPresentationMode?: string;
-  webkitSetPresentationMode?: (mode: string) => void;
-  webkitSupportsPresentationMode?: (mode: string) => boolean;
-}
-
 export function pictureInPictureFeature(): MediaFeature<PictureInPictureStore> {
   return {
     createSlice: (_set, get) => ({
       [PICTURE_IN_PICTURE_FEATURE_KEY]: {
         active: false,
         enter: async () => {
-          const media = get().media.mediaElement as ExtendedHTMLVideoElement | null;
+          const media = get().media.mediaElement as PictureInPictureMedia | null;
           if (!media || media.nodeName.toLowerCase() !== "video") return;
 
-          try {
-            if (isWebkitPictureInPictureSupported(media)) {
-              media.webkitSetPresentationMode!("picture-in-picture");
-            } else {
-              await media.requestPictureInPicture();
-            }
-          } catch (error) {
-            console.error("Failed to enter Picture-in-Picture mode:", error);
-          }
+          await Effect.runPromise(
+            enterPictureInPictureEffect(media).pipe(
+              Effect.catchAll((error) =>
+                Effect.sync(() => console.error("Failed to enter Picture-in-Picture mode:", error)),
+              ),
+            ),
+          );
         },
         exit: async () => {
-          const media = get().media.mediaElement as ExtendedHTMLVideoElement | null;
+          const media = get().media.mediaElement as PictureInPictureMedia | null;
           if (!media) return;
 
-          try {
-            if (isWebkitPictureInPictureSupported(media)) {
-              media.webkitSetPresentationMode!("inline");
-            } else if (document.pictureInPictureElement) {
-              await document.exitPictureInPicture();
-            }
-          } catch (error) {
-            console.error("Failed to exit Picture-in-Picture mode:", error);
-          }
+          await Effect.runPromise(
+            exitPictureInPictureEffect(media, document).pipe(
+              Effect.catchAll((error) =>
+                Effect.sync(() => console.error("Failed to exit Picture-in-Picture mode:", error)),
+              ),
+            ),
+          );
         },
         supported: false,
         toggle: async () => {
@@ -95,21 +92,13 @@ function hasVideoTrack(media: HTMLVideoElement): boolean {
   return media.videoWidth > 0 && media.videoHeight > 0;
 }
 
-function isWebkitPictureInPictureSupported(media: ExtendedHTMLVideoElement): boolean {
-  return (
-    typeof media.webkitSupportsPresentationMode === "function" &&
-    media.webkitSupportsPresentationMode("picture-in-picture") &&
-    typeof media.webkitSetPresentationMode === "function"
-  );
-}
-
 function PictureInPictureSetup() {
   const store = useMediaFeatureApi<PictureInPictureStore>(PICTURE_IN_PICTURE_FEATURE_KEY);
   const events = useMediaEvents<PictureInPictureEvents>();
   const mediaElement = useMediaStore((state) => state.mediaElement);
 
   React.useEffect(() => {
-    const media = mediaElement as ExtendedHTMLVideoElement | null;
+    const media = mediaElement as PictureInPictureMedia | null;
     if (!media || media.nodeName.toLowerCase() !== "video") return noop;
 
     const updatePictureInPictureSupport = () => {

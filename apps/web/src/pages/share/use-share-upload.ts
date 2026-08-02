@@ -1,9 +1,23 @@
 import { useRef, useState } from "react";
 import { Effect } from "effect";
 import { useQueryClient } from "@tanstack/react-query";
-import { isUploadSessionExpired, type SharedItem, type ShareUploadSession } from "@keva/sdk";
+import {
+  Forbidden,
+  Internal,
+  NotFound,
+  QuotaExceeded,
+  StorageUnavailable,
+  Unauthorized,
+} from "@keva/schema";
+import {
+  isUploadSessionExpired,
+  KevaTransportError,
+  type SharedItem,
+  type ShareUploadSession,
+} from "@keva/sdk";
 import { authClient } from "../../lib/auth";
-import { errorMessage, isShareGone, type TaggedError } from "../../lib/errors";
+import { authOperationEffect } from "../../lib/auth-effect";
+import { errorMessage } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { cacheConfirmedShareUpload } from "../../lib/items-cache";
 import { useMountEffect } from "../../lib/useMountEffect";
@@ -20,29 +34,16 @@ export interface UploadState {
   readonly item?: SharedItem;
 }
 
-const isQuotaError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "_tag" in error &&
-  (error as TaggedError)._tag === "QuotaExceeded";
+const isShareGoneError = (error: unknown): boolean =>
+  error instanceof Unauthorized || error instanceof NotFound || error instanceof Forbidden;
 
-let identityPromise: Promise<void> | null = null;
-
-const ensureShareIdentity = (): Promise<void> => {
-  identityPromise ??= authClient
-    .getSession()
-    .then(async (session) => {
-      if (session.data) return;
-      const signedIn = await authClient.signIn.anonymous();
-      if (signedIn.error) {
-        throw new Error(signedIn.error.message ?? "Could not start guest session");
-      }
-    })
-    .finally(() => {
-      identityPromise = null;
-    });
-  return identityPromise;
-};
+const ensureShareIdentityEffect = authOperationEffect(() => authClient.getSession()).pipe(
+  Effect.flatMap((session) =>
+    session
+      ? Effect.void
+      : authOperationEffect(() => authClient.signIn.anonymous()).pipe(Effect.asVoid),
+  ),
+);
 
 export interface ShareUpload {
   uploads: readonly UploadState[];
@@ -76,16 +77,22 @@ export function useShareUpload(): ShareUpload {
           ),
         );
       },
+      (error) =>
+        error instanceof KevaTransportError ||
+        error instanceof StorageUnavailable ||
+        error instanceof Internal,
     ).pipe(
       Effect.match({
-        onFailure: ({ cause, session, phase }) => {
-          if (isShareGone(cause)) {
+        onFailure: ({ cause, session, stage }) => {
+          if (isShareGoneError(cause)) {
             onGone();
             return;
           }
-          const message = isQuotaError(cause)
-            ? "This share's upload limit has been reached."
-            : errorMessage(cause);
+          const phase = stage === "confirm" ? "confirm" : "put";
+          const message =
+            cause instanceof QuotaExceeded
+              ? "This share's upload limit has been reached."
+              : errorMessage(cause);
           setUploads((prev) =>
             prev.map((upload) =>
               upload.id === entry.id
@@ -120,19 +127,15 @@ export function useShareUpload(): ShareUpload {
   };
 
   const runUploads = (entries: readonly UploadState[]) => {
-    const identityReady = self.allowOwnDelete ? ensureShareIdentity() : Promise.resolve();
-    void identityReady
-      .then(() => {
-        const controller = new AbortController();
-        controllers.current.add(controller);
-        void Effect.runPromise(
-          Effect.forEach(entries, uploadOne, { concurrency: 3, discard: true }),
-          { signal: controller.signal },
-        )
-          .catch(() => undefined)
-          .finally(() => controllers.current.delete(controller));
-      })
-      .catch((error) => failUploads(entries, error));
+    const controller = new AbortController();
+    controllers.current.add(controller);
+    const identity = self.allowOwnDelete ? ensureShareIdentityEffect : Effect.void;
+    const workflow = identity.pipe(
+      Effect.andThen(Effect.forEach(entries, uploadOne, { concurrency: 3, discard: true })),
+      Effect.catchAll((error) => Effect.sync(() => failUploads(entries, error))),
+      Effect.ensuring(Effect.sync(() => controllers.current.delete(controller))),
+    );
+    void Effect.runPromise(workflow, { signal: controller.signal });
   };
 
   const addFiles = (list: FileList | null) => {

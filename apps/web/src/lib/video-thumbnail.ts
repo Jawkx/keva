@@ -1,3 +1,5 @@
+import { Cause, Data, Effect, Exit } from "effect";
+
 const CANDIDATE_POSITIONS = [0.1, 0.2, 0.35, 0.5, 0.65] as const;
 const ANALYSIS_MAX_WIDTH = 160;
 const ANALYSIS_MAX_HEIGHT = 90;
@@ -26,6 +28,34 @@ interface FrameCandidate {
   readonly metrics: FrameMetrics;
   readonly time: number;
 }
+
+export class UnsupportedVideo extends Data.TaggedError("UnsupportedVideo")<{
+  readonly message: string;
+}> {}
+
+export class VideoMetadataTimedOut extends Data.TaggedError("VideoMetadataTimedOut")<{}> {}
+export class VideoDecodeFailed extends Data.TaggedError("VideoDecodeFailed")<{
+  readonly cause?: unknown;
+}> {}
+export class VideoSeekTimedOut extends Data.TaggedError("VideoSeekTimedOut")<{
+  readonly time: number;
+}> {}
+export class CanvasUnavailable extends Data.TaggedError("CanvasUnavailable")<{}> {}
+export class FrameReadFailed extends Data.TaggedError("FrameReadFailed")<{
+  readonly cause: unknown;
+}> {}
+export class ThumbnailEncodingFailed extends Data.TaggedError("ThumbnailEncodingFailed")<{
+  readonly contentType: "image/jpeg" | "image/webp";
+}> {}
+
+export type ThumbnailError =
+  | UnsupportedVideo
+  | VideoMetadataTimedOut
+  | VideoDecodeFailed
+  | VideoSeekTimedOut
+  | CanvasUnavailable
+  | FrameReadFailed
+  | ThumbnailEncodingFailed;
 
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(maximum, Math.max(minimum, value));
@@ -159,112 +189,179 @@ export const bestThumbnailCandidate = <T extends FrameCandidate>(
   );
 };
 
-const waitForEvent = (
+const waitForMediaEvent = (
   target: EventTarget,
   successEvent: string,
-  errorEvent: string,
-  timeout: number,
-): Promise<void> =>
-  new Promise((resolve, reject) => {
+  trigger?: () => void,
+): Effect.Effect<void, VideoDecodeFailed> =>
+  Effect.async<void, VideoDecodeFailed>((resume) => {
     const cleanup = () => {
-      clearTimeout(timer);
       target.removeEventListener(successEvent, onSuccess);
-      target.removeEventListener(errorEvent, onError);
+      target.removeEventListener("error", onError);
     };
     const onSuccess = () => {
       cleanup();
-      resolve();
+      resume(Effect.void);
     };
-    const onError = () => {
+    const onError = (event: Event) => {
       cleanup();
-      reject(new Error(`Could not decode video ${successEvent}`));
+      resume(Effect.fail(new VideoDecodeFailed({ cause: event })));
     };
-    const timer = window.setTimeout(() => {
-      cleanup();
-      reject(new Error(`Video ${successEvent} timed out`));
-    }, timeout);
-
     target.addEventListener(successEvent, onSuccess, { once: true });
-    target.addEventListener(errorEvent, onError, { once: true });
+    target.addEventListener("error", onError, { once: true });
+    const triggered = Effect.runSyncExit(Effect.sync(() => trigger?.()));
+    if (Exit.isFailure(triggered)) {
+      cleanup();
+      resume(Effect.fail(new VideoDecodeFailed({ cause: Cause.squash(triggered.cause) })));
+    }
+    return Effect.sync(cleanup);
   });
 
-const seekVideo = async (video: HTMLVideoElement, time: number): Promise<void> => {
-  if (Math.abs(video.currentTime - time) < 0.001 && video.readyState >= 2) return;
+const seekVideoEffect = (
+  video: HTMLVideoElement,
+  time: number,
+): Effect.Effect<void, VideoDecodeFailed | VideoSeekTimedOut> => {
+  if (Math.abs(video.currentTime - time) < 0.001 && video.readyState >= 2) return Effect.void;
 
-  const seeked = waitForEvent(video, "seeked", "error", SEEK_TIMEOUT_MS);
-  video.currentTime = time;
-  await seeked;
+  return waitForMediaEvent(video, "seeked", () => {
+    video.currentTime = time;
+  }).pipe(
+    Effect.timeoutFail({
+      duration: SEEK_TIMEOUT_MS,
+      onTimeout: () => new VideoSeekTimedOut({ time }),
+    }),
+  );
 };
 
-const canvasBlob = (
+const canvasBlobEffect = (
   canvas: HTMLCanvasElement,
-  type: string,
+  contentType: "image/jpeg" | "image/webp",
   quality: number,
-): Promise<Blob | null> => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
-
-export const generateVideoThumbnail = async (file: File): Promise<VideoThumbnail | null> => {
-  if (!file.type.startsWith("video/")) return null;
-
-  const video = document.createElement("video");
-  const sourceUrl = URL.createObjectURL(file);
-  video.muted = true;
-  video.preload = "metadata";
-  video.playsInline = true;
-
-  try {
-    const metadata = waitForEvent(video, "loadedmetadata", "error", METADATA_TIMEOUT_MS);
-    video.src = sourceUrl;
-    await metadata;
-
-    if (!video.videoWidth || !video.videoHeight) return null;
-    const times = videoThumbnailCandidateTimes(video.duration);
-    if (times.length === 0) return null;
-
-    const canvas = document.createElement("canvas");
-    const analysisSize = dimensionsWithin(
-      video.videoWidth,
-      video.videoHeight,
-      ANALYSIS_MAX_WIDTH,
-      ANALYSIS_MAX_HEIGHT,
+): Effect.Effect<Blob, ThumbnailEncodingFailed> =>
+  Effect.async<Blob, ThumbnailEncodingFailed>((resume) => {
+    canvas.toBlob(
+      (blob) =>
+        resume(
+          blob ? Effect.succeed(blob) : Effect.fail(new ThumbnailEncodingFailed({ contentType })),
+        ),
+      contentType,
+      quality,
     );
-    canvas.width = analysisSize.width;
-    canvas.height = analysisSize.height;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) return null;
+  });
 
-    const candidates: FrameCandidate[] = [];
-    for (const time of times) {
-      await seekVideo(video, time);
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const frame = context.getImageData(0, 0, canvas.width, canvas.height);
-      candidates.push({
-        time,
-        metrics: measureThumbnailFrame(frame.data, frame.width, frame.height),
-      });
-    }
+interface VideoResource {
+  readonly sourceUrl: string;
+  readonly video: HTMLVideoElement;
+}
 
-    const winner = bestThumbnailCandidate(candidates);
-    if (!winner) return null;
-    await seekVideo(video, winner.time);
+const acquireVideo = (file: File): Effect.Effect<VideoResource> =>
+  Effect.sync(() => {
+    const video = document.createElement("video");
+    const sourceUrl = URL.createObjectURL(file);
+    video.muted = true;
+    video.preload = "metadata";
+    video.playsInline = true;
+    return { sourceUrl, video };
+  });
 
-    const outputSize = dimensionsWithin(
-      video.videoWidth,
-      video.videoHeight,
-      OUTPUT_MAX_WIDTH,
-      OUTPUT_MAX_HEIGHT,
-    );
-    canvas.width = outputSize.width;
-    canvas.height = outputSize.height;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const webp = await canvasBlob(canvas, "image/webp", 0.8);
-    if (webp?.type === "image/webp") return { blob: webp, contentType: "image/webp" };
-
-    const jpeg = await canvasBlob(canvas, "image/jpeg", 0.82);
-    return jpeg ? { blob: jpeg, contentType: "image/jpeg" } : null;
-  } finally {
+const releaseVideo = ({ sourceUrl, video }: VideoResource): Effect.Effect<void> =>
+  Effect.sync(() => {
     video.removeAttribute("src");
     video.load();
     URL.revokeObjectURL(sourceUrl);
+  });
+
+export const generateVideoThumbnailEffect = (
+  file: File,
+): Effect.Effect<VideoThumbnail, ThumbnailError> => {
+  if (!file.type.startsWith("video/")) {
+    return Effect.fail(new UnsupportedVideo({ message: "The file is not a video" }));
   }
+
+  return Effect.acquireUseRelease(
+    acquireVideo(file),
+    ({ sourceUrl, video }) =>
+      Effect.gen(function* () {
+        yield* waitForMediaEvent(video, "loadedmetadata", () => {
+          video.src = sourceUrl;
+        }).pipe(
+          Effect.timeoutFail({
+            duration: METADATA_TIMEOUT_MS,
+            onTimeout: () => new VideoMetadataTimedOut(),
+          }),
+        );
+
+        if (!video.videoWidth || !video.videoHeight) {
+          return yield* new UnsupportedVideo({ message: "The video has no decodable dimensions" });
+        }
+        const times = videoThumbnailCandidateTimes(video.duration);
+        if (times.length === 0) {
+          return yield* new UnsupportedVideo({ message: "The video has no usable duration" });
+        }
+
+        const canvas = document.createElement("canvas");
+        const analysisSize = dimensionsWithin(
+          video.videoWidth,
+          video.videoHeight,
+          ANALYSIS_MAX_WIDTH,
+          ANALYSIS_MAX_HEIGHT,
+        );
+        canvas.width = analysisSize.width;
+        canvas.height = analysisSize.height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return yield* new CanvasUnavailable();
+
+        const candidates = yield* Effect.forEach(times, (time) =>
+          Effect.gen(function* () {
+            yield* seekVideoEffect(video, time);
+            const frame = yield* Effect.try({
+              try: () => {
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                return context.getImageData(0, 0, canvas.width, canvas.height);
+              },
+              catch: (cause) => new FrameReadFailed({ cause }),
+            });
+            return {
+              time,
+              metrics: measureThumbnailFrame(frame.data, frame.width, frame.height),
+            } satisfies FrameCandidate;
+          }),
+        );
+
+        const winner = bestThumbnailCandidate(candidates);
+        if (!winner) {
+          return yield* new UnsupportedVideo({ message: "The video has no usable frame" });
+        }
+        yield* seekVideoEffect(video, winner.time);
+
+        const outputSize = dimensionsWithin(
+          video.videoWidth,
+          video.videoHeight,
+          OUTPUT_MAX_WIDTH,
+          OUTPUT_MAX_HEIGHT,
+        );
+        canvas.width = outputSize.width;
+        canvas.height = outputSize.height;
+        yield* Effect.try({
+          try: () => context.drawImage(video, 0, 0, canvas.width, canvas.height),
+          catch: (cause) => new FrameReadFailed({ cause }),
+        });
+
+        const webp = yield* canvasBlobEffect(canvas, "image/webp", 0.8).pipe(
+          Effect.catchTag("ThumbnailEncodingFailed", () => Effect.succeed(null)),
+        );
+        if (webp?.type === "image/webp") return { blob: webp, contentType: "image/webp" };
+
+        const jpeg = yield* canvasBlobEffect(canvas, "image/jpeg", 0.82);
+        return { blob: jpeg, contentType: "image/jpeg" };
+      }),
+    releaseVideo,
+  );
 };
+
+export const generateVideoThumbnail = (file: File): Promise<VideoThumbnail | null> =>
+  Effect.runPromise(
+    generateVideoThumbnailEffect(file).pipe(
+      Effect.catchTag("UnsupportedVideo", () => Effect.succeed(null)),
+    ),
+  );

@@ -1,7 +1,10 @@
+import { Effect } from "effect";
 import { MailCheck, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { authClient } from "../lib/auth";
+import { authOperationEffect } from "../lib/auth-effect";
+import { errorMessage } from "../lib/errors";
 import {
   authContinuationSearch,
   authErrorMessage,
@@ -29,48 +32,42 @@ export function SignupPage() {
   const authPage = `${window.location.pathname}${continuationSearch}`;
   const busy = passwordBusy || googleBusy;
 
-  const onGoogleSignIn = async () => {
+  const onGoogleSignIn = () => {
     setError(null);
     setGoogleBusy(true);
-    try {
-      const result = await authClient.signIn.social({
+    const signIn = authOperationEffect(() =>
+      authClient.signIn.social({
         provider: "google",
         callbackURL: destination,
         errorCallbackURL: authPage,
-      });
-      if (result.error) setError(result.error.message ?? "Google sign-up failed.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign-up failed.");
-    } finally {
-      setGoogleBusy(false);
-    }
+      }),
+    ).pipe(
+      Effect.match({
+        onFailure: (failure) => setError(errorMessage(failure)),
+        onSuccess: () => undefined,
+      }),
+      Effect.ensuring(Effect.sync(() => setGoogleBusy(false))),
+    );
+    void Effect.runPromise(signIn);
   };
 
-  const onSubmit = async (event: React.FormEvent) => {
+  const onSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
     setPasswordBusy(true);
-    try {
-      const result = await authClient.signUp.email({
-        email,
-        password,
-        name,
-        callbackURL: destination,
-      });
-      if (result.error) {
-        setError(result.error.message ?? "Sign up failed.");
-        return;
-      }
-      if (!result.data.token) {
-        setVerificationSent(true);
-        return;
-      }
-      window.location.replace(destination);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign up failed.");
-    } finally {
-      setPasswordBusy(false);
-    }
+    const signUp = authOperationEffect(() =>
+      authClient.signUp.email({ email, password, name, callbackURL: destination }),
+    ).pipe(
+      Effect.match({
+        onFailure: (failure) => setError(errorMessage(failure)),
+        onSuccess: (result) => {
+          if (!result?.token) setVerificationSent(true);
+          else window.location.replace(destination);
+        },
+      }),
+      Effect.ensuring(Effect.sync(() => setPasswordBusy(false))),
+    );
+    void Effect.runPromise(signUp);
   };
 
   if (verificationSent) {

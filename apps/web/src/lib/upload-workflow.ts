@@ -1,12 +1,19 @@
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
+import { Internal, StorageUnavailable } from "@keva/schema";
+import { KevaTransportError } from "@keva/sdk";
 
 export type UploadPhase = "put" | "confirm";
+export type UploadStage = "initiate" | UploadPhase;
 
-export interface UploadFailure<S> {
-  readonly cause: unknown;
+export class UploadTimedOut extends Data.TaggedError("UploadTimedOut")<{
+  readonly stage: UploadStage;
+}> {}
+
+export class UploadFailed<S, E> extends Data.TaggedError("UploadFailed")<{
+  readonly cause: E | UploadTimedOut;
   readonly session: S | undefined;
-  readonly phase: UploadPhase;
-}
+  readonly stage: UploadStage;
+}> {}
 
 interface UploadClient<S, A, E> {
   readonly start: Effect.Effect<S, E>;
@@ -14,28 +21,21 @@ interface UploadClient<S, A, E> {
   readonly confirm: (session: S) => Effect.Effect<A, E>;
 }
 
-export class UploadTimeoutError extends Error {
-  readonly _tag = "UploadTimeoutError";
-}
-
-const isRetryable = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "_tag" in error &&
-  (error._tag === "KevaTransportError" ||
-    error._tag === "StorageUnavailable" ||
-    error._tag === "Internal");
+const isRetryableUploadError = (error: unknown): boolean =>
+  error instanceof KevaTransportError ||
+  error instanceof StorageUnavailable ||
+  error instanceof Internal;
 
 const stagePolicy = <A, E>(
   effect: Effect.Effect<A, E>,
-  phase: "initiate" | UploadPhase,
+  stage: UploadStage,
   timeout: number,
-  retry: boolean,
-): Effect.Effect<A, E | UploadTimeoutError> =>
-  (retry ? effect.pipe(Effect.retry({ times: 2, while: isRetryable })) : effect).pipe(
+  shouldRetry: ((error: E) => boolean) | undefined,
+): Effect.Effect<A, E | UploadTimedOut> =>
+  (shouldRetry ? effect.pipe(Effect.retry({ times: 2, while: shouldRetry })) : effect).pipe(
     Effect.timeoutFail({
       duration: timeout,
-      onTimeout: () => new UploadTimeoutError(`Upload ${phase} timed out`),
+      onTimeout: () => new UploadTimedOut({ stage }),
     }),
   );
 
@@ -47,14 +47,15 @@ export const uploadFileEffect = <
   client: UploadClient<S, A, E>,
   initial: { readonly session?: S | undefined; readonly phase: UploadPhase },
   onProgress: (session: S, phase: UploadPhase) => void,
-): Effect.Effect<A, UploadFailure<S>> =>
+  shouldRetry: (error: E) => boolean = isRetryableUploadError,
+): Effect.Effect<A, UploadFailed<S, E>> =>
   Effect.suspend(() => {
     let session = initial.session;
-    let phase = initial.phase;
+    let stage: UploadStage = initial.phase;
 
     return Effect.gen(function* () {
       if (
-        phase === "put" &&
+        stage === "put" &&
         session &&
         Number.isFinite(Date.parse(session.initiated.expiresAt)) &&
         Date.parse(session.initiated.expiresAt) <= Date.now()
@@ -62,23 +63,25 @@ export const uploadFileEffect = <
         session = undefined;
       }
       if (!session) {
-        phase = "put";
-        session = yield* stagePolicy(client.start, "initiate", 30_000, false);
-        yield* Effect.sync(() => onProgress(session!, phase));
+        stage = "initiate";
+        session = yield* stagePolicy(client.start, stage, 30_000, undefined);
+        stage = "put";
+        yield* Effect.sync(() => onProgress(session!, stage as UploadPhase));
       }
-      if (phase === "put") {
-        yield* stagePolicy(client.put(session), "put", 5 * 60_000, true);
-        phase = "confirm";
-        yield* Effect.sync(() => onProgress(session!, phase));
+      if (stage === "put") {
+        yield* stagePolicy(client.put(session), stage, 5 * 60_000, shouldRetry);
+        stage = "confirm";
+        yield* Effect.sync(() => onProgress(session!, "confirm"));
       }
-      return yield* stagePolicy(client.confirm(session), "confirm", 30_000, true);
+      return yield* stagePolicy(client.confirm(session), "confirm", 30_000, shouldRetry);
     }).pipe(
       Effect.mapError(
-        (cause): UploadFailure<S> => ({
-          cause,
-          session,
-          phase,
-        }),
+        (cause) =>
+          new UploadFailed({
+            cause,
+            session,
+            stage,
+          }),
       ),
     );
   });

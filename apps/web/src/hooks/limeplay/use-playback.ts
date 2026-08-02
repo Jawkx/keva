@@ -1,9 +1,11 @@
+import { Effect } from "effect";
 import React from "react";
 
 import type { MediaEventSlice, MediaFeature } from "@/components/limeplay/media-provider";
 
 import { useMediaStore } from "@/hooks/limeplay/use-media";
 import { noop, off, on } from "@/lib/utils";
+import { playMediaEffect } from "@/hooks/limeplay/workflows/playback-effect";
 import {
   useMediaEvents,
   useMediaFeatureApi,
@@ -42,12 +44,14 @@ export interface PlaybackEvents {
   statuschange: { prevStatus: MediaStatus; status: MediaStatus };
 }
 
+export type PlaybackError = Error | MediaError | null;
+
 export interface PlaybackStore extends MediaEventSlice<PlaybackEvents> {
   [PLAYBACK_FEATURE_KEY]: {
     canPlay: boolean;
     canPlayThrough: boolean;
     ended: boolean;
-    error: unknown;
+    error: PlaybackError;
     loop: boolean;
     networkState: number;
     pause: () => void;
@@ -55,7 +59,7 @@ export interface PlaybackStore extends MediaEventSlice<PlaybackEvents> {
     play: () => Promise<void>;
     readyState: MediaReadyState;
     restart: () => void;
-    setError: (error: unknown) => void;
+    setError: (error: PlaybackError) => void;
     setLoop: (loop: boolean) => void;
     status: MediaStatus;
     toggleLoop: () => void;
@@ -84,21 +88,24 @@ export function playbackFeature(): MediaFeature<PlaybackStore> {
           });
         },
         paused: false,
-        play: async () => {
+        play: () => {
           const media = get().media.mediaElement;
-          if (!media) return;
+          if (!media) return Promise.resolve();
 
           set(({ media: mediaState }) => {
             mediaState.idle = false;
           });
 
-          try {
-            await media.play();
-          } catch (error: unknown) {
-            console.error("Error playing media", error);
-            get().playback.setError(error);
-            throw error;
-          }
+          return Effect.runPromise(
+            playMediaEffect(media).pipe(
+              Effect.tapError((error) =>
+                Effect.sync(() => {
+                  console.error("Error playing media", error);
+                  get().playback.setError(error);
+                }),
+              ),
+            ),
+          );
         },
         readyState: MediaReadyState.HAVE_NOTHING,
         restart: () => {
@@ -107,7 +114,9 @@ export function playbackFeature(): MediaFeature<PlaybackStore> {
 
           media.currentTime = 0;
           if (media.paused) {
-            void get().playback.play().catch(noop);
+            void Effect.runPromiseExit(
+              Effect.tryPromise({ try: () => get().playback.play(), catch: () => undefined }),
+            );
           }
 
           set(({ media: mediaState, playback }) => {
@@ -170,7 +179,11 @@ export function playbackFeature(): MediaFeature<PlaybackStore> {
           if (!media) return;
 
           if (media.paused) {
-            await get().playback.play().catch(noop);
+            await Effect.runPromise(
+              Effect.tryPromise({ try: () => get().playback.play(), catch: () => undefined }).pipe(
+                Effect.asVoid,
+              ),
+            );
           } else {
             get().playback.pause();
           }

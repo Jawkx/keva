@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { Database, Files, LogOut, PanelLeft, Plug, Settings, Trash2 } from "lucide-react";
 import { type MouseEvent, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
@@ -6,6 +7,7 @@ import type { ReceivedShare } from "@keva/sdk";
 import { toast } from "sonner";
 import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";
+import { authOperationEffect } from "../lib/auth-effect";
 import { errorMessage } from "../lib/errors";
 import { formatBytes, formatDate } from "../lib/format";
 import {
@@ -358,14 +360,18 @@ function HeaderAccount() {
   const email = data?.user?.email ?? "";
   const name = data?.user?.name || email;
 
-  const onSignOut = async () => {
+  const onSignOut = () => {
     setSigningOut(true);
-    try {
-      await authClient.signOut();
-    } finally {
-      queryClient.clear();
-      navigate("/login", { replace: true });
-    }
+    const signOut = authOperationEffect(() => authClient.signOut()).pipe(
+      Effect.catchAll((failure) => Effect.sync(() => toast.error(errorMessage(failure)))),
+      Effect.ensuring(
+        Effect.sync(() => {
+          queryClient.clear();
+          navigate("/login", { replace: true });
+        }),
+      ),
+    );
+    void Effect.runPromise(signOut);
   };
 
   return (

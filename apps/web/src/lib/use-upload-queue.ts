@@ -1,9 +1,16 @@
 import { useRef, useState } from "react";
 import { Effect } from "effect";
 import type { QueryClient } from "@tanstack/react-query";
-import type { PropertyValue, QueryCondition, QueryOrder } from "@keva/schema";
+import {
+  Internal,
+  StorageUnavailable,
+  type PropertyValue,
+  type QueryCondition,
+  type QueryOrder,
+} from "@keva/schema";
 import {
   isUploadSessionExpired,
+  KevaTransportError,
   type InitiateUpload,
   type ItemUploadSession,
   type KevaItem,
@@ -13,7 +20,7 @@ import { cacheConfirmedItemUpload, itemsQueryKey } from "./items-cache";
 import { keva } from "./keva";
 import { useMountEffect } from "./useMountEffect";
 import { uploadFileEffect } from "./upload-workflow";
-import { generateVideoThumbnail, type VideoThumbnail } from "./video-thumbnail";
+import { generateVideoThumbnailEffect, type VideoThumbnail } from "./video-thumbnail";
 
 export type PendingUpload = {
   readonly status: "uploading" | "error";
@@ -72,7 +79,16 @@ export function useUploadQueue({
   const uploadOne = (id: string, upload: PendingUpload) => {
     let thumbnailJob = thumbnailJobs.get(upload.file);
     if (!thumbnailJob) {
-      thumbnailJob = generateVideoThumbnail(upload.file).catch(() => null);
+      thumbnailJob = Effect.runPromise(
+        generateVideoThumbnailEffect(upload.file).pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() => {
+              console.warn("Could not generate video thumbnail", error);
+              return null;
+            }),
+          ),
+        ),
+      );
       thumbnailJobs.set(upload.file, thumbnailJob);
     }
 
@@ -97,9 +113,14 @@ export function useUploadQueue({
           ),
         );
       },
+      (error) =>
+        error instanceof KevaTransportError ||
+        error instanceof StorageUnavailable ||
+        error instanceof Internal,
     ).pipe(
       Effect.match({
-        onFailure: ({ cause, session, phase }) => {
+        onFailure: ({ cause, session, stage }) => {
+          const phase = stage === "confirm" ? "confirm" : "put";
           setUploads((prev) =>
             prev.map((row) =>
               row.id === id
@@ -123,17 +144,21 @@ export function useUploadQueue({
             refetchLists: true,
           });
           setUploads((prev) => prev.filter((row) => row.id !== id));
-          void thumbnailJob
-            .then((thumbnail) =>
+          const thumbnailUpload = Effect.promise(() => thumbnailJob).pipe(
+            Effect.flatMap((thumbnail) =>
               thumbnail
-                ? keva.setThumbnail(
+                ? keva.setThumbnailEffect(
                     item.id,
                     { contentType: thumbnail.contentType, size: thumbnail.blob.size },
                     thumbnail.blob,
                   )
-                : undefined,
-            )
-            .catch(() => undefined);
+                : Effect.void,
+            ),
+            Effect.catchAll((error) =>
+              Effect.sync(() => console.warn("Could not upload video thumbnail", error)),
+            ),
+          );
+          void Effect.runPromiseExit(thumbnailUpload);
         },
       }),
     );
@@ -144,15 +169,11 @@ export function useUploadQueue({
   ) => {
     const controller = new AbortController();
     controllers.current.add(controller);
-    void Effect.runPromise(
-      Effect.forEach(entries, (entry) => uploadOne(entry.id, entry.upload), {
-        concurrency: 3,
-        discard: true,
-      }),
-      { signal: controller.signal },
-    )
-      .catch(() => undefined)
-      .finally(() => controllers.current.delete(controller));
+    const workflow = Effect.forEach(entries, (entry) => uploadOne(entry.id, entry.upload), {
+      concurrency: 3,
+      discard: true,
+    }).pipe(Effect.ensuring(Effect.sync(() => controllers.current.delete(controller))));
+    void Effect.runPromiseExit(workflow, { signal: controller.signal });
   };
 
   const startUploads = (files: File[]) => {

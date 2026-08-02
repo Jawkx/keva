@@ -1,5 +1,6 @@
 "use client";
 
+import { Effect, Either } from "effect";
 import React, { useRef } from "react";
 import shaka from "shaka-player";
 
@@ -8,6 +9,15 @@ import type { MediaEventSlice, MediaFeature } from "@/components/limeplay/media-
 
 import { useMediaStore } from "@/hooks/limeplay/use-media";
 import { noop, off, on } from "@/lib/utils";
+import {
+  MediaWorkflowAborted,
+  toWorkflowError,
+} from "@/hooks/limeplay/workflows/media-workflow-errors";
+import {
+  attachPlayerEffect,
+  destroyPlayerEffect,
+  destroyPreloadManagerEffect,
+} from "@/hooks/limeplay/workflows/player-lifecycle-effect";
 import {
   useMediaEvents,
   useMediaFeatureApi,
@@ -119,30 +129,25 @@ export function usePlayer<TAsset extends { id: string }>(options?: UsePlayerOpti
         return false;
       }
 
-      try {
-        const preloadManagers = store.getState().player.preloadManagers;
-        const preloadManager = preloadManagers.get(asset.id);
-
-        if (preloadManager) {
-          await options.onLoad(asset, currentPlayer, currentMedia, preloadManager, startTime);
-          preloadManagers.delete(asset.id);
-          store.setState(({ player }) => {
-            player.preloadManagers = new Map(preloadManagers);
-          });
-        } else {
-          await options.onLoad(asset, currentPlayer, currentMedia, undefined, startTime);
-        }
-
-        return true;
-      } catch (error) {
-        if (isLoadInterrupted(error)) {
-          return false;
-        }
-
-        const err = error instanceof Error ? error : new Error(String(error));
-        options.onError(err, asset);
-        return false;
-      }
+      const loaded = await Effect.runPromise(
+        Effect.tryPromise({
+          try: async () => {
+            const preloadManagers = store.getState().player.preloadManagers;
+            const preloadManager = preloadManagers.get(asset.id);
+            await options.onLoad(asset, currentPlayer, currentMedia, preloadManager, startTime);
+            if (preloadManager) {
+              preloadManagers.delete(asset.id);
+              store.setState(({ player }) => {
+                player.preloadManagers = new Map(preloadManagers);
+              });
+            }
+          },
+          catch: (cause) => cause,
+        }).pipe(Effect.either),
+      );
+      if (Either.isRight(loaded)) return true;
+      if (!isLoadInterrupted(loaded.left)) options.onError(toWorkflowError(loaded.left), asset);
+      return false;
     },
     [mediaElement, options, store],
   );
@@ -154,19 +159,24 @@ export function usePlayer<TAsset extends { id: string }>(options?: UsePlayerOpti
       const currentPlayer = store.getState().player.instance;
       if (!currentPlayer) return;
 
-      try {
-        const manager = await options.onPreload(asset, currentPlayer);
-        if (manager) {
-          const preloadManagers = store.getState().player.preloadManagers;
-          preloadManagers.set(asset.id, manager);
-          store.setState(({ player }) => {
-            player.preloadManagers = new Map(preloadManagers);
-          });
-        }
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        options.onError(err, asset);
+      const preloaded = await Effect.runPromise(
+        Effect.tryPromise({
+          try: () => options.onPreload!(asset, currentPlayer),
+          catch: (cause) => cause,
+        }).pipe(Effect.either),
+      );
+      if (Either.isLeft(preloaded)) {
+        const error = toWorkflowError(preloaded.left);
+        options.onError(error, asset);
         console.error("[usePlayer] Preload error:", error);
+        return;
+      }
+      if (preloaded.right) {
+        const preloadManagers = store.getState().player.preloadManagers;
+        preloadManagers.set(asset.id, preloaded.right);
+        store.setState(({ player }) => {
+          player.preloadManagers = new Map(preloadManagers);
+        });
       }
     },
     [options, store],
@@ -177,7 +187,7 @@ export function usePlayer<TAsset extends { id: string }>(options?: UsePlayerOpti
       const preloadManagers = store.getState().player.preloadManagers;
       const manager = preloadManagers.get(assetId);
       if (manager) {
-        manager.destroy();
+        void Effect.runPromiseExit(destroyPreloadManagerEffect(manager));
         preloadManagers.delete(assetId);
         store.setState(({ player }) => {
           player.preloadManagers = new Map(preloadManagers);
@@ -229,36 +239,26 @@ function PlayerSetup() {
       }
 
       const localPlayer = new shaka.Player();
+      const attached = await Effect.runPromise(
+        attachPlayerEffect(localPlayer, mediaElement, () => aborted).pipe(Effect.either),
+      );
 
-      try {
-        // DEV: initializeMediaSource is false, otherwise player is in loaded status by default
-        await localPlayer.attach(mediaElement, false);
-
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by cleanup closure during await
-        if (aborted) {
-          void localPlayer.destroy().catch(noop);
+      if (Either.isLeft(attached)) {
+        if (attached.left instanceof MediaWorkflowAborted) {
+          void Effect.runPromiseExit(destroyPlayerEffect(localPlayer));
           return;
         }
-
-        setPlayer(localPlayer);
-        playerInstance.current = localPlayer;
-
-        mediaElement.player = playerInstance.current;
-        window.shaka = shaka as unknown as Window["shaka"];
-
-        events.emit("playerready");
-      } catch (error) {
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by cleanup closure during await
-        if (aborted) {
-          void localPlayer.destroy().catch(noop);
-          return;
-        }
-
-        const err = error instanceof Error ? error : new Error(String(error));
-        console.error("[usePlayer] Failed to attach player to media element:", err);
-
-        events.emit("playererror", { error: err });
+        const error = toWorkflowError(attached.left.cause);
+        console.error("[usePlayer] Failed to attach player to media element:", error);
+        events.emit("playererror", { error });
+        return;
       }
+
+      setPlayer(localPlayer);
+      playerInstance.current = localPlayer;
+      mediaElement.player = localPlayer;
+      window.shaka = shaka as unknown as Window["shaka"];
+      events.emit("playerready");
     }
 
     if (!playerInstance.current) {
@@ -268,7 +268,7 @@ function PlayerSetup() {
     return () => {
       aborted = true;
       if (playerInstance.current) {
-        void playerInstance.current.destroy().catch(noop);
+        void Effect.runPromiseExit(destroyPlayerEffect(playerInstance.current));
         setPlayer(null);
         playerInstance.current = null;
       }

@@ -424,8 +424,16 @@ export class KevaClient {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
   }
 
+  getDownloadUrlEffect(id: string): Effect.Effect<DownloadResultType, KevaClientError> {
+    return this.#requestEffect("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
   getThumbnailUrl(id: string): Promise<DownloadResultType> {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/thumbnail`, DownloadResult);
+  }
+
+  getThumbnailUrlEffect(id: string): Effect.Effect<DownloadResultType, KevaClientError> {
+    return this.#requestEffect("GET", `/items/${encodeURIComponent(id)}/thumbnail`, DownloadResult);
   }
 
   getThumbnailUploadUrl(
@@ -451,6 +459,38 @@ export class KevaClient {
     if (!response.ok) {
       throw new KevaProtocolError(`Thumbnail upload failed with ${response.status}`);
     }
+  }
+
+  setThumbnailEffect(
+    id: string,
+    input: ThumbnailUploadInputType,
+    body: UploadBody,
+  ): Effect.Effect<void, KevaClientError> {
+    return Effect.try({
+      try: () => decode(ThumbnailUploadInput, input),
+      catch: () => new KevaProtocolError("Invalid thumbnail upload input"),
+    }).pipe(
+      Effect.flatMap((decoded) =>
+        this.#requestEffect(
+          "POST",
+          `/items/${encodeURIComponent(id)}/thumbnail`,
+          ThumbnailUploadResult,
+          decoded,
+        ),
+      ),
+      Effect.flatMap((target) =>
+        fetchEffect(this.#fetch, target.url, {
+          method: "PUT",
+          headers: target.headers,
+          credentials: "omit",
+          body,
+        }),
+      ),
+      Effect.flatMap((response) =>
+        requireOk(response, `Thumbnail upload failed with ${response.status}`),
+      ),
+      Effect.asVoid,
+    );
   }
 
   async deleteThumbnail(id: string): Promise<void> {
@@ -493,6 +533,17 @@ export class KevaClient {
       `/items/${encodeURIComponent(id)}`,
       OwnerItem,
       decode(ItemPatch, patch),
+    );
+  }
+
+  patchEffect(id: string, patch: ItemPatchType): Effect.Effect<KevaItemType, KevaClientError> {
+    return Effect.try({
+      try: () => decode(ItemPatch, patch),
+      catch: () => new KevaProtocolError("Invalid item patch"),
+    }).pipe(
+      Effect.flatMap((body) =>
+        this.#requestEffect("PATCH", `/items/${encodeURIComponent(id)}`, OwnerItem, body),
+      ),
     );
   }
 
@@ -618,6 +669,10 @@ export class KevaClient {
 
   restore(id: string): Promise<KevaItemType> {
     return this.#request("POST", `/trash/${encodeURIComponent(id)}/restore`, OwnerItem);
+  }
+
+  restoreEffect(id: string): Effect.Effect<KevaItemType, KevaClientError> {
+    return this.#requestEffect("POST", `/trash/${encodeURIComponent(id)}/restore`, OwnerItem);
   }
 
   restoreMany(ids: readonly string[]): Promise<BatchRestoreResultType> {

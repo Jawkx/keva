@@ -1,3 +1,4 @@
+import { Effect, Either } from "effect";
 import type shaka from "shaka-player";
 
 import { useCallback, useEffect } from "react";
@@ -11,13 +12,23 @@ import type {
 } from "@/hooks/limeplay/use-playlist";
 import type {
   ImmerStoreApi,
+  MediaEvents,
   MediaEventSlice,
   MediaFeature,
   MediaStore,
 } from "@/components/limeplay/media-provider";
 
-import { isLoadInterrupted } from "@/hooks/limeplay/use-player";
 import { usePlaylist } from "@/hooks/limeplay/use-playlist";
+import { loadAssetEffect } from "@/hooks/limeplay/workflows/load-asset-effect";
+import { preloadAssetEffect } from "@/hooks/limeplay/workflows/preload-asset-effect";
+import {
+  MediaSourceMissing,
+  type MediaPreviousError,
+  getWorkflowCause,
+  isWorkflowCancellation,
+  toWorkflowError,
+} from "@/hooks/limeplay/workflows/media-workflow-errors";
+import { destroyPreloadManagerEffect } from "@/hooks/limeplay/workflows/player-lifecycle-effect";
 import {
   useMediaEvents,
   useMediaFeatureApi,
@@ -40,7 +51,7 @@ export interface AssetLoadContext<TItem extends TAsset = TAsset> {
   /** Existing preload manager for this asset, when available. */
   preloadManager?: shaka.media.PreloadManager;
   /** Previous load or playback error for retry-aware loaders. */
-  previousError?: unknown;
+  previousError?: MediaPreviousError;
   /** Number of retry attempts for the active load session. */
   retryCount: number;
   /** Abort signal for the active load session. */
@@ -58,7 +69,7 @@ export interface AssetPreloadContext<TItem extends TAsset = TAsset> {
   /** Run Limeplay's default Shaka preload behavior. */
   preloadDefault: (source?: PlaybackSource | string) => Promise<null | shaka.media.PreloadManager>;
   /** Previous load or preload error for retry-aware loaders. */
-  previousError?: unknown;
+  previousError?: MediaPreviousError;
   /** Number of retry attempts for the active session. */
   retryCount: number;
   /** Abort signal for the active preload request. */
@@ -190,7 +201,7 @@ export interface ResolveSourceContext<TItem extends TAsset = TAsset> {
   /** Asset whose source should be resolved. */
   asset: TItem;
   /** Previous error for retry-aware resolution. */
-  previousError?: unknown;
+  previousError?: MediaPreviousError;
   /** Number of retry attempts in the active session. */
   retryCount: number;
   /** Abort signal for the active load or preload request. */
@@ -258,7 +269,7 @@ export interface UseAssetOptions<TItem extends TAsset> {
     /** Decide whether to retry, skip, or stop after a load error. */
     loadError?: (
       asset: TItem,
-      error: unknown,
+      error: MediaPreviousError,
       context: { hasNext: boolean; retryCount: number },
     ) => AssetLoadDecision;
     /** Decide whether to reload, skip, or stop after a playback error. */
@@ -327,7 +338,7 @@ export interface UseAssetState {
   /** Monotonic generation used to ignore stale loads. */
   loadGeneration: number;
   /** Most recent load or playback error. */
-  previousError: unknown;
+  previousError: MediaPreviousError;
   /** Retry count for the active session. */
   retryCount: number;
   /** Current source mode, or `null` before a source is loaded. */
@@ -358,14 +369,14 @@ export interface AssetStore extends MediaEventSlice<AssetEvents> {
     preloadAbortControllers: Record<string, AbortController | undefined>;
     preloadAsset: (asset: TAsset) => Promise<void>;
     preloadNext: () => Promise<void>;
-    previousError: unknown;
+    previousError: MediaPreviousError;
     retryCount: number;
     setSourceType: (sourceType: AssetSourceType | null) => void;
     sourceType: AssetSourceType | null;
   };
 }
 
-type AssetSetupStore = AssetStore & PlaybackStore & PlayerStore & PlaylistStore;
+type AssetSetupStore = AssetStore & MediaStore & PlaybackStore & PlayerStore & PlaylistStore;
 
 type MaybePromise<T> = Promise<T> | T;
 
@@ -429,71 +440,47 @@ export function assetFeature(): MediaFeature<
             sourceType: sourceType ?? get().asset.sourceType,
           });
 
-          try {
-            const preloadManagers = get().player.preloadManagers as Map<
-              string,
-              shaka.media.PreloadManager
-            >;
-            const preloadManager = preloadManagers.get(assetId);
-            const retryCount = get().asset.retryCount;
-            const previousError = get().asset.previousError ?? undefined;
-
-            const loadDefault = createDefaultLoad({
+          const preloadManagers = get().player.preloadManagers as Map<
+            string,
+            shaka.media.PreloadManager
+          >;
+          const preloadManager = preloadManagers.get(assetId);
+          const loadDefault = createDefaultLoad({
+            asset,
+            assetId,
+            player,
+            ...(preloadManager === undefined ? {} : { preloadManager }),
+            ...(startTime === undefined ? {} : { startTime }),
+          });
+          const shouldAutoplay =
+            media.autoplay &&
+            media.paused &&
+            (!get().asset.isFirstLoad || Boolean(options?.autoplayFirst));
+          const result = await Effect.runPromise(
+            loadAssetEffect({
               asset,
-              assetId,
+              generation,
+              getGeneration: () => get().asset.loadGeneration,
+              getPreviousError: () => get().asset.previousError ?? undefined,
+              getRetryCount: () => get().asset.retryCount,
+              loadDefault,
+              media,
+              ...(options === undefined ? {} : { options }),
+              ...(shouldAutoplay ? { play: () => get().playback.play() } : {}),
               player,
               ...(preloadManager === undefined ? {} : { preloadManager }),
+              signal: abortController.signal,
               ...(startTime === undefined ? {} : { startTime }),
-            });
+            }).pipe(Effect.either),
+          );
 
-            if (options?.loader?.load) {
-              await options.loader.load({
-                asset,
-                loadDefault,
-                media,
-                player,
-                ...(preloadManager === undefined ? {} : { preloadManager }),
-                ...(previousError === undefined ? {} : { previousError }),
-                retryCount,
-                signal: abortController.signal,
-                ...(startTime === undefined ? {} : { startTime }),
-              });
-            } else {
-              const resolved = await resolveSourceValue(options, {
-                asset,
-                ...(previousError === undefined ? {} : { previousError }),
-                retryCount,
-                signal: abortController.signal,
-                ...(startTime === undefined ? {} : { startTime }),
-              });
-
-              if (abortController.signal.aborted) {
-                return false;
-              }
-
-              await loadDefault(resolved);
-            }
-
+          if (Either.isRight(result)) {
             if (preloadManager) {
               const updated = new Map(preloadManagers);
               updated.delete(assetId);
               set(({ player }) => {
                 player.preloadManagers = updated;
               });
-            }
-
-            if (get().asset.loadGeneration !== generation) {
-              return false;
-            }
-
-            if (media.autoplay && media.paused) {
-              if (get().asset.isFirstLoad) {
-                if (options?.autoplayFirst) {
-                  await get().playback.play();
-                }
-              } else {
-                await get().playback.play();
-              }
             }
 
             set(({ asset }) => {
@@ -504,71 +491,69 @@ export function assetFeature(): MediaFeature<
 
             events.emit("assetloaded", { asset });
             return true;
-          } catch (error) {
-            if (
-              get().asset.loadGeneration !== generation ||
-              isLoadInterrupted(error) ||
-              (error instanceof DOMException && error.name === "AbortError")
-            ) {
-              return false;
-            }
+          }
 
-            const normalizedError = toError(error);
-            events.emit("assetloaderror", { asset, error: normalizedError });
-            const playlist = get().playlist;
-            const maxRetries = options?.maxRetries ?? 0;
-            const currentRetryCount = get().asset.retryCount;
-            const hasNext = playlist.getNextIndex() !== -1;
+          const workflowError = result.left;
+          if (isWorkflowCancellation(workflowError)) {
+            return false;
+          }
 
-            set(({ asset }) => {
-              asset.previousError = error;
+          const cause = getWorkflowCause(workflowError);
+          const normalizedError = toWorkflowError(cause);
+          events.emit("assetloaderror", { asset, error: normalizedError });
+          const playlist = get().playlist;
+          const maxRetries = options?.maxRetries ?? 0;
+          const currentRetryCount = get().asset.retryCount;
+          const hasNext = playlist.getNextIndex() !== -1;
+
+          set(({ asset }) => {
+            asset.previousError = workflowError;
+          });
+
+          if (options?.recover?.loadError) {
+            const decision = options.recover.loadError(asset, normalizedError, {
+              hasNext,
+              retryCount: currentRetryCount,
             });
 
-            if (options?.recover?.loadError) {
-              const decision = options.recover.loadError(asset, error, {
-                hasNext,
-                retryCount: currentRetryCount,
-              });
-
-              if (decision === AssetRecoveryAction.Retry && currentRetryCount < maxRetries) {
-                set(({ asset }) => {
-                  asset.retryCount = currentRetryCount + 1;
-                });
-                return get().asset.loadAsset(asset, startTime, sourceType);
-              }
-
-              if (
-                (decision === AssetRecoveryAction.Skip ||
-                  (decision === AssetRecoveryAction.Retry && currentRetryCount >= maxRetries)) &&
-                hasNext
-              ) {
-                set(({ asset }) => {
-                  asset.previousError = null;
-                  asset.retryCount = 0;
-                });
-                playlist.next();
-                return false;
-              }
-
+            if (decision === AssetRecoveryAction.Retry && currentRetryCount < maxRetries) {
               set(({ asset }) => {
-                asset.previousError = null;
-                asset.retryCount = 0;
+                asset.retryCount = currentRetryCount + 1;
               });
-              get().playback.setError(normalizedError);
-              return false;
+              return get().asset.loadAsset(asset, startTime, sourceType);
             }
 
-            if (hasNext) {
+            if (
+              (decision === AssetRecoveryAction.Skip ||
+                (decision === AssetRecoveryAction.Retry && currentRetryCount >= maxRetries)) &&
+              hasNext
+            ) {
               set(({ asset }) => {
                 asset.previousError = null;
                 asset.retryCount = 0;
               });
               playlist.next();
-            } else {
-              get().playback.setError(normalizedError);
+              return false;
             }
+
+            set(({ asset }) => {
+              asset.previousError = null;
+              asset.retryCount = 0;
+            });
+            get().playback.setError(normalizedError);
             return false;
           }
+
+          if (hasNext) {
+            set(({ asset }) => {
+              asset.previousError = null;
+              asset.retryCount = 0;
+            });
+            playlist.next();
+          } else {
+            get().playback.setError(normalizedError);
+          }
+          return false;
         },
         loadGeneration: 0,
         loadPlaylist: (assets, startIndex = 0, sourceType, options) => {
@@ -621,96 +606,77 @@ export function assetFeature(): MediaFeature<
             );
           };
 
-          try {
-            const retryCount = get().asset.retryCount;
-            const previousError = get().asset.previousError ?? undefined;
+          const preloadDefault = async (
+            source?: PlaybackSource | string,
+          ): Promise<null | shaka.media.PreloadManager> => {
+            if (!isCurrentPreload()) return null;
 
-            const preloadDefault = async (
-              source?: PlaybackSource | string,
-            ): Promise<null | shaka.media.PreloadManager> => {
-              if (!isCurrentPreload()) return null;
+            const normalizedSource = normalizePlaybackSource(source);
+            const resolvedSource = normalizedSource.source ?? asset.src;
 
-              const normalizedSource = normalizePlaybackSource(source);
-              const resolvedSource = normalizedSource.source ?? asset.src;
-
-              if (!resolvedSource || typeof resolvedSource !== "string") {
-                throw new Error(
-                  `[useAsset] Missing preload source for asset "${assetId}". Provide asset.src or resolveSource.`,
-                );
-              }
-
-              const manager = await player.preload(
-                resolvedSource,
-                undefined,
-                normalizedSource.mimeType ?? asset.mimeType,
-                mergePlayerConfiguration(asset.config, normalizedSource.config),
-              );
-              if (!isCurrentPreload()) {
-                void manager?.destroy();
-                return null;
-              }
-
-              return manager;
-            };
-
-            let manager: null | shaka.media.PreloadManager = null;
-
-            if (options?.loader?.preload) {
-              manager = await options.loader.preload({
-                asset,
-                player,
-                preloadDefault,
-                previousError,
-                retryCount,
-                signal: abortController.signal,
-              });
-            } else {
-              const resolved = await resolveSourceValue(options, {
-                asset,
-                previousError,
-                retryCount,
-                signal: abortController.signal,
-              });
-
-              if (!isCurrentPreload()) return;
-
-              manager = await preloadDefault(resolved ?? undefined);
+            if (!resolvedSource || typeof resolvedSource !== "string") {
+              throw new MediaSourceMissing({ assetId });
             }
 
+            const manager = await player.preload(
+              resolvedSource,
+              undefined,
+              normalizedSource.mimeType ?? asset.mimeType,
+              mergePlayerConfiguration(asset.config, normalizedSource.config),
+            );
             if (!isCurrentPreload()) {
-              void manager?.destroy();
-              return;
+              if (manager) void Effect.runPromiseExit(destroyPreloadManagerEffect(manager));
+              return null;
             }
 
-            if (manager) {
-              const existing = get().player.preloadManagers as Map<
-                string,
-                shaka.media.PreloadManager
-              >;
-              const previousManager = existing.get(assetId);
+            return manager;
+          };
 
-              if (previousManager && previousManager !== manager) {
-                void previousManager.destroy();
-              }
+          const result = await Effect.runPromise(
+            preloadAssetEffect({
+              asset,
+              getIsCurrentPreload: isCurrentPreload,
+              getPreviousError: () => get().asset.previousError ?? undefined,
+              getRetryCount: () => get().asset.retryCount,
+              ...(options === undefined ? {} : { options }),
+              player,
+              preloadDefault,
+              signal: abortController.signal,
+            }).pipe(Effect.either),
+          );
 
-              const updated = new Map(existing);
-              updated.set(assetId, manager);
-              set(({ player }) => {
-                player.preloadManagers = updated;
-              });
-              events.emit("assetpreloaded", { asset });
+          if (Either.isLeft(result)) {
+            if (!isWorkflowCancellation(result.left)) {
+              const error = toWorkflowError(getWorkflowCause(result.left));
+              events.emit("assetpreloaderror", { asset, error });
+              console.error("[useAsset] Preload error:", error);
             }
-          } catch (error) {
-            if (
-              abortController.signal.aborted ||
-              (error instanceof DOMException && error.name === "AbortError")
-            ) {
-              return;
+            return;
+          }
+
+          const manager = result.right;
+          if (!isCurrentPreload()) {
+            if (manager) void Effect.runPromiseExit(destroyPreloadManagerEffect(manager));
+            return;
+          }
+
+          if (manager) {
+            const existing = get().player.preloadManagers as Map<
+              string,
+              shaka.media.PreloadManager
+            >;
+            const previousManager = existing.get(assetId);
+
+            if (previousManager && previousManager !== manager) {
+              void Effect.runPromiseExit(destroyPreloadManagerEffect(previousManager));
             }
 
-            const err = toError(error);
-            events.emit("assetpreloaderror", { asset, error: err });
-            console.error("[useAsset] Preload error:", error);
+            const updated = new Map(existing);
+            updated.set(assetId, manager);
+            set(({ player }) => {
+              player.preloadManagers = updated;
+            });
+            events.emit("assetpreloaded", { asset });
           }
         },
         preloadNext: async () => {
@@ -847,97 +813,108 @@ export function useAssetStore<TSelected>(
 function AssetSetup() {
   const api = useMediaFeatureApi<AssetSetupStore>(ASSET_FEATURE_KEY);
   const events = useMediaEvents<AssetEvents & PlaybackEvents & PlayerEvents & PlaylistEvents>();
-  useEffect(() => {
-    const getHasNext = () => {
-      const { getNextIndex, queue, repeatMode } = api.getState().playlist;
-      return repeatMode === "all" && queue.length > 0 ? true : getNextIndex() !== -1;
-    };
-
-    const offPlaylistChange = events.on("playlistchange", (event) => {
-      const item = event.currentItem;
-      if (!item) return;
-      events.emit("assetchange", event as PlaylistChangeEvent<TAsset>);
-      void api
-        .getState()
-        .asset.loadAsset(
-          item.properties as unknown as TAsset,
-          undefined,
-          api.getState().asset.sourceType ?? AssetSourceType.Playlist,
-        );
-    });
-
-    const offPlaybackError = events.on("playbackerror", (payload) => {
-      void (async () => {
-        const state = api.getState();
-        const { currentItem } = state.playlist;
-        const sessionId = state.asset.activeSession?.id;
-        const options = state.asset.activeSession?.loading as undefined | UseAssetOptions<TAsset>;
-        if (!currentItem) return;
-        const currentItemId = currentItem.id;
-
-        const getFreshCurrentItem = () => {
-          const freshState = api.getState();
-          if (freshState.asset.activeSession?.id !== sessionId) return null;
-          if (freshState.playlist.currentItem?.id !== currentItemId) return null;
-
-          return freshState.playlist.currentItem;
-        };
-
-        const mediaElement = api.getState().media.mediaElement;
-        try {
-          const currentTime =
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            payload.currentTime ?? mediaElement?.currentTime ?? 0;
-          const decision = options?.recover?.playbackError
-            ? await options.recover.playbackError(
-                currentItem.properties as unknown as TAsset,
-                payload.error,
-                { currentTime },
-              )
-            : {
-                action: AssetRecoveryAction.Reload,
-              };
-          const freshCurrentItem = getFreshCurrentItem();
-          if (!freshCurrentItem) return;
-
-          if (decision.action === AssetRecoveryAction.Reload) {
-            const assetToLoad = (decision.asset ??
-              freshCurrentItem.properties) as unknown as TAsset;
-            const startTime = decision.startTime ?? currentTime;
-            api.setState(({ asset }) => {
-              asset.previousError = payload.error;
-            });
-            await api
-              .getState()
-              .asset.loadAsset(
-                assetToLoad,
-                startTime,
-                api.getState().asset.sourceType ?? AssetSourceType.Asset,
-              );
-          } else if (decision.action === AssetRecoveryAction.Skip && getHasNext()) {
-            api.getState().playlist.next();
-          }
-        } catch (callbackErr) {
-          console.error("[useAsset] recover.playbackError callback failed:", callbackErr);
-        }
-      })();
-    });
-
-    const offEnded = events.on("ended", () => {
-      if (getHasNext()) {
-        api.getState().playlist.next();
-      }
-    });
-
-    return () => {
-      offPlaylistChange();
-      offPlaybackError();
-      offEnded();
-    };
-  }, [api, events]);
+  useEffect(() => subscribeAssetEvents(api, events), [api, events]);
 
   return null;
 }
+
+function subscribeAssetEvents(
+  api: ImmerStoreApi<AssetSetupStore>,
+  events: MediaEvents<AssetEvents & PlaybackEvents & PlayerEvents & PlaylistEvents>,
+) {
+  const getHasNext = () => {
+    const { getNextIndex, queue, repeatMode } = api.getState().playlist;
+    return repeatMode === "all" && queue.length > 0 ? true : getNextIndex() !== -1;
+  };
+
+  const offPlaylistChange = events.on("playlistchange", (event) => {
+    const item = event.currentItem;
+    if (!item) return;
+    events.emit("assetchange", event as PlaylistChangeEvent<TAsset>);
+    void api
+      .getState()
+      .asset.loadAsset(
+        item.properties as unknown as TAsset,
+        undefined,
+        api.getState().asset.sourceType ?? AssetSourceType.Playlist,
+      );
+  });
+
+  const offPlaybackError = events.on("playbackerror", (payload) => {
+    const state = api.getState();
+    const { currentItem } = state.playlist;
+    const sessionId = state.asset.activeSession?.id;
+    const options = state.asset.activeSession?.loading as undefined | UseAssetOptions<TAsset>;
+    if (!currentItem) return;
+    const currentItemId = currentItem.id;
+
+    const getFreshCurrentItem = () => {
+      const freshState = api.getState();
+      if (freshState.asset.activeSession?.id !== sessionId) return null;
+      if (freshState.playlist.currentItem?.id !== currentItemId) return null;
+
+      return freshState.playlist.currentItem;
+    };
+
+    const mediaElement = api.getState().media.mediaElement;
+    const recover = Effect.tryPromise({
+      try: async () => {
+        const currentTime =
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          payload.currentTime ?? mediaElement?.currentTime ?? 0;
+        const decision = options?.recover?.playbackError
+          ? await options.recover.playbackError(
+              currentItem.properties as unknown as TAsset,
+              payload.error,
+              { currentTime },
+            )
+          : {
+              action: AssetRecoveryAction.Reload,
+            };
+        const freshCurrentItem = getFreshCurrentItem();
+        if (!freshCurrentItem) return;
+
+        if (decision.action === AssetRecoveryAction.Reload) {
+          const assetToLoad = (decision.asset ?? freshCurrentItem.properties) as unknown as TAsset;
+          const startTime = decision.startTime ?? currentTime;
+          api.setState(({ asset }) => {
+            asset.previousError = payload.error;
+          });
+          await api
+            .getState()
+            .asset.loadAsset(
+              assetToLoad,
+              startTime,
+              api.getState().asset.sourceType ?? AssetSourceType.Asset,
+            );
+        } else if (decision.action === AssetRecoveryAction.Skip && getHasNext()) {
+          api.getState().playlist.next();
+        }
+      },
+      catch: toWorkflowError,
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() =>
+          console.error("[useAsset] recover.playbackError callback failed:", error),
+        ),
+      ),
+    );
+    void Effect.runPromise(recover);
+  });
+
+  const offEnded = events.on("ended", () => {
+    if (getHasNext()) {
+      api.getState().playlist.next();
+    }
+  });
+
+  return () => {
+    offPlaylistChange();
+    offPlaybackError();
+    offEnded();
+  };
+}
+
 function createAssetSession(
   sourceType: AssetSourceType,
   options?: Omit<AssetLoadSourceOptions<TAsset>, "initialIndex" | "sourceType">,
@@ -1108,24 +1085,4 @@ function normalizePlayerSource(source: PlayerSource<TAsset>): TAsset[] {
   if (Array.isArray(source)) return [...source];
   if (typeof source === "string") return [{ src: source }];
   return [source as TAsset];
-}
-
-async function resolveSourceValue(
-  options: undefined | UseAssetOptions<TAsset>,
-  context: ResolveSourceContext<TAsset>,
-): Promise<null | PlaybackSource | string | undefined> {
-  return options?.resolveSource?.(context);
-}
-
-function toError(error: unknown): Error {
-  if (error instanceof Error) return error;
-
-  if (typeof error === "object" && error !== null) {
-    return Object.assign(
-      new Error(String((error as { message?: string }).message ?? error)),
-      error,
-    );
-  }
-
-  return new Error(String(error));
 }

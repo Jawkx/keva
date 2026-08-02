@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { AvatarRecipe } from "@keva/schema";
 import { CreditCard, HardDrive, Palette, ShieldCheck, UserRound } from "lucide-react";
 import { useState } from "react";
@@ -10,6 +11,8 @@ import { StorageUsageCard } from "../components/StorageUsageCard";
 import { SubscriptionCard } from "../components/SubscriptionCard";
 import { UserAvatar } from "../components/UserAvatar";
 import { authClient } from "../lib/auth";
+import { authOperationEffect } from "../lib/auth-effect";
+import { errorMessage } from "../lib/errors";
 import { avatarRecipeForUser, serializeAvatarRecipe } from "../lib/avatar";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -90,44 +93,42 @@ function SectionHeading({ title }: { title: string }) {
   );
 }
 
-async function saveAvatar(recipe: AvatarRecipe | null): Promise<boolean> {
-  try {
-    const result = await authClient.updateUser({
-      avatar: recipe ? serializeAvatarRecipe(recipe) : null,
-    });
-    if (result.error) {
-      toast.error(result.error.message ?? "Could not update avatar.");
-      return false;
-    }
-    toast.success(recipe ? "Avatar updated" : "Avatar reset");
-    return true;
-  } catch (err) {
-    toast.error(err instanceof Error ? err.message : "Could not update avatar.");
-    return false;
-  }
+function saveAvatar(recipe: AvatarRecipe | null): Promise<boolean> {
+  return Effect.runPromise(
+    authOperationEffect(() =>
+      authClient.updateUser({ avatar: recipe ? serializeAvatarRecipe(recipe) : null }),
+    ).pipe(
+      Effect.match({
+        onFailure: (failure) => {
+          toast.error(errorMessage(failure));
+          return false;
+        },
+        onSuccess: () => {
+          toast.success(recipe ? "Avatar updated" : "Avatar reset");
+          return true;
+        },
+      }),
+    ),
+  );
 }
 
 function ProfileSettings({ user }: { user: SettingsUser }) {
   const [savingName, setSavingName] = useState(false);
 
-  const onSaveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
+  const onSaveProfile = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = String(new FormData(event.currentTarget).get("name") ?? "").trim();
     if (!name) return;
 
     setSavingName(true);
-    try {
-      const result = await authClient.updateUser({ name });
-      if (result.error) {
-        toast.error(result.error.message ?? "Could not update profile.");
-        return;
-      }
-      toast.success("Profile updated");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not update profile.");
-    } finally {
-      setSavingName(false);
-    }
+    const save = authOperationEffect(() => authClient.updateUser({ name })).pipe(
+      Effect.match({
+        onFailure: (failure) => toast.error(errorMessage(failure)),
+        onSuccess: () => toast.success("Profile updated"),
+      }),
+      Effect.ensuring(Effect.sync(() => setSavingName(false))),
+    );
+    void Effect.runPromise(save);
   };
 
   return (
@@ -193,27 +194,23 @@ function SecuritySettings() {
   const [newPassword, setNewPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
 
-  const onChangePassword = async (event: React.FormEvent) => {
+  const onChangePassword = (event: React.FormEvent) => {
     event.preventDefault();
     setSavingPassword(true);
-    try {
-      const result = await authClient.changePassword({
-        currentPassword,
-        newPassword,
-        revokeOtherSessions: true,
-      });
-      if (result.error) {
-        toast.error(result.error.message ?? "Could not change password.");
-        return;
-      }
-      toast.success("Password changed");
-      setCurrentPassword("");
-      setNewPassword("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not change password.");
-    } finally {
-      setSavingPassword(false);
-    }
+    const changePassword = authOperationEffect(() =>
+      authClient.changePassword({ currentPassword, newPassword, revokeOtherSessions: true }),
+    ).pipe(
+      Effect.match({
+        onFailure: (failure) => toast.error(errorMessage(failure)),
+        onSuccess: () => {
+          toast.success("Password changed");
+          setCurrentPassword("");
+          setNewPassword("");
+        },
+      }),
+      Effect.ensuring(Effect.sync(() => setSavingPassword(false))),
+    );
+    void Effect.runPromise(changePassword);
   };
 
   return (

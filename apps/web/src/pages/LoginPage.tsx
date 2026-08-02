@@ -1,7 +1,10 @@
+import { Effect } from "effect";
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
 import { authClient } from "../lib/auth";
+import { authOperationEffect } from "../lib/auth-effect";
+import { errorMessage } from "../lib/errors";
 import {
   authContinuationSearch,
   authErrorMessage,
@@ -29,39 +32,37 @@ export function LoginPage() {
   const authPage = `${window.location.pathname}${continuationSearch}`;
   const busy = passwordBusy || googleBusy;
 
-  const onGoogleSignIn = async () => {
+  const onGoogleSignIn = () => {
     setError(null);
     setGoogleBusy(true);
-    try {
-      const result = await authClient.signIn.social({
+    const signIn = authOperationEffect(() =>
+      authClient.signIn.social({
         provider: "google",
         callbackURL: destination,
         errorCallbackURL: authPage,
-      });
-      if (result.error) setError(result.error.message ?? "Google sign-in failed.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign-in failed.");
-    } finally {
-      setGoogleBusy(false);
-    }
+      }),
+    ).pipe(
+      Effect.match({
+        onFailure: (failure) => setError(errorMessage(failure)),
+        onSuccess: () => undefined,
+      }),
+      Effect.ensuring(Effect.sync(() => setGoogleBusy(false))),
+    );
+    void Effect.runPromise(signIn);
   };
 
-  const onSubmit = async (event: React.FormEvent) => {
+  const onSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
     setPasswordBusy(true);
-    try {
-      const result = await authClient.signIn.email({ email, password });
-      if (result.error) {
-        setError(result.error.message ?? "Sign in failed.");
-        return;
-      }
-      window.location.replace(destination);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed.");
-    } finally {
-      setPasswordBusy(false);
-    }
+    const signIn = authOperationEffect(() => authClient.signIn.email({ email, password })).pipe(
+      Effect.match({
+        onFailure: (failure) => setError(errorMessage(failure)),
+        onSuccess: () => window.location.replace(destination),
+      }),
+      Effect.ensuring(Effect.sync(() => setPasswordBusy(false))),
+    );
+    void Effect.runPromise(signIn);
   };
 
   return (

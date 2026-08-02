@@ -112,7 +112,7 @@ describe("uploadFileEffect", () => {
 
     expect(result).toMatchObject({
       _tag: "Left",
-      left: { phase: "put", session: undefined },
+      left: { stage: "initiate", session: undefined },
     });
     expect(starts).toBe(1);
   });
