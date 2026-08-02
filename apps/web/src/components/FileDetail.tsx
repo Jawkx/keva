@@ -27,6 +27,7 @@ import { keva } from "../lib/keva";
 import { objectUrlFor } from "../lib/object-url-cache";
 import { runEffectPromise } from "../lib/effect-runtime";
 import { loadPreviewContent } from "../lib/preview-content";
+import { loadOptionalThumbnailUrl } from "../lib/thumbnails";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,11 +48,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const VideoPreviewViewer = lazy(() =>
-  import("./viewers/VideoPreviewViewer").then((module) => ({
-    default: module.VideoPreviewViewer,
-  })),
-);
+const VideoPreview = lazy(() => import("./viewers/VideoPreview"));
 
 type Preview =
   | { kind: "image"; url: string }
@@ -123,6 +120,18 @@ export function FileDetail({
       ),
   });
   const previewLoading = contentQuery.isLoading;
+
+  const thumbnailQuery = useQuery({
+    queryKey: trashMode ? ["trash-thumbnail", itemId] : ["thumbnail", itemId],
+    enabled: Boolean(item) && isVideo(item!),
+    staleTime: 4 * 60_000,
+    gcTime: 0,
+    retry: false,
+    queryFn: () =>
+      loadOptionalThumbnailUrl(() =>
+        trashMode ? keva.getTrashThumbnailUrl(itemId) : keva.getThumbnailUrl(itemId),
+      ),
+  });
 
   const preview = useMemo<Preview | null>(() => {
     if (!item || !contentQuery.data) return null;
@@ -507,11 +516,13 @@ export function FileDetail({
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {isVideo(item) ? (
               <Suspense fallback={<FilePreviewSkeleton variant="image" />}>
-                <VideoPreviewViewer
+                <VideoPreview
                   key={itemId}
                   itemId={itemId}
+                  contentType={item.contentType}
                   fileName={item.name}
                   loadSource={loadVideoSource}
+                  {...(thumbnailQuery.data ? { posterUrl: thumbnailQuery.data } : {})}
                 />
               </Suspense>
             ) : previewLoading ? (

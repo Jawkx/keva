@@ -98,17 +98,17 @@ const shareUpload = (p: Principal, name: string, bytes: Uint8Array) =>
     return yield* engine.confirm(initiated.item.id);
   });
 
-const upload = (tenantId: string, name: string, bytes: Uint8Array) =>
+const upload = (tenantId: string, name: string, bytes: Uint8Array, contentType = "text/plain") =>
   Effect.gen(function* () {
     const engine = makeKevaEngine(principal(tenantId));
     const initiated = yield* engine.initiate({
       name,
-      contentType: "text/plain",
+      contentType,
       size: bytes.byteLength,
       source: "upload",
       properties: {},
     });
-    yield* stage(initiated.item.stagingKey, bytes, "text/plain");
+    yield* stage(initiated.item.stagingKey, bytes, contentType);
     return yield* engine.confirm(initiated.item.id);
   });
 
@@ -176,6 +176,70 @@ describe("KevaEngine", () => {
     expect(result.item.status).toBe("ready");
     expect(result.own.items).toHaveLength(1);
     expect(result.other.items).toHaveLength(0);
+  });
+
+  it("uploads, validates, downloads, and idempotently deletes video thumbnails", async () => {
+    const layer = testLayer();
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(principal("tenant-thumbnail"));
+      const video = yield* upload(
+        "tenant-thumbnail",
+        "clip.mp4",
+        new TextEncoder().encode("video"),
+        "video/mp4",
+      );
+      const text = yield* upload("tenant-thumbnail", "notes.txt", new TextEncoder().encode("text"));
+      const absent = yield* Effect.either(engine.downloadThumbnail(video.id));
+      const nonVideo = yield* Effect.either(
+        engine.initiateThumbnail(text.id, { contentType: "image/webp", size: 4 }),
+      );
+      const uploadRequest = yield* engine.initiateThumbnail(video.id, {
+        contentType: "image/webp",
+        size: 4,
+      });
+      const key = `thumbnails/tenant-thumbnail/${video.id}`;
+      yield* stage(key, new TextEncoder().encode("bad"), "image/gif");
+      const invalidStored = yield* Effect.either(engine.downloadThumbnail(video.id));
+      yield* stage(key, new TextEncoder().encode("good"), "image/webp");
+      const download = yield* engine.downloadThumbnail(video.id);
+      yield* engine.deleteThumbnail(video.id);
+      yield* engine.deleteThumbnail(video.id);
+      const deleted = yield* Effect.either(engine.downloadThumbnail(video.id));
+      return { absent, nonVideo, uploadRequest, invalidStored, download, deleted };
+    }).pipe(Effect.provide(layer));
+
+    const result = await Effect.runPromise(program);
+    expect(result.absent).toMatchObject({ _tag: "Left", left: { _tag: "NotFound" } });
+    expect(result.nonVideo).toMatchObject({ _tag: "Left", left: { _tag: "NotFound" } });
+    expect(result.uploadRequest.headers).toEqual({ "content-type": "image/webp" });
+    expect(result.uploadRequest.url).toContain(`/thumbnails/tenant-thumbnail/`);
+    expect(result.invalidStored).toMatchObject({ _tag: "Left", left: { _tag: "NotFound" } });
+    expect(result.download.url).toContain(`/thumbnails/tenant-thumbnail/`);
+    expect(result.deleted).toMatchObject({ _tag: "Left", left: { _tag: "NotFound" } });
+  });
+
+  it("removes a thumbnail during permanent purge", async () => {
+    const layer = testLayer();
+    const program = Effect.gen(function* () {
+      const engine = makeKevaEngine(principal("tenant-purge-thumbnail"));
+      const video = yield* upload(
+        "tenant-purge-thumbnail",
+        "purge.mp4",
+        new TextEncoder().encode("video"),
+        "video/mp4",
+      );
+      const key = `thumbnails/tenant-purge-thumbnail/${video.id}`;
+      yield* stage(key, new TextEncoder().encode("thumb"), "image/png");
+      yield* engine.delete(video.id);
+      const trashPreview = yield* engine.downloadTrashThumbnail(video.id);
+      yield* engine.purge(video.id);
+      const blobs = yield* BlobStore;
+      return { trashPreview, thumbnail: yield* blobs.head(key) };
+    }).pipe(Effect.provide(layer));
+
+    const result = await Effect.runPromise(program);
+    expect(result.trashPreview.url).toContain("/thumbnails/tenant-purge-thumbnail/");
+    expect(result.thumbnail).toBeNull();
   });
 
   it("does not overwrite final bytes when a staging grant is replayed", async () => {
@@ -652,6 +716,42 @@ describe("KevaEngine share access", () => {
     expect(result.downloadOutside._tag).toBe("Left");
     if (result.downloadOutside._tag === "Left")
       expect(result.downloadOutside.left._tag).toBe("NotFound");
+  });
+
+  it("applies normal share visibility to thumbnail downloads", async () => {
+    const program = Effect.gen(function* () {
+      const owner = makeKevaEngine(principal("tenant-a"));
+      const visible = yield* upload(
+        "tenant-a",
+        "visible.mp4",
+        new TextEncoder().encode("visible"),
+        "video/mp4",
+      );
+      const hidden = yield* upload(
+        "tenant-a",
+        "hidden.mp4",
+        new TextEncoder().encode("hidden"),
+        "video/mp4",
+      );
+      yield* owner.patch(visible.id, { set: { project: "alpha" }, unset: [] });
+      yield* owner.patch(hidden.id, { set: { project: "beta" }, unset: [] });
+      yield* stage(`thumbnails/tenant-a/${visible.id}`, new Uint8Array([1]), "image/avif");
+      yield* stage(`thumbnails/tenant-a/${hidden.id}`, new Uint8Array([2]), "image/jpeg");
+      const share = makeKevaEngine(sharePrincipal("tenant-a"));
+      const allowed = yield* share.downloadThumbnail(visible.id);
+      const denied = yield* Effect.either(share.downloadThumbnail(hidden.id));
+      const mutation = yield* Effect.either(
+        makeKevaEngine(sharePrincipal("tenant-a", { scopes: ["read", "write"] })).deleteThumbnail(
+          visible.id,
+        ),
+      );
+      return { allowed, denied, mutation };
+    }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(program);
+    expect(result.allowed.url).toContain(`/thumbnails/tenant-a/`);
+    expect(result.denied).toMatchObject({ _tag: "Left", left: { _tag: "NotFound" } });
+    expect(result.mutation).toMatchObject({ _tag: "Left", left: { _tag: "Forbidden" } });
   });
 
   it("force-applies the write stamp and share source, ignoring caller input", async () => {

@@ -267,21 +267,22 @@ export function createMediaKit<
     };
   }
 
+  const featureKeys = new Set<string>(features.map((feature) => feature.key));
+
   function MediaProvider({ children, debug }: React.PropsWithChildren<MediaProviderProps>) {
-    const runtimeRef = React.useRef<null | {
-      events: MediaEvents<RuntimeEvents>;
-      store: ImmerStoreApi<RuntimeStore>;
-    }>(null);
-    const featureKeysRef = React.useRef(new Set<string>(features.map((feature) => feature.key)));
-
-    if (!runtimeRef.current) {
-      runtimeRef.current = createMediaStore();
-      if (typeof debug === "boolean") {
-        setMediaDebug(runtimeRef.current.store, debug);
-      }
-    }
-
-    const runtime = runtimeRef.current;
+    const [runtime] = React.useState(() => {
+      const created = createMediaStore();
+      if (typeof debug === "boolean") setMediaDebug(created.store, debug);
+      return created;
+    });
+    const contextValue = React.useMemo(
+      () => ({
+        events: runtime.events as unknown as MediaEvents<AnyEvents>,
+        featureKeys,
+        store: runtime.store as ImmerStoreApi<AnyMediaStore>,
+      }),
+      [runtime],
+    );
 
     React.useLayoutEffect(() => {
       if (typeof debug !== "boolean") return;
@@ -290,13 +291,7 @@ export function createMediaKit<
     }, [debug, runtime.store]);
 
     return (
-      <MediaRuntimeContext.Provider
-        value={{
-          events: runtime.events as unknown as MediaEvents<AnyEvents>,
-          featureKeys: featureKeysRef.current,
-          store: runtime.store as ImmerStoreApi<AnyMediaStore>,
-        }}
-      >
+      <MediaRuntimeContext.Provider value={contextValue}>
         {children}
         {features.map((feature) => {
           if (!feature.Setup) {

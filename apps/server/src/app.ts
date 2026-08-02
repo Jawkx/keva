@@ -26,6 +26,7 @@ import {
   toSharedItem,
   toOwnerItem,
   toTrashItem,
+  ThumbnailUploadInput,
   UpdateView,
   ValidationError,
   StorageUnavailable,
@@ -358,6 +359,41 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
     ),
   );
 
+  app.post("/api/items/:id/thumbnail", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        const input = yield* decode(ThumbnailUploadInput, yield* jsonBody(context));
+        return yield* makeKevaEngine(principal).initiateThumbnail(id, input);
+      }),
+    ),
+  );
+
+  app.get("/api/items/:id/thumbnail", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(principal).downloadThumbnail(id);
+      }),
+    ),
+  );
+
+  app.delete("/api/items/:id/thumbnail", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        yield* makeKevaEngine(principal).deleteThumbnail(id);
+        return { ok: true };
+      }),
+    ),
+  );
+
   app.get("/api/items/:id/events", (context) =>
     withServices(context, ({ runtime, userAvatars }) =>
       execute(
@@ -453,6 +489,17 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         const principal = yield* principalEffect(context.req.raw.headers);
         const id = yield* itemIdParam(context);
         return yield* makeKevaEngine(principal).downloadTrash(id);
+      }),
+    ),
+  );
+
+  app.get("/api/trash/:id/thumbnail", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const principal = yield* principalEffect(context.req.raw.headers);
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(principal).downloadTrashThumbnail(id);
       }),
     ),
   );
@@ -1003,6 +1050,20 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         );
         const id = yield* itemIdParam(context);
         return yield* makeKevaEngine(access.principal).download(id);
+      }),
+    ),
+  );
+
+  app.get("/api/shared-views/:grantId/items/:id/thumbnail", (context) =>
+    runRoute(
+      context,
+      Effect.gen(function* () {
+        const access = yield* sharedViewAccess(
+          context.req.raw.headers,
+          context.req.param("grantId"),
+        );
+        const id = yield* itemIdParam(context);
+        return yield* makeKevaEngine(access.principal).downloadThumbnail(id);
       }),
     ),
   );

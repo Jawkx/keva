@@ -19,6 +19,7 @@ import {
   type PropertyValue,
   type Query,
   type Scope,
+  type ThumbnailUploadInput,
 } from "@keva/schema";
 import { Effect } from "effect";
 import { BlobStore, MetadataStore } from "./services.js";
@@ -42,6 +43,33 @@ const trashedReadyOrNotFound = (item: KevaItem | null) =>
   item?.status === "ready" && item.deletedAt !== undefined
     ? Effect.succeed(item as KevaItem & { readonly deletedAt: string })
     : Effect.fail(new NotFound({ message: "Item not found in trash" }));
+
+const videoOrNotFound = (item: KevaItem, message = "Item not found") =>
+  item.contentType.startsWith("video/")
+    ? Effect.succeed(item)
+    : Effect.fail(new NotFound({ message }));
+
+const thumbnailContentTypes = new Set(["image/webp", "image/jpeg", "image/png", "image/avif"]);
+const thumbnailKey = (tenantId: string, itemId: string): string =>
+  `thumbnails/${tenantId}/${itemId}`;
+
+const downloadThumbnail = (tenantId: string, itemId: string) =>
+  Effect.gen(function* () {
+    const blobs = yield* BlobStore;
+    const key = thumbnailKey(tenantId, itemId);
+    const head = yield* blobs.head(key);
+    if (
+      !head ||
+      !head.contentType ||
+      !thumbnailContentTypes.has(head.contentType) ||
+      head.size < 1 ||
+      head.size > 1024 * 1024
+    ) {
+      return yield* new NotFound({ message: "Thumbnail not found" });
+    }
+    const request = yield* blobs.presignDownload(key);
+    return { url: request.url, expiresAt: request.expiresAt };
+  });
 
 // A share principal's grant context, or null for session/token principals. The
 // engine keys share-scoped enforcement off the *presence of the context*, not
@@ -380,6 +408,42 @@ export const makeKevaEngine = (principal: Principal) => ({
       return { url: request.url, expiresAt: request.expiresAt };
     }),
 
+  initiateThumbnail: (id: string, input: ThumbnailUploadInput) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "upload thumbnails");
+      yield* requireScope(principal, "write");
+      const metadata = yield* MetadataStore;
+      const blobs = yield* BlobStore;
+      yield* videoOrNotFound(yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id)));
+      const request = yield* blobs.presignUpload(
+        thumbnailKey(principal.tenantId, id),
+        input.size,
+        input.contentType,
+      );
+      return { url: request.url, expiresAt: request.expiresAt, headers: request.headers };
+    }),
+
+  downloadThumbnail: (id: string) =>
+    Effect.gen(function* () {
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      const item = yield* shareVisible(
+        principal,
+        yield* videoOrNotFound(yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id))),
+      );
+      return yield* downloadThumbnail(item.tenantId, item.id);
+    }),
+
+  deleteThumbnail: (id: string) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "delete thumbnails");
+      yield* requireScope(principal, "write");
+      const metadata = yield* MetadataStore;
+      const blobs = yield* BlobStore;
+      yield* videoOrNotFound(yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id)));
+      yield* blobs.delete(thumbnailKey(principal.tenantId, id));
+    }),
+
   patch: (id: string, patch: ItemPatch) =>
     Effect.gen(function* () {
       yield* forbidShare(principal, "modify items");
@@ -509,6 +573,18 @@ export const makeKevaEngine = (principal: Principal) => ({
       return { url: request.url, expiresAt: request.expiresAt };
     }),
 
+  downloadTrashThumbnail: (id: string) =>
+    Effect.gen(function* () {
+      yield* forbidShare(principal, "read trash");
+      yield* requireScope(principal, "read");
+      const metadata = yield* MetadataStore;
+      const item = yield* videoOrNotFound(
+        yield* trashedReadyOrNotFound(yield* metadata.get(principal.tenantId, id)),
+        "Item not found in trash",
+      );
+      return yield* downloadThumbnail(item.tenantId, item.id);
+    }),
+
   restore: (id: string) =>
     Effect.gen(function* () {
       yield* forbidShare(principal, "restore items");
@@ -536,6 +612,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       if (!current) return;
       yield* blobs.delete(current.storageKey);
       yield* blobs.delete(current.stagingKey);
+      yield* blobs.delete(thumbnailKey(principal.tenantId, id));
       const attempts = yield* metadata.listUploadAttemptsForItem(principal.tenantId, id);
       yield* Effect.forEach(attempts, (attempt) =>
         blobs

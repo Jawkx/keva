@@ -21,6 +21,8 @@ import {
   Query,
   toOwnerItem,
   toSharedItem,
+  ThumbnailUploadInput,
+  ThumbnailUploadResult,
   UpdateView,
   UsageResult,
   validateProperties,
@@ -255,6 +257,32 @@ describe("schema", () => {
     );
     expect(() => Schema.decodeUnknownSync(ItemId)("not-a-uuid")).toThrow();
     expect(() => Schema.decodeUnknownSync(BatchDelete)({ ids: ["not-a-uuid"] })).toThrow();
+  });
+
+  it("validates thumbnail upload contracts", () => {
+    const input = Schema.decodeUnknownSync(ThumbnailUploadInput);
+    expect(input({ contentType: "image/webp", size: 1024 * 1024 })).toEqual({
+      contentType: "image/webp",
+      size: 1024 * 1024,
+    });
+    for (const contentType of ["image/jpeg", "image/png", "image/avif"]) {
+      expect(input({ contentType, size: 1 })).toEqual({ contentType, size: 1 });
+    }
+    for (const invalid of [
+      { contentType: "image/gif", size: 1 },
+      { contentType: "image/png", size: 0 },
+      { contentType: "image/png", size: 1.5 },
+      { contentType: "image/png", size: 1024 * 1024 + 1 },
+    ]) {
+      expect(() => input(invalid)).toThrow();
+    }
+    expect(
+      Schema.decodeUnknownSync(ThumbnailUploadResult)({
+        url: "https://storage.example/thumbnail",
+        expiresAt: "2026-01-01T00:00:00.000Z",
+        headers: { "content-type": "image/webp" },
+      }),
+    ).toMatchObject({ headers: { "content-type": "image/webp" } });
   });
 
   it("validates bulk patches and applies patch defaults", () => {

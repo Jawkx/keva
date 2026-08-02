@@ -30,6 +30,8 @@ import {
   SharedInitiateUploadResult,
   SharedItem,
   SharedQueryResult,
+  ThumbnailUploadInput,
+  ThumbnailUploadResult,
   TrashItem,
   TrashResult,
   UpdateView,
@@ -68,6 +70,8 @@ import {
   type SharedItem as SharedItemType,
   type SharedInitiateUploadResult as SharedInitiateUploadResultType,
   type SharedQueryResult as SharedQueryResultType,
+  type ThumbnailUploadInput as ThumbnailUploadInputType,
+  type ThumbnailUploadResult as ThumbnailUploadResultType,
   type TrashItem as TrashItemType,
   type UpdateView as UpdateViewType,
   type UsageResult as UsageResultType,
@@ -109,6 +113,8 @@ export type {
   ShareSelfType as ShareSelf,
   SharedItemType as SharedItem,
   SharedQueryResultType as SharedQueryResult,
+  ThumbnailUploadInputType as ThumbnailUploadInput,
+  ThumbnailUploadResultType as ThumbnailUploadResult,
   TrashItemType as TrashItem,
   UsageResultType as UsageResult,
 };
@@ -418,6 +424,43 @@ export class KevaClient {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
   }
 
+  getThumbnailUrl(id: string): Promise<DownloadResultType> {
+    return this.#request("GET", `/items/${encodeURIComponent(id)}/thumbnail`, DownloadResult);
+  }
+
+  getThumbnailUploadUrl(
+    id: string,
+    input: ThumbnailUploadInputType,
+  ): Promise<ThumbnailUploadResultType> {
+    return this.#request(
+      "POST",
+      `/items/${encodeURIComponent(id)}/thumbnail`,
+      ThumbnailUploadResult,
+      decode(ThumbnailUploadInput, input),
+    );
+  }
+
+  async setThumbnail(id: string, input: ThumbnailUploadInputType, body: UploadBody): Promise<void> {
+    const target = await this.getThumbnailUploadUrl(id, input);
+    const response = await this.#fetch(target.url, {
+      method: "PUT",
+      headers: target.headers,
+      credentials: "omit",
+      body,
+    });
+    if (!response.ok) {
+      throw new KevaProtocolError(`Thumbnail upload failed with ${response.status}`);
+    }
+  }
+
+  async deleteThumbnail(id: string): Promise<void> {
+    await this.#request(
+      "DELETE",
+      `/items/${encodeURIComponent(id)}/thumbnail`,
+      Schema.Struct({ ok: Schema.Boolean }),
+    );
+  }
+
   async downloadResponse(id: string): Promise<Response> {
     const target = await this.getDownloadUrl(id);
     const response = await this.#fetch(target.url);
@@ -559,6 +602,10 @@ export class KevaClient {
 
   getTrashDownloadUrl(id: string): Promise<DownloadResultType> {
     return this.#request("GET", `/trash/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
+  getTrashThumbnailUrl(id: string): Promise<DownloadResultType> {
+    return this.#request("GET", `/trash/${encodeURIComponent(id)}/thumbnail`, DownloadResult);
   }
 
   downloadTrashBytesEffect(id: string): Effect.Effect<Uint8Array, KevaClientError> {
@@ -714,6 +761,7 @@ export interface ShareAccessClient {
   query(query?: QueryType): Promise<SharedQueryResultType>;
   get(id: string): Promise<SharedItemType>;
   getDownloadUrl(id: string): Promise<DownloadResultType>;
+  getThumbnailUrl(id: string): Promise<DownloadResultType>;
   delete(id: string): Promise<void>;
   downloadBytes(id: string): Promise<Uint8Array>;
   startUpload(file: File): Promise<ShareUploadSession>;
@@ -778,6 +826,10 @@ export class ShareClient {
 
   getDownloadUrl(id: string): Promise<DownloadResultType> {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
+  getThumbnailUrl(id: string): Promise<DownloadResultType> {
+    return this.#request("GET", `/items/${encodeURIComponent(id)}/thumbnail`, DownloadResult);
   }
 
   async delete(id: string): Promise<void> {
@@ -953,6 +1005,10 @@ export class SharedViewClient implements ShareAccessClient {
 
   getDownloadUrl(id: string): Promise<DownloadResultType> {
     return this.#request("GET", `/items/${encodeURIComponent(id)}/content`, DownloadResult);
+  }
+
+  getThumbnailUrl(id: string): Promise<DownloadResultType> {
+    return this.#request("GET", `/items/${encodeURIComponent(id)}/thumbnail`, DownloadResult);
   }
 
   async delete(id: string): Promise<void> {

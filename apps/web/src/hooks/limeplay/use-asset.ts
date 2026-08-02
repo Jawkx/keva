@@ -171,6 +171,8 @@ export interface NormalizedAsset<TItem extends TAsset = TAsset> {
 export interface PlaybackSource {
   /** Shaka Player configuration applied before loading. */
   config?: shaka.extern.PlayerConfiguration;
+  /** MIME type supplied to Shaka to avoid probing signed URLs with HEAD. */
+  mimeType?: string;
   /** Playback URL. */
   src?: string;
 }
@@ -203,6 +205,8 @@ export interface TAsset {
   config?: shaka.extern.PlayerConfiguration;
   /** Stable identifier used for playlist, preload, and recovery state. */
   id?: string;
+  /** MIME type supplied to Shaka to avoid probing signed URLs with HEAD. */
+  mimeType?: string;
   /** Direct playback URL. Use `resolveSource` when this is resolved lazily. */
   src?: string;
 }
@@ -367,6 +371,7 @@ type MaybePromise<T> = Promise<T> | T;
 
 type NormalizedSource = {
   config?: shaka.extern.PlayerConfiguration;
+  mimeType?: string;
   source?: null | shaka.media.PreloadManager | string;
 };
 
@@ -637,7 +642,7 @@ export function assetFeature(): MediaFeature<
               const manager = await player.preload(
                 resolvedSource,
                 undefined,
-                undefined,
+                normalizedSource.mimeType ?? asset.mimeType,
                 mergePlayerConfiguration(asset.config, normalizedSource.config),
               );
               if (!isCurrentPreload()) {
@@ -988,7 +993,7 @@ function createDefaultLoad({
       );
     }
 
-    await player.load(resolvedSource, timeToLoad);
+    await player.load(resolvedSource, timeToLoad, normalizedSource.mimeType ?? asset.mimeType);
   };
 }
 
@@ -1086,11 +1091,12 @@ function normalizePlaybackSource(
     return {};
   }
 
-  if ("src" in source || "config" in source) {
+  if ("src" in source || "config" in source || "mimeType" in source) {
     const playbackSource = source as PlaybackSource;
 
     return {
       ...(playbackSource.config === undefined ? {} : { config: playbackSource.config }),
+      ...(playbackSource.mimeType === undefined ? {} : { mimeType: playbackSource.mimeType }),
       ...(playbackSource.src === undefined ? {} : { source: playbackSource.src }),
     };
   }

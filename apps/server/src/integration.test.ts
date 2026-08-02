@@ -158,6 +158,82 @@ describe("server integration — HTTP roundtrip", () => {
     return initiated.item.id;
   };
 
+  it("uploads and serves a video thumbnail", async () => {
+    const app = makeApp();
+    const video = new TextEncoder().encode("video bytes");
+    const initiatedResponse = await app.request("/api/items", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "clip.mp4",
+        contentType: "video/mp4",
+        size: video.byteLength,
+      }),
+    });
+    const initiated = (await initiatedResponse.json()) as {
+      item: { id: string };
+      uploadUrl: string;
+      headers: Record<string, string>;
+    };
+    await putToStorage(initiated.uploadUrl, {
+      method: "PUT",
+      headers: initiated.headers,
+      body: video,
+    });
+    await app.request(`/api/items/${initiated.item.id}/confirm`, {
+      method: "POST",
+      headers: auth,
+    });
+
+    const absent = await app.request(`/api/items/${initiated.item.id}/thumbnail`, {
+      headers: auth,
+    });
+    expect(absent.status).toBe(404);
+
+    const invalid = await app.request(`/api/items/${initiated.item.id}/thumbnail`, {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ contentType: "image/gif", size: 4 }),
+    });
+    expect(invalid.status).toBe(400);
+
+    const thumbnail = new Uint8Array([1, 2, 3, 4]);
+    const uploadResponse = await app.request(`/api/items/${initiated.item.id}/thumbnail`, {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ contentType: "image/webp", size: thumbnail.byteLength }),
+    });
+    expect(uploadResponse.status).toBe(200);
+    const upload = (await uploadResponse.json()) as {
+      url: string;
+      headers: Record<string, string>;
+    };
+    expect(
+      await putToStorage(upload.url, {
+        method: "PUT",
+        headers: upload.headers,
+        body: thumbnail,
+      }),
+    ).toMatchObject({ status: 200 });
+
+    const downloadResponse = await app.request(`/api/items/${initiated.item.id}/thumbnail`, {
+      headers: auth,
+    });
+    expect(downloadResponse.status).toBe(200);
+    const download = (await downloadResponse.json()) as { url: string };
+    expect(new Uint8Array(await (await fetch(download.url)).arrayBuffer())).toEqual(thumbnail);
+
+    expect(
+      await app.request(`/api/items/${initiated.item.id}/thumbnail`, {
+        method: "DELETE",
+        headers: auth,
+      }),
+    ).toMatchObject({ status: 200 });
+    expect(
+      await app.request(`/api/items/${initiated.item.id}/thumbnail`, { headers: auth }),
+    ).toMatchObject({ status: 404 });
+  });
+
   it("lists, restores, and permanently purges trashed ready items", async () => {
     const app = makeApp();
     const id = await makeReadyItem(app, "trash-roundtrip.txt");

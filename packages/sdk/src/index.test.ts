@@ -303,6 +303,57 @@ describe("KevaClient", () => {
     expect(calls).toEqual([`https://keva.invalid/api/items/${item.id}/content`]);
   });
 
+  it("uploads, downloads, and deletes video thumbnails", async () => {
+    const calls: Array<{ url: string; method: string; body?: string }> = [];
+    const client = new KevaClient({
+      baseUrl: "https://keva.invalid/api",
+      token: "test",
+      fetch: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        calls.push({
+          url,
+          method,
+          ...(typeof init?.body === "string" ? { body: init.body } : {}),
+        });
+        if (method === "POST") {
+          return Response.json({
+            url: "https://blob.invalid/thumbnail",
+            expiresAt: "2026-01-01T00:15:00.000Z",
+            headers: { "content-type": "image/webp" },
+          });
+        }
+        if (url === "https://blob.invalid/thumbnail") return new Response(null, { status: 200 });
+        if (method === "DELETE") return Response.json({ ok: true });
+        return Response.json({
+          url: "https://blob.invalid/thumbnail",
+          expiresAt: "2026-01-01T00:15:00.000Z",
+        });
+      },
+    });
+
+    await client.setThumbnail(
+      item.id,
+      { contentType: "image/webp", size: 4 },
+      new Uint8Array([1, 2, 3, 4]),
+    );
+    await expect(client.getThumbnailUrl(item.id)).resolves.toMatchObject({
+      url: "https://blob.invalid/thumbnail",
+    });
+    await client.deleteThumbnail(item.id);
+
+    expect(calls).toMatchObject([
+      {
+        url: `https://keva.invalid/api/items/${item.id}/thumbnail`,
+        method: "POST",
+        body: JSON.stringify({ contentType: "image/webp", size: 4 }),
+      },
+      { url: "https://blob.invalid/thumbnail", method: "PUT" },
+      { url: `https://keva.invalid/api/items/${item.id}/thumbnail`, method: "GET" },
+      { url: `https://keva.invalid/api/items/${item.id}/thumbnail`, method: "DELETE" },
+    ]);
+  });
+
   it("fetches usage from GET /usage", async () => {
     const calls: string[] = [];
     const payload = {

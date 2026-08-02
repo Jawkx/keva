@@ -35,6 +35,27 @@ export const InitiateUploadResult = Schema.Struct({
 });
 export type InitiateUploadResult = typeof InitiateUploadResult.Type;
 
+export const ThumbnailContentType = Schema.Literal(
+  "image/webp",
+  "image/jpeg",
+  "image/png",
+  "image/avif",
+);
+export type ThumbnailContentType = typeof ThumbnailContentType.Type;
+
+export const ThumbnailUploadInput = Schema.Struct({
+  contentType: ThumbnailContentType,
+  size: Schema.Number.pipe(Schema.int(), Schema.between(1, 1024 * 1024)),
+});
+export type ThumbnailUploadInput = typeof ThumbnailUploadInput.Type;
+
+export const ThumbnailUploadResult = Schema.Struct({
+  url: Schema.String,
+  expiresAt: Schema.String,
+  headers: Schema.Record({ key: Schema.String, value: Schema.String }),
+});
+export type ThumbnailUploadResult = typeof ThumbnailUploadResult.Type;
+
 // A patch over the unified key-space: `set`/`unset` may name user-writable
 // fields (e.g. "name") or user properties interchangeably. The wire schema is
 // deliberately permissive about keys — `routePatch` (see fields.ts) is the

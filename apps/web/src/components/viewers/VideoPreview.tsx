@@ -1,22 +1,30 @@
 import { useMemo } from "react";
 import { VideoPlayer, type VideoPlayerProps } from "@/components/video-player/player";
 
-interface VideoPreviewViewerProps {
+interface VideoPreviewProps {
+  readonly contentType: string;
   readonly fileName: string;
   readonly itemId: string;
   readonly loadSource: () => Promise<{ readonly url: string }>;
+  readonly posterUrl?: string;
 }
 
-export function VideoPreviewViewer({ fileName, itemId, loadSource }: VideoPreviewViewerProps) {
+export default function VideoPreview({
+  contentType,
+  fileName,
+  itemId,
+  loadSource,
+  posterUrl,
+}: VideoPreviewProps) {
   const loading = useMemo<NonNullable<VideoPlayerProps["loading"]>>(
     () => ({
       resolveSource: async ({ signal }) => {
         const source = await loadSource();
         if (signal.aborted) throw new DOMException("Video loading aborted", "AbortError");
-        return source.url;
+        return { src: source.url, mimeType: contentType };
       },
     }),
-    [loadSource],
+    [contentType, loadSource],
   );
 
   return (
@@ -30,6 +38,7 @@ export function VideoPreviewViewer({ fileName, itemId, loadSource }: VideoPrevie
           "aria-label": `Video preview of ${fileName}`,
           playsInline: true,
           preload: "metadata",
+          ...(posterUrl ? { poster: posterUrl } : {}),
         }}
         theme="dark"
       />
