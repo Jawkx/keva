@@ -221,9 +221,9 @@ export function TrashPage() {
                   {items.map((item) => (
                     <FileTableRow
                       key={item.id}
-                      data-state={
-                        selected.has(item.id) || item.id === itemId ? "selected" : undefined
-                      }
+                      data-state={selected.has(item.id) ? "selected" : undefined}
+                      data-current={item.id === itemId ? "true" : undefined}
+                      aria-current={item.id === itemId ? "true" : undefined}
                       className="cursor-pointer"
                       onClick={() => navigate(`/trash/items/${item.id}`)}
                     >

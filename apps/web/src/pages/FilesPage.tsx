@@ -640,9 +640,9 @@ function FilesPageContent({
           : rows.map((row) => {
               const tableRow = (
                 <FileTableRow
-                  data-state={
-                    row.getIsSelected() || row.original.id === selectedId ? "selected" : undefined
-                  }
+                  data-state={row.getIsSelected() ? "selected" : undefined}
+                  data-current={row.original.id === selectedId ? "true" : undefined}
+                  aria-current={row.original.id === selectedId ? "true" : undefined}
                   className={cn("group", !row.original.upload && "cursor-pointer")}
                   onContextMenu={() => {
                     if (!row.original.upload) row.toggleSelected(true);
