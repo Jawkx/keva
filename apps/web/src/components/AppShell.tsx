@@ -238,55 +238,57 @@ function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            <span>Shared</span>
-            {pendingShares.length > 0 && (
-              <Badge variant="secondary" className="ml-auto tabular-nums">
-                {pendingShares.length}
-              </Badge>
-            )}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {pendingShares.map((share) => {
-                const Icon = viewIcon(share.icon);
-                return (
-                  <SidebarMenuItem key={share.id}>
-                    <SidebarMenuButton
-                      tooltip={`${share.name} · Invitation from ${share.owner.name}`}
-                      onClick={() => {
-                        setSelectedInvitationId(share.id);
-                        if (isMobile) setOpenMobile(false);
-                      }}
-                    >
-                      <Icon />
-                      <span className="min-w-0 flex-1 truncate">{share.name}</span>
-                      <Badge variant="outline" className="ml-auto shrink-0">
-                        Pending
-                      </Badge>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-              {acceptedShares.map((share) => {
-                const Icon = viewIcon(share.icon);
-                return (
-                  <SidebarMenuItem key={share.id}>
-                    <SidebarMenuButton
-                      isActive={location.pathname.startsWith(`/shared/${share.id}`)}
-                      tooltip={`${share.name} · ${share.owner.name}`}
-                      render={<Link to={`/shared/${share.id}`} />}
-                    >
-                      <Icon />
-                      <span>{share.name}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {(pendingShares.length > 0 || acceptedShares.length > 0) && (
+          <SidebarGroup>
+            <SidebarGroupLabel>
+              <span>Shared</span>
+              {pendingShares.length > 0 && (
+                <Badge variant="secondary" className="ml-auto tabular-nums">
+                  {pendingShares.length}
+                </Badge>
+              )}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {pendingShares.map((share) => {
+                  const Icon = viewIcon(share.icon);
+                  return (
+                    <SidebarMenuItem key={share.id}>
+                      <SidebarMenuButton
+                        tooltip={`${share.name} · Invitation from ${share.owner.name}`}
+                        onClick={() => {
+                          setSelectedInvitationId(share.id);
+                          if (isMobile) setOpenMobile(false);
+                        }}
+                      >
+                        <Icon />
+                        <span className="min-w-0 flex-1 truncate">{share.name}</span>
+                        <Badge variant="outline" className="ml-auto shrink-0">
+                          Pending
+                        </Badge>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+                {acceptedShares.map((share) => {
+                  const Icon = viewIcon(share.icon);
+                  return (
+                    <SidebarMenuItem key={share.id}>
+                      <SidebarMenuButton
+                        isActive={location.pathname.startsWith(`/shared/${share.id}`)}
+                        tooltip={`${share.name} · ${share.owner.name}`}
+                        render={<Link to={`/shared/${share.id}`} />}
+                      >
+                        <Icon />
+                        <span>{share.name}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter>
