@@ -38,6 +38,7 @@ describe("worker entry", () => {
     const contentSecurityPolicy = response.headers.get("Content-Security-Policy");
     expect(contentSecurityPolicy).toContain("script-src 'self' 'wasm-unsafe-eval'");
     expect(contentSecurityPolicy).toContain("style-src-attr 'unsafe-inline'");
+    expect(contentSecurityPolicy).toContain("media-src 'self' https://storage.worker.test blob:");
     expect(contentSecurityPolicy).toContain(
       "connect-src 'self' https://storage.worker.test https://cdn.jsdelivr.net blob:",
     );

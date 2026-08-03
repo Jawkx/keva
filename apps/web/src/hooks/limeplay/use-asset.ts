@@ -869,7 +869,7 @@ function subscribeAssetEvents(
               { currentTime },
             )
           : {
-              action: AssetRecoveryAction.Reload,
+              action: AssetRecoveryAction.Stop,
             };
         const freshCurrentItem = getFreshCurrentItem();
         if (!freshCurrentItem) return;
