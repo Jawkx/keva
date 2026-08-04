@@ -1,6 +1,7 @@
+import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 
 // The dev API runs on 127.0.0.1:8787. We proxy every API path prefix through
@@ -18,6 +19,15 @@ const proxyPaths = ["/api", "/health", "/__dev", "/mcp", "/.well-known"];
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiTarget = env.VITE_API_TARGET ?? "http://127.0.0.1:8787";
+
+  let commit: string;
+  try {
+    commit = execSync("git rev-parse --short=7 HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    commit = "unknown";
+  }
+  const version = env.KEVA_APP_VERSION ?? null;
+
   return {
     plugins: [
       react({
@@ -27,6 +37,10 @@ export default defineConfig(({ mode }) => {
       }),
       tailwindcss(),
     ],
+    define: {
+      __KEVA_APP_COMMIT__: JSON.stringify(commit),
+      __KEVA_APP_VERSION__: JSON.stringify(version),
+    },
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),

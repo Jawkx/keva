@@ -1,6 +1,7 @@
 import { FileCode2, FileSpreadsheet, FileText, Image, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { ProductBetaBadge } from "./ProductBetaBadge";
 
 function Keyhole({ className }: { className?: string }) {
   return (
@@ -27,6 +28,7 @@ function Wordmark({ className, mark }: { className?: string; mark?: string }) {
       <span className="font-heading text-[26px] leading-none font-semibold tracking-tight">
         Keva
       </span>
+      <ProductBetaBadge />
     </span>
   );
 }
@@ -147,9 +149,12 @@ function BrandPanel() {
       <Keyhole className="pointer-events-none absolute -right-24 -bottom-28 h-[32rem] w-auto text-white/[0.028]" />
 
       <div className="relative flex h-full flex-col">
-        <span className="font-heading text-[26px] leading-none font-semibold tracking-tight">
-          Keva
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="font-heading text-[26px] leading-none font-semibold tracking-tight">
+            Keva
+          </span>
+          <ProductBetaBadge tone="inverse" />
+        </div>
 
         <div className="flex flex-1 flex-col justify-center gap-12">
           <div className="flex max-w-xl items-center gap-6">

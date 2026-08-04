@@ -3,7 +3,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "passThroughEnv": ["KEVA_APP_COMMIT", "KEVA_APP_VERSION"]
     },
     "dev": {
       "cache": false,

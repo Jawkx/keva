@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "../lib/auth";
 import { avatarRecipeForUser } from "../lib/avatar";
 import { UserAvatar } from "../components/UserAvatar";
+import { ProductBetaBadge } from "../components/ProductBetaBadge";
 
 export function OAuthConsentPage() {
   const { data } = authClient.useSession();
@@ -42,6 +43,7 @@ export function OAuthConsentPage() {
         <div className="flex items-center justify-center gap-2 font-heading text-lg font-semibold">
           <img src="/android-chrome-192x192.png" alt="" className="size-8 object-contain" />
           keva
+          <ProductBetaBadge />
         </div>
         <Card>
           <CardHeader>

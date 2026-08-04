@@ -10,6 +10,7 @@ import { PasswordInput } from "../components/PasswordInput";
 import { StorageUsageCard } from "../components/StorageUsageCard";
 import { SubscriptionCard } from "../components/SubscriptionCard";
 import { UserAvatar } from "../components/UserAvatar";
+import { appCommit, appVersion } from "../lib/app-meta";
 import { authClient } from "../lib/auth";
 import { authOperationEffect } from "../lib/auth-effect";
 import { errorMessage } from "../lib/errors";
@@ -258,6 +259,12 @@ function SecuritySettings() {
           </Button>
         </FieldGroup>
       </form>
+      <Separator />
+      <footer className="flex justify-end py-3">
+        <p className="text-xs text-muted-foreground font-mono">
+          {appVersion ? `Version ${appVersion.replace(/^v/, "")}` : `Commit ${appCommit}`}
+        </p>
+      </footer>
     </div>
   );
 }
