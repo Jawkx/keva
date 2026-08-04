@@ -20,6 +20,7 @@ import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
 import { viewIcon } from "./view-icons";
 import { UserAvatar } from "./UserAvatar";
+import { ProductBetaBadge } from "./ProductBetaBadge";
 import { avatarRecipeForUser } from "../lib/avatar";
 import { GlobalSearch } from "./GlobalSearch";
 import { Badge } from "@/components/ui/badge";
@@ -179,10 +180,11 @@ function AppSidebar() {
       <SidebarHeader>
         <div className="relative h-12 overflow-hidden transition-[height] duration-200 group-data-[collapsible=icon]:h-8">
           <div className="flex h-full items-center justify-between gap-2 opacity-100 transition-opacity duration-200 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
-            <Link to="/" className="flex items-center rounded-md px-2">
+            <Link to="/" className="flex items-center gap-2 rounded-md px-2">
               <span className="font-heading text-[27px] leading-[27px] font-semibold text-primary">
                 Keva
               </span>
+              <ProductBetaBadge />
             </Link>
             <SidebarTrigger size="icon-lg" className="[&_svg:not([class*='size-'])]:size-4.5" />
           </div>

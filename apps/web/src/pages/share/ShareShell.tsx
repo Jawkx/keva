@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { ModeToggle } from "../../components/ModeToggle";
+import { ProductBetaBadge } from "../../components/ProductBetaBadge";
 import { authClient } from "../../lib/auth";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +18,7 @@ export function ShareShell({ name, children }: { name: string; children: ReactNo
           <span className="font-heading text-[29px] leading-none font-semibold text-primary">
             Keva
           </span>
+          <ProductBetaBadge />
           <span className="min-w-0 truncate text-lg font-medium text-muted-foreground">
             / {name}
           </span>
