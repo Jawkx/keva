@@ -27,12 +27,18 @@ export function useFileFilters({
   // propagate (which would wipe the draft, selection, and in-flight uploads).
   const [viewWhere, setViewWhere] = useState<QueryCondition[]>(() => [...initialWhere]);
   const filterParam = searchParams.get("filter");
-  const activeWhere = useMemo<QueryCondition[]>(
-    () => (viewId ? viewWhere : decodeFilterParam(filterParam)),
-    [viewId, viewWhere, filterParam],
-  );
-  const [filterDraft, setFilterDraft] = useState<FilterDraft>(() =>
-    draftFromConditions(initialWhere),
+  const urlWhere = useMemo(() => decodeFilterParam(filterParam), [filterParam]);
+  const activeWhere = viewId ? viewWhere : urlWhere;
+  const [draftState, setDraftState] = useState<{
+    filterParam: string | null;
+    draft: FilterDraft;
+  }>(() => ({ filterParam, draft: draftFromConditions(initialWhere) }));
+  const urlDraft = useMemo(() => draftFromConditions(urlWhere), [urlWhere]);
+  const filterDraft =
+    !viewId && draftState.filterParam !== filterParam ? urlDraft : draftState.draft;
+  const setFilterDraft = useCallback(
+    (draft: FilterDraft) => setDraftState({ filterParam, draft }),
+    [filterParam],
   );
   const searchTimer = useRef<number | undefined>(undefined);
   useMountEffect(() => () => window.clearTimeout(searchTimer.current));
@@ -78,7 +84,7 @@ export function useFileFilters({
       setFilterDraft(draftFromConditions(next));
       applyWhere(next);
     },
-    [activeWhere, applyWhere],
+    [activeWhere, applyWhere, setFilterDraft],
   );
 
   const onSearchChange = useCallback(
@@ -100,7 +106,7 @@ export function useFileFilters({
     setActiveSearch("");
     setFilterDraft(createFilterDraft());
     applyWhere([]);
-  }, [applyWhere]);
+  }, [applyWhere, setFilterDraft]);
 
   return {
     search,
