@@ -1,5 +1,6 @@
 import { FileCode2, FileSpreadsheet, FileText, Image, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { brandIconUrl } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import { ProductBetaBadge } from "./ProductBetaBadge";
 
@@ -21,7 +22,7 @@ function Wordmark({ className, mark }: { className?: string; mark?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-3", className)}>
       <img
-        src="/main-icon.png"
+        src={brandIconUrl}
         alt=""
         className={cn("size-9 rounded-[10px] object-cover ring-1", mark ?? "ring-white/15")}
       />
@@ -159,7 +160,7 @@ function BrandPanel() {
         <div className="flex flex-1 flex-col justify-center gap-12">
           <div className="flex max-w-xl items-center gap-6">
             <img
-              src="/main-icon.png"
+              src={brandIconUrl}
               alt=""
               className="size-[5.75rem] shrink-0 rounded-[22px] object-cover ring-1 ring-white/15"
             />

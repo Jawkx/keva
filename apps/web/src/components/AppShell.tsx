@@ -9,6 +9,7 @@ import { AppHeaderSlotContext } from "../lib/app-header-slot";
 import { authClient } from "../lib/auth";
 import { authOperationEffect } from "../lib/auth-effect";
 import { errorMessage } from "../lib/errors";
+import { brandIconUrl, brandWordmarkColorClass } from "../lib/brand";
 import { formatBytes, formatDate } from "../lib/format";
 import {
   acceptReceivedShare,
@@ -181,7 +182,9 @@ function AppSidebar() {
         <div className="relative h-12 overflow-hidden transition-[height] duration-200 group-data-[collapsible=icon]:h-8">
           <div className="flex h-full items-center justify-between gap-2 opacity-100 transition-opacity duration-200 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
             <Link to="/" className="flex items-center gap-2 rounded-md px-2">
-              <span className="font-heading text-[27px] leading-[27px] font-semibold text-primary">
+              <span
+                className={`font-heading text-[27px] leading-[27px] font-semibold ${brandWordmarkColorClass}`}
+              >
                 Keva
               </span>
               <ProductBetaBadge />
@@ -195,7 +198,7 @@ function AppSidebar() {
             className="group/logo pointer-events-none absolute inset-0 m-auto flex size-8 items-center justify-center rounded-md opacity-0 transition-opacity duration-200 hover:bg-sidebar-accent group-data-[collapsible=icon]:pointer-events-auto group-data-[collapsible=icon]:opacity-100"
           >
             <img
-              src="/main-icon.png"
+              src={brandIconUrl}
               alt="Keva"
               className="size-7 rounded-sm object-cover opacity-100 transition-opacity duration-200 group-hover/logo:opacity-0"
             />

@@ -11,6 +11,7 @@ import { authClient } from "../lib/auth";
 import { avatarRecipeForUser } from "../lib/avatar";
 import { UserAvatar } from "../components/UserAvatar";
 import { ProductBetaBadge } from "../components/ProductBetaBadge";
+import { brandIconUrl } from "../lib/brand";
 
 export function OAuthConsentPage() {
   const { data } = authClient.useSession();
@@ -41,7 +42,7 @@ export function OAuthConsentPage() {
     <div className="flex min-h-svh items-center justify-center bg-muted/30 p-6">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex items-center justify-center gap-2 font-heading text-lg font-semibold">
-          <img src="/android-chrome-192x192.png" alt="" className="size-8 object-contain" />
+          <img src={brandIconUrl} alt="" className="size-8 object-contain" />
           keva
           <ProductBetaBadge />
         </div>
