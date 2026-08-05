@@ -438,7 +438,6 @@ describe("KevaClient", () => {
               tenantId: "tenant",
               name: "Alpha",
               icon: null,
-              color: null,
               conditions: record.conditions,
               createdAt: record.createdAt,
               updatedAt: record.createdAt,
@@ -468,7 +467,6 @@ describe("KevaClient", () => {
       id: "grant-account",
       name: "Client drop",
       icon: null,
-      color: null,
       scopes: ["write"] as const,
       allowOwnDelete: true,
       status: "pending" as const,
@@ -744,7 +742,6 @@ describe("SharedViewClient", () => {
           return Response.json({
             name: "Client drop",
             icon: "inbox",
-            color: "blue",
             owner: {
               id: "owner",
               name: "Owner",

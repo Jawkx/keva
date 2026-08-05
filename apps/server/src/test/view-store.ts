@@ -14,7 +14,6 @@ export const makeInMemoryViewStore = (
         tenantId,
         name: input.name,
         icon: input.icon ?? null,
-        color: input.color ?? null,
         conditions: [...input.conditions],
         createdAt: now,
         updatedAt: now,
@@ -36,7 +35,6 @@ export const makeInMemoryViewStore = (
         ...view,
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.icon !== undefined ? { icon: input.icon } : {}),
-        ...(input.color !== undefined ? { color: input.color } : {}),
         ...(input.conditions !== undefined ? { conditions: [...input.conditions] } : {}),
         updatedAt: new Date().toISOString(),
       };

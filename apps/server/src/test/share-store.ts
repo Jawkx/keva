@@ -101,7 +101,6 @@ export const makeInMemoryShareGrantStore = (
     id: grant.id,
     name: views.get(grant.viewId)?.name ?? grant.name,
     icon: views.get(grant.viewId)?.icon ?? null,
-    color: views.get(grant.viewId)?.color ?? null,
     scopes: [...grant.scopes],
     allowOwnDelete: grant.allowOwnDelete,
     status: account.status,
@@ -169,7 +168,6 @@ export const makeInMemoryShareGrantStore = (
               tenantId,
               name: input.view.name,
               icon: input.view.icon ?? null,
-              color: input.view.color ?? null,
               conditions: [...input.view.conditions],
               createdAt: now,
               updatedAt: now,
@@ -463,7 +461,6 @@ export const makeInMemoryShareGrantStore = (
             ...view,
             ...(input.name === undefined ? {} : { name: input.name }),
             ...(input.icon === undefined ? {} : { icon: input.icon }),
-            ...(input.color === undefined ? {} : { color: input.color }),
             ...(input.conditions === undefined ? {} : { conditions: [...input.conditions] }),
             updatedAt: new Date().toISOString(),
           };

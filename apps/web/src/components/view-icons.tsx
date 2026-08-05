@@ -121,9 +121,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import type { ViewColor } from "@keva/schema";
 import { useState, type ReactElement } from "react";
-import { VIEW_COLORS } from "./view-colors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -282,16 +280,12 @@ export function viewIcon(key: string | null | undefined): LucideIcon {
 export function ViewIconPicker({
   value,
   onChange,
-  color,
-  onColorChange,
   disabled,
   trigger,
   align = "start",
 }: {
   value: string | null | undefined;
   onChange: (key: string) => void;
-  color?: ViewColor | null | undefined;
-  onColorChange?: (color: ViewColor) => void;
   disabled?: boolean;
   trigger?: ReactElement;
   align?: "start" | "center" | "end";
@@ -336,26 +330,6 @@ export function ViewIconPicker({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search icons…"
         />
-        {onColorChange && (
-          <div className="flex items-center justify-between gap-1 px-0.5" aria-label="View color">
-            {VIEW_COLORS.map((entry) => (
-              <button
-                key={entry.key}
-                type="button"
-                title={entry.label}
-                aria-label={entry.label}
-                aria-pressed={entry.key === color}
-                onClick={() => onColorChange(entry.key)}
-                className={cn(
-                  "flex size-7 items-center justify-center rounded-md hover:bg-muted",
-                  entry.key === color && "ring-2 ring-ring ring-offset-2 ring-offset-popover",
-                )}
-              >
-                <span className={cn("size-3.5 rounded-full", entry.className)} />
-              </button>
-            ))}
-          </div>
-        )}
         <ScrollArea viewportClassName="max-h-56" scrollbarGutter>
           <div className="grid grid-cols-6 gap-1 p-0.5">
             {results.map((entry) => {

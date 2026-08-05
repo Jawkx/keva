@@ -39,9 +39,7 @@ import { formatContentType, formatRelative } from "../lib/format";
 import { keva } from "../lib/keva";
 import { useMountEffect } from "../lib/useMountEffect";
 import { listViews, viewsQueryKey } from "../lib/views";
-import { viewColorStyle } from "./view-colors";
 import { viewIcon } from "./view-icons";
-import { cn } from "@/lib/utils";
 
 const FILE_RESULT_LIMIT = 8;
 const SEARCH_DELAY_MS = 200;
@@ -387,14 +385,7 @@ export function GlobalSearch() {
                       value={`view:${view.id}`}
                       onSelect={() => select(`/v/${view.id}`)}
                     >
-                      <span
-                        className={cn(
-                          "flex size-6 shrink-0 items-center justify-center rounded-md [&>svg]:size-4",
-                          viewColorStyle(view.color),
-                        )}
-                      >
-                        <Icon />
-                      </span>
+                      <Icon />
                       <span className="truncate">{view.name}</span>
                     </CommandItem>
                   );

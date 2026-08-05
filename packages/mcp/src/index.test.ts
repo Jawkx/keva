@@ -61,7 +61,6 @@ const stubEngine = (overrides: Partial<McpEngine> = {}): McpEngine => ({
     tenantId: "tenant-1",
     name: input.name,
     icon: input.icon ?? null,
-    color: input.color ?? null,
     conditions: input.conditions,
     createdAt: "2030-01-01T00:00:00Z",
     updatedAt: "2030-01-01T00:00:00Z",
