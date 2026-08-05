@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "keva": {
+      "transport": "streamable-http",
+      "url": "http://localhost:5173/mcp",
+      "lifecycle": "eager"
+    }
+  }
+}
