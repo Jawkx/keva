@@ -30,25 +30,27 @@ export function ConnectionPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Connection" />
+      <div className="flex flex-col gap-3">
+        <PageHeader title="Connection" />
 
-      <div className="flex gap-1.5">
-        <Button
-          size="sm"
-          variant={tab === "mcp" ? "default" : "outline"}
-          onClick={() => setTab("mcp")}
-        >
-          <Plug data-icon="inline-start" />
-          MCP
-        </Button>
-        <Button
-          size="sm"
-          variant={tab === "api" ? "default" : "outline"}
-          onClick={() => setTab("api")}
-        >
-          <KeyRound data-icon="inline-start" />
-          API tokens
-        </Button>
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            variant={tab === "mcp" ? "default" : "outline"}
+            onClick={() => setTab("mcp")}
+          >
+            <Plug data-icon="inline-start" />
+            MCP
+          </Button>
+          <Button
+            size="sm"
+            variant={tab === "api" ? "default" : "outline"}
+            onClick={() => setTab("api")}
+          >
+            <KeyRound data-icon="inline-start" />
+            API tokens
+          </Button>
+        </div>
       </div>
 
       {tab === "mcp" ? (
