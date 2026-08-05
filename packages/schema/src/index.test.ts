@@ -524,12 +524,24 @@ describe("CreateView / UpdateView", () => {
     expect(view.icon).toBe("star");
   });
 
+  it("accepts a fixed color and rejects arbitrary values", () => {
+    expect(
+      Schema.decodeUnknownSync(CreateView)({ name: "Diving", color: "blue", conditions: [] }).color,
+    ).toBe("blue");
+    expect(() =>
+      Schema.decodeUnknownSync(CreateView)({ name: "Diving", color: "chartreuse", conditions: [] }),
+    ).toThrow();
+  });
+
   it("accepts an empty UpdateView (no-op patch)", () => {
     expect(Schema.decodeUnknownSync(UpdateView)({})).toEqual({});
   });
 
-  it("decodes an icon-only UpdateView patch", () => {
-    expect(Schema.decodeUnknownSync(UpdateView)({ icon: "folder" })).toEqual({ icon: "folder" });
+  it("decodes appearance-only UpdateView patches", () => {
+    expect(Schema.decodeUnknownSync(UpdateView)({ icon: "folder", color: "teal" })).toEqual({
+      icon: "folder",
+      color: "teal",
+    });
   });
 });
 

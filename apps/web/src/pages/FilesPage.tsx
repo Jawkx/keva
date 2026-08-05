@@ -23,7 +23,7 @@ import {
   type RowSelectionState,
 } from "@tanstack/react-table";
 import { toast } from "sonner";
-import type { PropertyValue, QueryCondition, UpdateView } from "@keva/schema";
+import type { PropertyValue, QueryCondition, UpdateView, ViewColor } from "@keva/schema";
 import type { UsageResult } from "@keva/sdk";
 import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { BillingRequiredDialog } from "../components/BillingRequiredDialog";
@@ -44,6 +44,7 @@ import { NumberedPagination } from "../components/file-browser/NumberedPaginatio
 import { FilterBar, FilterMenuButton } from "../components/FilterBar";
 import { ShareCreateDialog } from "../components/ShareCreateDialog";
 import { DEFAULT_VIEW_ICON_KEY, ViewIconPicker, viewIcon } from "../components/view-icons";
+import { viewColorStyle } from "../components/view-colors";
 import { errorMessage } from "../lib/errors";
 import {
   DEFAULT_FILE_ORDER,
@@ -239,6 +240,7 @@ function FilesPageContent({
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewIcon, setSaveViewIcon] = useState<string | null>(null);
+  const [saveViewColor, setSaveViewColor] = useState<ViewColor | null>(null);
   const [deleteViewOpen, setDeleteViewOpen] = useState(false);
   const [nameEditing, setNameEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -276,12 +278,18 @@ function FilesPageContent({
 
   const createViewMutation = useMutation({
     mutationFn: (name: string) =>
-      createView({ name, conditions: activeWhere, icon: saveViewIcon ?? undefined }),
+      createView({
+        name,
+        conditions: activeWhere,
+        icon: saveViewIcon ?? undefined,
+        color: saveViewColor ?? undefined,
+      }),
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: viewsQueryKey });
       setSaveViewOpen(false);
       setSaveViewName("");
       setSaveViewIcon(null);
+      setSaveViewColor(null);
       navigate(`/v/${created.id}`);
     },
     onError: (err) => toast.error(errorMessage(err)),
@@ -580,6 +588,11 @@ function FilesPageContent({
     updateViewMutation.mutate({ icon: key });
   };
 
+  const changeColor = (color: ViewColor) => {
+    if (color === view?.color) return;
+    updateViewMutation.mutate({ color });
+  };
+
   const goToPage = (nextPage: number) => {
     setRowSelection({});
     setPagination({ identity: queryIdentity, pageIndex: nextPage - 1 });
@@ -743,16 +756,21 @@ function FilesPageContent({
       <div className="flex shrink-0 flex-col gap-3 px-1">
         <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-3">
           {viewId && view ? (
-            <div className="flex max-w-[24rem] min-w-0 items-center">
+            <div className="flex max-w-[24rem] min-w-0 items-center gap-2">
               <ViewIconPicker
                 value={view.icon}
                 onChange={changeIcon}
+                color={view.color}
+                onColorChange={changeColor}
                 trigger={
                   <button
                     type="button"
                     title="Change icon"
                     aria-label="Change view icon"
-                    className="group/vicon relative flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-muted sm:size-9"
+                    className={cn(
+                      "group/vicon relative flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-muted sm:size-9",
+                      viewColorStyle(view.color),
+                    )}
                   >
                     <HeaderViewIcon className="size-5 sm:size-6" />
                     <span className="absolute inset-0 flex items-center justify-center rounded-md bg-background/60 opacity-0 backdrop-blur-[1px] transition-opacity group-hover/vicon:opacity-100">
@@ -1280,7 +1298,12 @@ function FilesPageContent({
           <Field>
             <FieldLabel htmlFor="save-view-name">Name</FieldLabel>
             <div className="flex items-center gap-2">
-              <ViewIconPicker value={saveViewIcon} onChange={setSaveViewIcon} />
+              <ViewIconPicker
+                value={saveViewIcon}
+                onChange={setSaveViewIcon}
+                color={saveViewColor}
+                onColorChange={setSaveViewColor}
+              />
               <Input
                 id="save-view-name"
                 className="flex-1"

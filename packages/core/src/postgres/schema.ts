@@ -285,6 +285,7 @@ export const views = pgTable(
     name: text("name").notNull(),
     // A Lucide icon key (see the web icon registry); null falls back to a default.
     icon: text("icon"),
+    color: text("color"),
     conditions: jsonb("conditions").$type<ReadonlyArray<QueryCondition>>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),

@@ -119,6 +119,7 @@ export const ReceivedShare = Schema.Struct({
   id: Schema.String,
   name: Schema.NonEmptyString,
   icon: Schema.NullOr(Schema.String),
+  color: ViewRecord.fields.color,
   scopes: Schema.Array(ShareScope),
   allowOwnDelete: Schema.Boolean,
   status: AccountShareStatus,
@@ -152,6 +153,7 @@ export type ShareSelf = typeof ShareSelf.Type;
 export const AccountShareSelf = Schema.Struct({
   ...ShareSelf.fields,
   icon: Schema.NullOr(Schema.String),
+  color: ViewRecord.fields.color,
   owner: SharePerson,
 });
 export type AccountShareSelf = typeof AccountShareSelf.Type;

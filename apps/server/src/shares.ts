@@ -140,6 +140,7 @@ interface AccountShareRow extends ShareRow {
   readonly owner_avatar: string | null;
   readonly view_name: string;
   readonly view_icon: string | null;
+  readonly view_color: ViewRecord["color"];
 }
 
 export interface AccountShareAccess {
@@ -153,6 +154,7 @@ interface ViewRow {
   readonly tenant_id: string;
   readonly name: string;
   readonly icon: string | null;
+  readonly color: ViewRecord["color"];
   readonly conditions: ReadonlyArray<QueryCondition>;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
@@ -213,6 +215,7 @@ const receivedRecord = (row: AccountShareRow): ReceivedShare => ({
   id: row.id,
   name: row.view_name,
   icon: row.view_icon,
+  color: row.view_color,
   scopes: [...row.scopes],
   allowOwnDelete: row.allow_own_delete,
   status: row.account_status,
@@ -232,6 +235,7 @@ const viewRecord = (row: ViewRow): ViewRecord => ({
   tenantId: row.tenant_id,
   name: row.name,
   icon: row.icon,
+  color: row.color,
   conditions: [...row.conditions],
   createdAt: iso(row.created_at)!,
   updatedAt: iso(row.updated_at)!,
@@ -339,8 +343,8 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
             if (input.view) {
               const viewId = randomTokenPart(12);
               const rows = await transaction<ViewRow[]>`
-                insert into views (id, tenant_id, name, icon, conditions, created_at, updated_at)
-                values (${viewId}, ${tenantId}, ${input.view.name}, ${input.view.icon ?? null}, ${jsonbParam(input.view.conditions)}::jsonb, now(), now())
+                insert into views (id, tenant_id, name, icon, color, conditions, created_at, updated_at)
+                values (${viewId}, ${tenantId}, ${input.view.name}, ${input.view.icon ?? null}, ${input.view.color ?? null}, ${jsonbParam(input.view.conditions)}::jsonb, now(), now())
                 returning *
               `;
               view = rows[0];
@@ -517,6 +521,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
               owner_avatar: owner.avatar,
               view_name: view.name,
               view_icon: view.icon,
+              view_color: view.color,
             };
             return { status: "created" as const, record: accountRecord(row) };
           }),
@@ -547,7 +552,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
       try: async () => {
         const rows = await sql<AccountShareRow[]>`
           select g.*, v.conditions as view_conditions, v.name as view_name, v.icon as view_icon,
-            a.status as account_status, a.created_at as account_created_at, a.accepted_at,
+            v.color as view_color, a.status as account_status, a.created_at as account_created_at, a.accepted_at,
             recipient.id as recipient_id, recipient.name as recipient_name,
             recipient.email as recipient_email, recipient.avatar as recipient_avatar,
             owner_user.id as owner_id, owner_user.name as owner_name,
@@ -570,7 +575,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
       try: async () => {
         const rows = await sql<AccountShareRow[]>`
           select g.*, v.conditions as view_conditions, v.name as view_name, v.icon as view_icon,
-            a.status as account_status, a.created_at as account_created_at, a.accepted_at,
+            v.color as view_color, a.status as account_status, a.created_at as account_created_at, a.accepted_at,
             recipient.id as recipient_id, recipient.name as recipient_name,
             recipient.email as recipient_email, recipient.avatar as recipient_avatar,
             owner_user.id as owner_id, owner_user.name as owner_name,
@@ -611,7 +616,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
           `;
           const rows = await transaction<AccountShareRow[]>`
             select g.*, v.conditions as view_conditions, v.name as view_name, v.icon as view_icon,
-              a.status as account_status, a.created_at as account_created_at, a.accepted_at,
+              v.color as view_color, a.status as account_status, a.created_at as account_created_at, a.accepted_at,
               recipient.id as recipient_id, recipient.name as recipient_name,
               recipient.email as recipient_email,
               owner_user.id as owner_id, owner_user.name as owner_name,
@@ -679,7 +684,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
       try: async () => {
         const rows = await sql<AccountShareRow[]>`
           select g.*, v.conditions as view_conditions, v.name as view_name, v.icon as view_icon,
-            a.status as account_status, a.created_at as account_created_at, a.accepted_at,
+            v.color as view_color, a.status as account_status, a.created_at as account_created_at, a.accepted_at,
             recipient_user.id as recipient_id, recipient_user.name as recipient_name,
             recipient_user.email as recipient_email, recipient_user.avatar as recipient_avatar,
             owner_user.id as owner_id, owner_user.name as owner_name,
@@ -756,6 +761,7 @@ export const makePostgresShareGrantStore = (sql: Sql): ShareGrantStoreService =>
               update views set
                 name = coalesce(${input.name ?? null}::text, name),
                 icon = coalesce(${input.icon ?? null}::text, icon),
+                color = coalesce(${input.color ?? null}::text, color),
                 conditions = coalesce(${jsonbParam(input.conditions)}::jsonb, conditions),
                 updated_at = now()
               where tenant_id = ${principal.tenantId} and id = ${id}

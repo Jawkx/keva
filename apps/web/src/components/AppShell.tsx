@@ -19,7 +19,9 @@ import {
 } from "../lib/account-shares";
 import { useUsage } from "../lib/use-usage";
 import { listViews, viewsQueryKey } from "../lib/views";
+import { viewColorStyle } from "./view-colors";
 import { viewIcon } from "./view-icons";
+import { cn } from "@/lib/utils";
 import { UserAvatar } from "./UserAvatar";
 import { ProductBetaBadge } from "./ProductBetaBadge";
 import { avatarRecipeForUser } from "../lib/avatar";
@@ -234,7 +236,12 @@ function AppSidebar() {
                       tooltip={view.name}
                       render={<Link to={`/v/${view.id}`} />}
                     >
-                      <Icon />
+                      <span className="relative flex h-7 w-[1.15rem] shrink-0 items-center justify-center">
+                        <span
+                          className={cn("absolute size-7 rounded-md", viewColorStyle(view.color))}
+                        />
+                        <Icon className="relative size-[1.15rem]" />
+                      </span>
                       <span>{view.name}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -266,7 +273,15 @@ function AppSidebar() {
                           if (isMobile) setOpenMobile(false);
                         }}
                       >
-                        <Icon />
+                        <span className="relative flex h-7 w-[1.15rem] shrink-0 items-center justify-center">
+                          <span
+                            className={cn(
+                              "absolute size-7 rounded-md",
+                              viewColorStyle(share.color),
+                            )}
+                          />
+                          <Icon className="relative size-[1.15rem]" />
+                        </span>
                         <span className="min-w-0 flex-1 truncate">{share.name}</span>
                         <Badge variant="outline" className="ml-auto shrink-0">
                           Pending
@@ -284,7 +299,15 @@ function AppSidebar() {
                         tooltip={`${share.name} · ${share.owner.name}`}
                         render={<Link to={`/shared/${share.id}`} />}
                       >
-                        <Icon />
+                        <span className="relative flex h-7 w-[1.15rem] shrink-0 items-center justify-center">
+                          <span
+                            className={cn(
+                              "absolute size-7 rounded-md",
+                              viewColorStyle(share.color),
+                            )}
+                          />
+                          <Icon className="relative size-[1.15rem]" />
+                        </span>
                         <span>{share.name}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

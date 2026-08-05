@@ -974,6 +974,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         return {
           name: access.received.name,
           icon: access.received.icon,
+          color: access.received.color,
           owner: access.received.owner,
           scopes: grant.scopes,
           expiresAt: grant.expiresAt,

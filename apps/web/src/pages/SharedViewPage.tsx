@@ -25,7 +25,9 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Spinner } from "@/components/ui/spinner";
 import { UserAvatar } from "../components/UserAvatar";
+import { viewColorStyle } from "../components/view-colors";
 import { viewIcon } from "../components/view-icons";
+import { cn } from "@/lib/utils";
 
 function SharedViewBody({ grantId }: { grantId: string }) {
   const navigate = useNavigate();
@@ -79,7 +81,12 @@ function SharedViewBody({ grantId }: { grantId: string }) {
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
         <div className="flex shrink-0 items-center gap-2 px-4 pt-4">
-          <div className="flex size-8 shrink-0 items-center justify-center sm:size-9">
+          <div
+            className={cn(
+              "flex size-8 shrink-0 items-center justify-center rounded-md sm:size-9",
+              viewColorStyle(self.color),
+            )}
+          >
             <ViewIcon className="size-5 sm:size-6" />
           </div>
           <h1 className="min-w-0 flex-1 truncate text-lg leading-none font-medium sm:text-[21px]">

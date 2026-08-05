@@ -195,6 +195,7 @@ describe("server share subsystem", () => {
           tenantId: TENANT,
           name: "View",
           icon: null,
+          color: null,
           conditions: ALPHA,
           createdAt: now,
           updatedAt: now,
