@@ -19,6 +19,7 @@ import {
 import { Polar } from "@polar-sh/sdk";
 import { makeBillingStore, type BillingConfig, type BillingStore } from "./billing.js";
 import { makeUserAvatarResolver } from "./avatar.js";
+import { realtimePublisherLayer, type RealtimeGateway } from "./realtime.js";
 
 export interface ServerOptionsConfig {
   readonly staticToken: string;
@@ -39,6 +40,7 @@ export interface ServerOptionsConfig {
     readonly webhookSecret: string;
     readonly server: "sandbox" | "production";
   };
+  readonly realtime: RealtimeGateway;
   readonly s3: RuntimeConfig["s3"];
 }
 
@@ -111,11 +113,14 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
     ...(sessionResolver ? { sessionResolver } : {}),
     ...(sessionIdentityResolver ? { sessionIdentityResolver } : {}),
     ...(auth?.billing ? { billing: auth.billing } : {}),
+    realtime: config.realtime,
     s3: config.s3,
   });
 
   return {
     layer,
+    changePublisher: realtimePublisherLayer(config.realtime),
+    realtime: config.realtime,
     userAvatars: makeUserAvatarResolver(database.db),
     ...(auth
       ? {

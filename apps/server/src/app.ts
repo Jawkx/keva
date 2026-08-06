@@ -1,5 +1,6 @@
 import {
   BlobStore,
+  ChangePublisherNoop,
   canDeleteOwnShareUpload,
   makeKevaEngine,
   MetadataStore,
@@ -11,6 +12,7 @@ import {
   BILLING_PLANS,
   ChangeBillingPlan,
   Conflict,
+  Forbidden,
   BatchPatch,
   ItemPatch,
   BatchDelete,
@@ -72,6 +74,7 @@ interface ResolvedServices {
   readonly billing?: AppServiceOptions["billing"];
   readonly mcp?: AppServiceOptions["mcp"];
   readonly userAvatars?: AppServiceOptions["userAvatars"];
+  readonly realtime?: AppServiceOptions["realtime"];
   readonly dispose?: () => Promise<void>;
 }
 
@@ -82,12 +85,17 @@ const isRequestScoped = (
 
 const makeServices = (options: AppServiceOptions): ResolvedServices => ({
   runtime: ManagedRuntime.make(
-    Layer.merge(options.layer, BillingMeterLive(options.billing?.store)),
+    Layer.mergeAll(
+      options.layer,
+      BillingMeterLive(options.billing?.store),
+      options.changePublisher ?? ChangePublisherNoop,
+    ),
   ),
   ...(options.authHandler ? { authHandler: options.authHandler } : {}),
   ...(options.billing ? { billing: options.billing } : {}),
   ...(options.mcp ? { mcp: options.mcp } : {}),
   ...(options.userAvatars ? { userAvatars: options.userAvatars } : {}),
+  ...(options.realtime ? { realtime: options.realtime } : {}),
   ...(options.dispose ? { dispose: options.dispose } : {}),
 });
 
@@ -148,6 +156,28 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
   );
 
   app.get("/health", (context) => context.json({ ok: true, service: "keva" }));
+
+  app.get("/api/events", (context) =>
+    withServices(context, async ({ runtime, realtime }) => {
+      if (!realtime) return context.notFound();
+      const authorized = principalEffect(context.req.raw.headers).pipe(
+        Effect.flatMap((principal) =>
+          principal.via === "session"
+            ? Effect.succeed(principal)
+            : Effect.fail(new Forbidden({ message: "Session authentication required" })),
+        ),
+      );
+      const exit = await runtime.runPromiseExit(authorized);
+      if (Exit.isSuccess(exit)) {
+        return realtime.stream(exit.value.tenantId, context.req.raw.signal);
+      }
+      reportDefect(context, exit.cause);
+      const error = failureFrom(exit.cause);
+      if (Option.isSome(Cause.failureOption(exit.cause))) reportServiceFailure(context, error);
+      const status = error._tag === "Unauthorized" ? 401 : error._tag === "Forbidden" ? 403 : 503;
+      return context.json(error, status);
+    }),
+  );
 
   app.get("/ready", (context) =>
     withServices(context, async ({ runtime }) => {

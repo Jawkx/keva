@@ -22,6 +22,7 @@ import { listViews, viewsQueryKey } from "../lib/views";
 import { viewIcon } from "./view-icons";
 import { UserAvatar } from "./UserAvatar";
 import { ProductBetaBadge } from "./ProductBetaBadge";
+import { RealtimeSync } from "./RealtimeSync";
 import { avatarRecipeForUser } from "../lib/avatar";
 import { GlobalSearch } from "./GlobalSearch";
 import { Badge } from "@/components/ui/badge";
@@ -427,6 +428,7 @@ export function AppShell() {
 
   return (
     <SidebarProvider>
+      <RealtimeSync />
       <AppSidebar />
 
       <SidebarInset className="h-svh min-w-0 overflow-hidden">

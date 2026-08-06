@@ -14,6 +14,7 @@ export * from "./usage.js";
 export * from "./upload.js";
 export * from "./trash.js";
 export * from "./events.js";
+export * from "./realtime.js";
 export * from "./tokens.js";
 export * from "./views.js";
 export * from "./shares.js";

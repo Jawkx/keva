@@ -1,5 +1,7 @@
 import {
   BlobStore,
+  ChangePublisher,
+  ChangePublisherNoop,
   MetadataStore,
   S3BlobStoreLive,
   makeKevaEngine,
@@ -61,12 +63,13 @@ const realS3Config =
 
 describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
   let mock: S3Mock;
-  let runtime: ManagedRuntime.ManagedRuntime<BlobStore | MetadataStore, never>;
+  let runtime: ManagedRuntime.ManagedRuntime<BlobStore | ChangePublisher | MetadataStore, never>;
 
   const makeRuntime = (m: S3Mock) =>
     ManagedRuntime.make(
-      Layer.merge(
+      Layer.mergeAll(
         Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+        ChangePublisherNoop,
         S3BlobStoreLive({
           endpoint: m.endpoint,
           region: "auto",
@@ -275,12 +278,13 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
 });
 
 describe.skipIf(!realS3Config)("S3 blob store against a real S3-compatible provider", () => {
-  let runtime: ManagedRuntime.ManagedRuntime<BlobStore | MetadataStore, never>;
+  let runtime: ManagedRuntime.ManagedRuntime<BlobStore | ChangePublisher | MetadataStore, never>;
 
   beforeEach(() => {
     runtime = ManagedRuntime.make(
-      Layer.merge(
+      Layer.mergeAll(
         Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
+        ChangePublisherNoop,
         S3BlobStoreLive(realS3Config!),
       ),
     );

@@ -6,6 +6,13 @@ import { createServerOptions, type ServerOptionsConfig } from "./server-options.
 import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
+import {
+  RealtimeHub,
+  makeDurableObjectRealtimeGateway,
+  type DurableObjectNamespace,
+} from "./realtime-durable-object.js";
+
+export { RealtimeHub };
 
 interface AssetsBinding {
   readonly fetch: (request: Request) => Promise<Response>;
@@ -33,6 +40,7 @@ interface Env {
   readonly POLAR_PRODUCT_1TB_ID?: string;
   readonly POLAR_PRODUCT_2TB_ID?: string;
   readonly HYPERDRIVE?: { readonly connectionString: string };
+  readonly REALTIME?: DurableObjectNamespace;
   readonly S3_ENDPOINT?: string;
   readonly S3_REGION?: string;
   readonly S3_ACCESS_KEY_ID?: string;
@@ -45,6 +53,8 @@ let app: ReturnType<typeof createApp> | undefined;
 
 interface ExecutionContext {
   waitUntil: (promise: Promise<unknown>) => void;
+  passThroughOnException: () => void;
+  readonly props: Record<string, unknown>;
 }
 
 const serverPaths = ["/api", "/mcp", "/.well-known", "/health", "/ready", "/__dev"];
@@ -64,8 +74,8 @@ const publicApiRequestFor = (request: Request, publicApiHost?: string): Request 
   return new Request(url, request);
 };
 
-const required = (value: string | undefined, name: string): string => {
-  if (!value) throw new Error(`${name} is required`);
+const required = <T>(value: T | undefined, name: string): T => {
+  if (value === undefined || value === "") throw new Error(`${name} is required`);
   return value;
 };
 
@@ -74,10 +84,17 @@ const persistentConfigFor = (env: Env) => ({
   s3: s3ConfigFor(env),
 });
 
-const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
+const serverOptionsConfigFor = (
+  env: Env,
+  executionContext: ExecutionContext,
+): ServerOptionsConfig => {
   const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
   const { databaseUrl, s3 } = persistentConfigFor(env);
+  const realtime = makeDurableObjectRealtimeGateway(
+    required(env.REALTIME, "REALTIME"),
+    executionContext,
+  );
   const emailVerification = emailVerificationConfigFor(env);
   const googleOAuth = googleOAuthConfigFor(env);
   const polar = billingConfigFor(env);
@@ -93,6 +110,7 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
     ...(googleOAuth ? { googleOAuth } : {}),
     ...(polar ? { polar } : {}),
     trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
+    realtime,
     s3,
   };
 };
@@ -100,7 +118,9 @@ const serverOptionsConfigFor = (env: Env): ServerOptionsConfig => {
 const makeApp = (): ReturnType<typeof createApp> =>
   createApp({
     getRequestServices: (context) =>
-      createServerOptions(serverOptionsConfigFor(context.env as Env)),
+      createServerOptions(
+        serverOptionsConfigFor(context.env as Env, context.executionCtx as ExecutionContext),
+      ),
   });
 
 const withBrowserSecurityHeaders = (
@@ -126,7 +146,15 @@ const withBrowserSecurityHeaders = (
 };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    executionContext: ExecutionContext = {
+      waitUntil: () => undefined,
+      passThroughOnException: () => undefined,
+      props: {},
+    },
+  ): Promise<Response> {
     const publicApiRequest = publicApiRequestFor(request, env.KEVA_PUBLIC_API_HOST);
     if (publicApiRequest instanceof Response) return publicApiRequest;
     const url = new URL(publicApiRequest.url);
@@ -135,9 +163,9 @@ export default {
       return withBrowserSecurityHeaders(response, env.S3_ENDPOINT, url.pathname.startsWith("/s/"));
     }
 
-    serverOptionsConfigFor(env);
+    serverOptionsConfigFor(env, executionContext);
     if (!app) app = makeApp();
-    return app.fetch(publicApiRequest, env);
+    return app.fetch(publicApiRequest, env, executionContext);
   },
 
   scheduled(_controller: unknown, env: Env, context: ExecutionContext): void {

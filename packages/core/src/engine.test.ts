@@ -2,6 +2,7 @@ import { testEffect } from "@keva/effect-test";
 import { StorageUnavailable, type Principal, type SharePrincipal } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ChangePublisherNoop } from "./change-publisher.js";
 import { canDeleteOwnShareUpload, makeKevaEngine, reapPending, sweepDeleting } from "./engine.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
 import { S3BlobStoreLive } from "./s3.js";
@@ -20,9 +21,10 @@ afterAll(async () => {
 });
 
 const testLayer = () =>
-  Layer.merge(
+  Layer.mergeAll(
     Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
     S3BlobStoreLive(s3MockConfig(mock)),
+    ChangePublisherNoop,
   );
 
 const lifecycleBlobs: BlobStoreService = {

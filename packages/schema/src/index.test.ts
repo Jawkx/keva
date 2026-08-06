@@ -19,6 +19,7 @@ import {
   propertyValuesEqual,
   propertiesMatchCondition,
   Query,
+  RealtimeEvent,
   toOwnerItem,
   toSharedItem,
   ThumbnailUploadInput,
@@ -29,6 +30,45 @@ import {
 } from "./index.js";
 
 describe("schema", () => {
+  it("validates realtime item change events", () => {
+    const single = {
+      id: "00000000-0000-0000-0000-000000000001",
+      type: "items.changed",
+      reason: "patched",
+      itemId: "00000000-0000-0000-0000-000000000002",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(Schema.decodeUnknownSync(RealtimeEvent)(single)).toEqual(single);
+
+    const bulk = { ...single, reason: "bulk_changed", itemId: undefined };
+    expect(Schema.decodeUnknownSync(RealtimeEvent)(bulk)).toEqual(bulk);
+
+    expect(() => Schema.decodeUnknownSync(RealtimeEvent)({ ...single, type: "unknown" })).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(RealtimeEvent)({ ...single, reason: "unknown" }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(RealtimeEvent)({ ...single, id: "not-a-uuid" }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(RealtimeEvent)({ ...single, occurredAt: "not-a-date" }),
+    ).toThrow();
+  });
+
+  it("rejects excess realtime event payload fields at strict boundaries", () => {
+    const decodeStrict = Schema.decodeUnknownSync(RealtimeEvent, {
+      onExcessProperty: "error",
+    });
+    const event = {
+      id: "00000000-0000-0000-0000-000000000001",
+      type: "items.changed",
+      reason: "uploaded",
+      itemId: "00000000-0000-0000-0000-000000000002",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(() => decodeStrict({ ...event, tenantId: "tenant-a" })).toThrow();
+    expect(() => decodeStrict({ ...event, payload: { name: "secret" } })).toThrow();
+  });
   it("accepts versioned avatar recipes and rejects unsupported options", () => {
     expect(
       Schema.decodeUnknownSync(AvatarRecipe)({
