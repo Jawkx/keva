@@ -62,6 +62,7 @@ import {
   usageQueryKey,
 } from "../lib/items-cache";
 import { keva } from "../lib/keva";
+import { ACTIVE_METADATA_REFETCH_INTERVAL } from "../lib/query-client";
 import { listShares, sharesQueryKey } from "../lib/shares";
 import { uploadStampFrom } from "../lib/upload-stamp";
 import { useFileFilters } from "../lib/use-file-filters";
@@ -310,6 +311,7 @@ function FilesPageContent({
         offset: pageIndex * PAGE_SIZE,
       }),
     placeholderData: (previous) => previous,
+    refetchInterval: ACTIVE_METADATA_REFETCH_INTERVAL,
   });
 
   const loading = itemsQuery.isLoading;

@@ -116,7 +116,12 @@ function ShareSession({ token }: { token: string }) {
       queryCache: new QueryCache({ onError: markDead }),
       mutationCache: new MutationCache({ onError: markDead }),
       defaultOptions: {
-        queries: { staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
+        queries: {
+          staleTime: 30_000,
+          retry: false,
+          refetchOnWindowFocus: "always",
+          refetchOnReconnect: "always",
+        },
         mutations: { retry: false },
       },
     });

@@ -2,6 +2,7 @@ import type { Principal } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ChangePublisher, ChangePublisherNoop } from "./change-publisher.js";
 import { makeKevaEngine, reapPending } from "./engine.js";
 import { makePostgresMetadataStore } from "./postgres/store.js";
 import { S3BlobStoreLive } from "./s3.js";
@@ -18,13 +19,14 @@ const principal = (tenantId: string): Principal => ({
 describe("Postgres metadata store", () => {
   const sql = testSql(4);
   let mock: S3Mock;
-  let layer: Layer.Layer<BlobStore | MetadataStore>;
+  let layer: Layer.Layer<BlobStore | MetadataStore | ChangePublisher>;
 
   beforeAll(async () => {
     mock = await startS3Mock();
-    layer = Layer.merge(
+    layer = Layer.mergeAll(
       Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
       S3BlobStoreLive(s3MockConfig(mock)),
+      ChangePublisherNoop,
     );
   });
 
@@ -33,7 +35,7 @@ describe("Postgres metadata store", () => {
     await mock.close();
   });
 
-  const run = <A, E>(effect: Effect.Effect<A, E, BlobStore | MetadataStore>) =>
+  const run = <A, E>(effect: Effect.Effect<A, E, BlobStore | MetadataStore | ChangePublisher>) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)));
 
   const stage = (key: string, bytes: Uint8Array, contentType: string) =>
@@ -264,7 +266,11 @@ describe("Postgres metadata store", () => {
         .get(id)
         .pipe(
           Effect.provide(
-            Layer.merge(Layer.succeed(MetadataStore, fresh), S3BlobStoreLive(s3MockConfig(mock))),
+            Layer.mergeAll(
+              Layer.succeed(MetadataStore, fresh),
+              S3BlobStoreLive(s3MockConfig(mock)),
+              ChangePublisherNoop,
+            ),
           ),
         ),
     );

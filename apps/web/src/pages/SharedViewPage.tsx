@@ -167,7 +167,12 @@ function SharedViewSession({ grantId }: { grantId: string }) {
       queryCache: new QueryCache({ onError }),
       mutationCache: new MutationCache({ onError }),
       defaultOptions: {
-        queries: { staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
+        queries: {
+          staleTime: 30_000,
+          retry: false,
+          refetchOnWindowFocus: "always",
+          refetchOnReconnect: "always",
+        },
         mutations: { retry: false },
       },
     });

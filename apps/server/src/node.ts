@@ -6,6 +6,7 @@ import { createServerOptions } from "./server-options.js";
 import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
+import { MemoryRealtimeGateway } from "./realtime-memory.js";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -53,6 +54,7 @@ const polar = billingConfigFor({
   POLAR_PRODUCT_1TB_ID: process.env.POLAR_PRODUCT_1TB_ID,
   POLAR_PRODUCT_2TB_ID: process.env.POLAR_PRODUCT_2TB_ID,
 });
+const realtime = new MemoryRealtimeGateway();
 const appOptions = createServerOptions({
   staticToken: required("KEVA_STATIC_TOKEN"),
   tenantId: process.env.KEVA_TENANT_ID ?? "local",
@@ -68,6 +70,7 @@ const appOptions = createServerOptions({
   ...(googleOAuth ? { googleOAuth } : {}),
   ...(polar ? { polar } : {}),
   trustedOrigins,
+  realtime,
   s3,
 });
 

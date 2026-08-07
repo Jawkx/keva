@@ -2176,7 +2176,7 @@ function PDFViewerInner({
       )}
     >
       {showToolbar ? (
-        <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
+        <div className="@container flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <TooltipProvider>
               <ToolbarTooltip label="Toggle thumbnails">
@@ -2203,7 +2203,7 @@ function PDFViewerInner({
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
               {showRotateControls ? (
                 <>
-                  <div className="flex flex-none items-center gap-1">
+                  <div className="flex flex-none items-center gap-1 @max-[499px]:hidden">
                     <ToolbarTooltip label="Rotate counterclockwise">
                       <Button
                         type="button"
@@ -2231,11 +2231,11 @@ function PDFViewerInner({
                   </div>
                   <Separator
                     orientation="vertical"
-                    className="mx-1 h-4 data-vertical:self-center"
+                    className="mx-1 h-4 data-vertical:self-center @max-[499px]:hidden"
                   />
                 </>
               ) : null}
-              <div className="flex flex-none items-center gap-1">
+              <div className="flex flex-none items-center gap-1 @max-[399px]:hidden">
                 <ToolbarTooltip label="Zoom out">
                   <Button
                     type="button"
@@ -2292,21 +2292,16 @@ function PDFViewerInner({
                   </Button>
                 </ToolbarTooltip>
               </div>
-              <Separator orientation="vertical" className="mx-1 h-4 data-vertical:self-center" />
+              <Separator
+                orientation="vertical"
+                className="mx-1 h-4 data-vertical:self-center @max-[399px]:hidden"
+              />
               <PDFViewerSearchControl
                 key={documentId}
                 documentId={documentId}
                 controlsDisabled={controlsDisabled}
               />
-              {toolbarActions ? (
-                <>
-                  <Separator
-                    orientation="vertical"
-                    className="mx-1 h-4 data-vertical:self-center"
-                  />
-                  {toolbarActions}
-                </>
-              ) : null}
+              {toolbarActions}
               {showDownload || showUpload ? (
                 <>
                   <Separator

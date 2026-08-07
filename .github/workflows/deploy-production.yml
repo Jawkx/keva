@@ -69,6 +69,8 @@ jobs:
           fi
 
       - run: pnpm build
+        env:
+          KEVA_ENVIRONMENT: production
 
       - run: pnpm audit --audit-level high
 

@@ -48,6 +48,7 @@ jobs:
       - run: pnpm build
         env:
           KEVA_APP_COMMIT: ${{ github.sha }}
+          KEVA_ENVIRONMENT: staging
       - run: pnpm audit --audit-level high
 
       - name: Migrate staging database

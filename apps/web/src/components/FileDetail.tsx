@@ -28,6 +28,7 @@ import { objectUrlFor } from "../lib/object-url-cache";
 import { runEffectPromise } from "../lib/effect-runtime";
 import { loadPreviewContent } from "../lib/preview-content";
 import { loadOptionalThumbnailUrl } from "../lib/thumbnails";
+import { ACTIVE_METADATA_REFETCH_INTERVAL } from "../lib/query-client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,6 +102,7 @@ export function FileDetail({
   const itemQuery = useQuery({
     queryKey: trashMode ? ["trash-item", itemId] : itemQueryKey(itemId),
     queryFn: () => (trashMode ? keva.getTrash(itemId) : keva.get(itemId)),
+    refetchInterval: ACTIVE_METADATA_REFETCH_INTERVAL,
   });
   const item = itemQuery.data ?? null;
   const loading = itemQuery.isLoading;

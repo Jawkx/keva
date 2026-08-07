@@ -11,6 +11,7 @@ import { ShareGrantStore, makePostgresShareGrantStore } from "./shares.js";
 import { makePostgresViewStore, ViewStore } from "./views.js";
 import type { DatabaseUnit } from "./database.js";
 import type { BillingStore } from "./billing.js";
+import type { RealtimeGateway } from "./realtime.js";
 
 export interface RuntimeConfig {
   readonly staticToken: string;
@@ -19,6 +20,7 @@ export interface RuntimeConfig {
   readonly sessionResolver?: SessionResolver;
   readonly sessionIdentityResolver?: SessionIdentityResolver;
   readonly billing?: BillingStore;
+  readonly realtime: RealtimeGateway;
   readonly s3: {
     readonly endpoint: string;
     readonly region: string;

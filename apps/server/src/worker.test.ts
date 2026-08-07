@@ -3,11 +3,17 @@ import { databaseUnitMetrics, resetDatabaseUnitMetrics } from "./database.js";
 import worker from "./worker.js";
 
 describe("worker entry", () => {
+  const realtimeStub = { fetch: async () => new Response(null, { status: 204 }) };
+  const realtime = {
+    idFromName: (name: string) => name,
+    get: () => realtimeStub,
+  };
   const env = {
     KEVA_STATIC_TOKEN: "static-token",
     KEVA_BASE_URL: "http://worker.test",
     KEVA_TENANT_ID: "tenant",
     HYPERDRIVE: { connectionString: "postgres://worker.test/keva" },
+    REALTIME: realtime,
     S3_ENDPOINT: "https://storage.worker.test",
     S3_ACCESS_KEY_ID: "access-key",
     S3_SECRET_ACCESS_KEY: "secret-key",
@@ -67,6 +73,7 @@ describe("worker entry", () => {
         KEVA_STATIC_TOKEN: "static-token",
         KEVA_BASE_URL: "http://worker.test",
         HYPERDRIVE: { connectionString: "postgres://worker.test/keva" },
+        REALTIME: realtime,
         S3_ENDPOINT: "https://storage.worker.test",
         S3_ACCESS_KEY_ID: "access-key",
         S3_BUCKET: "keva",

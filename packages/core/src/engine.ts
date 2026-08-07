@@ -18,16 +18,41 @@ import {
   type Principal,
   type PropertyValue,
   type Query,
+  type RealtimeEventReason,
   type Scope,
   type ThumbnailUploadInput,
 } from "@keva/schema";
 import { Effect } from "effect";
+import { ChangePublisher } from "./change-publisher.js";
 import { BlobStore, MetadataStore } from "./services.js";
 
 export type { LifecycleBatchResult, LifecycleJobOptions } from "./lifecycle.js";
 export { reapPending, sweepDeleting, sweepStaging } from "./lifecycle.js";
 
 const now = (): string => new Date().toISOString();
+
+const publishChange = (tenantId: string, reason: RealtimeEventReason, itemId?: string) =>
+  Effect.gen(function* () {
+    const publisher = yield* ChangePublisher;
+    yield* publisher.publish(tenantId, {
+      id: crypto.randomUUID(),
+      type: "items.changed",
+      reason,
+      ...(itemId === undefined ? {} : { itemId }),
+      occurredAt: now(),
+    });
+  }).pipe(
+    Effect.catchAllCause(() =>
+      Effect.logWarning(
+        JSON.stringify({
+          event: "items.changed.publish.failed",
+          type: "items.changed",
+          tenantId,
+          ...(itemId === undefined ? {} : { itemId }),
+        }),
+      ),
+    ),
+  );
 
 const requireScope = (principal: Principal, scope: Scope) =>
   principal.scopes.includes(scope)
@@ -129,7 +154,7 @@ const eventFor = (
   createdAt: now(),
 });
 
-const patchItem = (principal: Principal, id: string, patch: ItemPatch) =>
+const patchItem = (principal: Principal, id: string, patch: ItemPatch, publish = true) =>
   Effect.gen(function* () {
     const metadata = yield* MetadataStore;
     const routed = routePatch(patch.set, patch.unset);
@@ -180,6 +205,7 @@ const patchItem = (principal: Principal, id: string, patch: ItemPatch) =>
       },
     );
     if (!patched) return yield* new NotFound({ message: "Item not found" });
+    if (publish) yield* publishChange(principal.tenantId, "patched", patched.updated.id);
     return patched.updated;
   });
 
@@ -371,6 +397,7 @@ export const makeKevaEngine = (principal: Principal) => ({
         yield* blobs.delete(item.storageKey);
         return yield* new Conflict({ message: "Upload expired while confirming" });
       }
+      yield* publishChange(principal.tenantId, "uploaded", confirmed.id);
       yield* metadata.updateUploadAttempt(attempt.id, { state: "confirmed" });
       yield* blobs.delete(item.stagingKey).pipe(
         Effect.catchAll((error) =>
@@ -442,6 +469,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       const blobs = yield* BlobStore;
       yield* videoOrNotFound(yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id)));
       yield* blobs.delete(thumbnailKey(principal.tenantId, id));
+      yield* publishChange(principal.tenantId, "thumbnail_deleted", id);
     }),
 
   patch: (id: string, patch: ItemPatch) =>
@@ -458,7 +486,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       const results = yield* Effect.forEach(
         items,
         ({ id, expectedRevision }) =>
-          patchItem(principal, id, { ...patch, expectedRevision }).pipe(
+          patchItem(principal, id, { ...patch, expectedRevision }, false).pipe(
             Effect.map((item) => ({
               status: "updated" as const,
               id,
@@ -468,10 +496,12 @@ export const makeKevaEngine = (principal: Principal) => ({
           ),
         { concurrency: 8 },
       );
+      const updated = results
+        .filter((result) => result.status === "updated")
+        .map(({ id, revision }) => ({ id, revision }));
+      if (updated.length > 0) yield* publishChange(principal.tenantId, "bulk_changed");
       return {
-        updated: results
-          .filter((result) => result.status === "updated")
-          .map(({ id, revision }) => ({ id, revision })),
+        updated,
         failed: results
           .filter((result) => result.status === "failed")
           .map(({ id, error }) => ({ id, error })),
@@ -592,6 +622,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       const metadata = yield* MetadataStore;
       const restored = yield* metadata.restore(principal.tenantId, id, now());
       if (!restored) return yield* new NotFound({ message: "Item not found in trash" });
+      yield* publishChange(principal.tenantId, "restored", restored.id);
       return restored;
     }),
 
@@ -603,13 +634,13 @@ export const makeKevaEngine = (principal: Principal) => ({
       const blobs = yield* BlobStore;
       const existing = yield* metadata.get(principal.tenantId, id);
       if (!existing?.deletedAt) return;
-      const current =
+      const beganPurge =
         existing.status === "ready"
           ? yield* metadata.beginPurge(principal.tenantId, id, now())
-          : existing.status === "deleting"
-            ? existing
-            : null;
+          : null;
+      const current = existing.status === "deleting" ? existing : beganPurge;
       if (!current) return;
+      if (beganPurge) yield* publishChange(principal.tenantId, "purged", beganPurge.id);
       yield* blobs.delete(current.storageKey);
       yield* blobs.delete(current.stagingKey);
       yield* blobs.delete(thumbnailKey(principal.tenantId, id));
@@ -641,6 +672,7 @@ export const makeKevaEngine = (principal: Principal) => ({
         eventFor(principal, updated, "deleted", {}),
       );
       if (!deleted) return yield* new NotFound({ message: "Item not found" });
+      yield* publishChange(principal.tenantId, "trashed", deleted.id);
     }),
 
   delete: (id: string) =>
@@ -653,9 +685,10 @@ export const makeKevaEngine = (principal: Principal) => ({
       if (current.status === "ready") {
         if (current.deletedAt) return;
         const deletedAt = now();
-        yield* metadata.trash(principal.tenantId, id, deletedAt, (updated) =>
+        const deleted = yield* metadata.trash(principal.tenantId, id, deletedAt, (updated) =>
           eventFor(principal, updated, "deleted", {}),
         );
+        if (deleted) yield* publishChange(principal.tenantId, "trashed", deleted.id);
         return;
       }
       const blobs = yield* BlobStore;
@@ -668,6 +701,7 @@ export const makeKevaEngine = (principal: Principal) => ({
           (updated) => eventFor(principal, updated, "deleted", {}),
         );
         if (!claimed) return;
+        yield* publishChange(principal.tenantId, "trashed", claimed.id);
       }
       yield* blobs.delete(current.storageKey);
       const attempts = yield* metadata.listUploadAttemptsForItem(principal.tenantId, id);

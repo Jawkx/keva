@@ -42,6 +42,7 @@ import { errorMessage } from "../lib/errors";
 import { formatBytes, formatRelative } from "../lib/format";
 import { itemListsQueryKey } from "../lib/items-cache";
 import { keva } from "../lib/keva";
+import { ACTIVE_METADATA_REFETCH_INTERVAL } from "../lib/query-client";
 
 const trashQueryKey = ["trash"] as const;
 
@@ -51,7 +52,11 @@ export function TrashPage() {
   const { id: itemId } = useParams<{ id: string }>();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [purgeOpen, setPurgeOpen] = useState(false);
-  const trashQuery = useQuery({ queryKey: trashQueryKey, queryFn: () => keva.listTrash() });
+  const trashQuery = useQuery({
+    queryKey: trashQueryKey,
+    queryFn: () => keva.listTrash(),
+    refetchInterval: ACTIVE_METADATA_REFETCH_INTERVAL,
+  });
   const items = trashQuery.data ?? [];
   const selectedIds = useMemo(() => [...selected], [selected]);
   const allSelected = items.length > 0 && selected.size === items.length;

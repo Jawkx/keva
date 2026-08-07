@@ -19,6 +19,12 @@ const proxyPaths = ["/api", "/health", "/__dev", "/mcp", "/.well-known"];
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiTarget = env.VITE_API_TARGET ?? "http://127.0.0.1:8787";
+  const environment =
+    env.KEVA_ENVIRONMENT ?? (mode === "development" ? "development" : "production");
+  if (!["development", "staging", "production"].includes(environment)) {
+    throw new Error(`Unsupported KEVA_ENVIRONMENT: ${environment}`);
+  }
+  const iconBasePath = `/icons/${environment}`;
 
   let commit: string;
   try {
@@ -30,6 +36,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      {
+        name: "keva-environment-icons",
+        transformIndexHtml: (html) => html.replaceAll("%KEVA_ICON_BASE%", iconBasePath),
+      },
       react({
         babel: {
           plugins: [["babel-plugin-react-compiler", { target: "19" }]],
@@ -40,6 +50,8 @@ export default defineConfig(({ mode }) => {
     define: {
       __KEVA_APP_COMMIT__: JSON.stringify(commit),
       __KEVA_APP_VERSION__: JSON.stringify(version),
+      __KEVA_ENVIRONMENT__: JSON.stringify(environment),
+      __KEVA_ICON_BASE__: JSON.stringify(iconBasePath),
     },
     resolve: {
       alias: {

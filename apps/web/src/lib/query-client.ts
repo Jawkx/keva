@@ -8,6 +8,8 @@ const onError = (error: unknown) => {
   void router.navigate("/login", { replace: true });
 };
 
+export const ACTIVE_METADATA_REFETCH_INTERVAL = 60_000;
+
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({ onError }),
   mutationCache: new MutationCache({ onError }),
@@ -15,7 +17,8 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       gcTime: 5 * 60_000,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: "always",
+      refetchOnReconnect: "always",
     },
     mutations: { retry: false },
   },
