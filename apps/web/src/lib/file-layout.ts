@@ -11,8 +11,12 @@ const isFileLayout = (value: string | null): value is FileLayout =>
   value === "list" || value === "grid";
 
 export const readFileLayout = (storage?: Pick<Storage, "getItem">): FileLayout => {
-  const value = storage?.getItem(FILE_LAYOUT_STORAGE_KEY) ?? null;
-  return isFileLayout(value) ? value : "list";
+  try {
+    const value = storage?.getItem(FILE_LAYOUT_STORAGE_KEY) ?? null;
+    return isFileLayout(value) ? value : "list";
+  } catch {
+    return memoryLayout;
+  }
 };
 
 const snapshot = () => {
@@ -34,7 +38,11 @@ const subscribe = (listener: () => void) => {
 
 export const setFileLayout = (layout: FileLayout) => {
   memoryLayout = layout;
-  if (typeof window !== "undefined") window.localStorage.setItem(FILE_LAYOUT_STORAGE_KEY, layout);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(FILE_LAYOUT_STORAGE_KEY, layout);
+    } catch {}
+  }
   listeners.forEach((listener) => listener());
 };
 

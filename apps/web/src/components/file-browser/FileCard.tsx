@@ -23,7 +23,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 
 export type FileCardActions = {
   readonly onOpen: (item: FileRow) => void;
@@ -63,23 +62,20 @@ export function FileCard({
       aria-label={item.name}
       data-state={row.getIsSelected() ? "selected" : undefined}
       data-current={current ? "true" : undefined}
-      tabIndex={upload ? -1 : 0}
-      className={cn(
-        "group relative min-w-0 overflow-hidden rounded-xl border bg-card shadow-xs outline-none transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring data-[current=true]:border-primary data-[current=true]:ring-1 data-[current=true]:ring-primary/30 data-[state=selected]:border-primary/70",
-        !upload && "cursor-pointer",
-      )}
-      onClick={() => !upload && actions.onOpen(item)}
-      onKeyDown={(event) => {
-        if (!upload && (event.key === "Enter" || event.key === " ")) {
-          event.preventDefault();
-          actions.onOpen(item);
-        }
-      }}
+      className="group relative min-w-0 overflow-hidden rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md data-[current=true]:border-primary data-[current=true]:ring-1 data-[current=true]:ring-primary/30 data-[state=selected]:border-primary/70"
       onContextMenu={() => !upload && row.toggleSelected(true)}
     >
+      {!upload && (
+        <button
+          type="button"
+          aria-label={`Open ${item.name}`}
+          className="absolute inset-0 z-10 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          onClick={() => actions.onOpen(item)}
+        />
+      )}
       <FileThumbnail itemId={item.id} name={item.name} contentType={item.contentType} />
       <div
-        className="absolute top-2 left-2 flex size-7 items-center justify-center rounded-md border bg-background/90 shadow-sm backdrop-blur-sm"
+        className="absolute top-2 left-2 z-20 flex size-7 items-center justify-center rounded-md border bg-background/90 shadow-sm backdrop-blur-sm"
         onClick={(event) => event.stopPropagation()}
       >
         {upload?.status === "uploading" ? (
@@ -104,13 +100,13 @@ export function FileCard({
           />
         )}
       </div>
-      <div className="flex min-w-0 flex-col gap-2 p-3">
+      <div className="pointer-events-none flex min-w-0 flex-col gap-2 p-3">
         {renaming ? (
           <Input
             ref={meta?.renameInputRef}
             value={meta?.renameDraft ?? ""}
             aria-label={`Rename ${item.name}`}
-            className="h-7 min-w-0 px-2 py-0"
+            className="pointer-events-auto relative z-20 h-7 min-w-0 px-2 py-0"
             onChange={(event) => meta?.onRenameDraftChange(event.target.value)}
             onClick={(event) => event.stopPropagation()}
             onBlur={() => meta?.onCommitRename(item)}
@@ -130,7 +126,10 @@ export function FileCard({
           <span className="tabular-nums">{formatBytes(item.size)}</span>
           <span className="truncate">{formatRelative(item.updatedAt)}</span>
         </div>
-        <div onClick={(event) => event.stopPropagation()}>
+        <div
+          className="pointer-events-auto relative z-20"
+          onClick={(event) => event.stopPropagation()}
+        >
           <FileProperties
             properties={item.properties}
             limit={2}

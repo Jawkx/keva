@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { makeThumbnailJobStore } from "@keva/core/postgres";
 import { Effect } from "effect";
 import postgres from "postgres";
@@ -11,6 +10,7 @@ import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
 import { MediaContainer, mediaContainerFor, type MediaContainerConfig } from "./media-container.js";
+import { publishMediaResults, type MediaDrainResult } from "./media-results.js";
 import {
   RealtimeHub,
   makeDurableObjectRealtimeGateway,
@@ -119,11 +119,6 @@ const fetchMediaContainer = (env: Env, request: Request): Promise<Response> => {
   );
 };
 
-interface MediaDrainResult {
-  readonly readyItemIds?: readonly string[];
-  readonly failedItemIds?: readonly string[];
-}
-
 const wakeMediaJobs = async (
   env: Env,
   realtime: ReturnType<typeof makeDurableObjectRealtimeGateway>,
@@ -132,7 +127,9 @@ const wakeMediaJobs = async (
   const databaseUrl = required(env.HYPERDRIVE?.connectionString, "HYPERDRIVE");
   const sql = postgres(databaseUrl, { max: 1 });
   try {
-    if (!(await makeThumbnailJobStore(sql).hasRunnableJobs())) return;
+    const jobs = makeThumbnailJobStore(sql);
+    await jobs.releaseExpiredLeases();
+    if (!(await jobs.hasRunnableJobs())) return;
   } finally {
     await sql.end({ timeout: 2 });
   }
@@ -141,32 +138,7 @@ const wakeMediaJobs = async (
     new Request("http://container/drain", { method: "POST" }),
   );
   if (!response.ok) throw new Error(`Media drain failed: ${response.status}`);
-  const result = (await response.json()) as MediaDrainResult;
-  const occurredAt = new Date().toISOString();
-  await Promise.all([
-    ...(result.readyItemIds ?? []).map((itemId) =>
-      Effect.runPromise(
-        realtime.publisher.publish(env.KEVA_TENANT_ID ?? "staging", {
-          id: randomUUID(),
-          type: "items.changed",
-          reason: "thumbnail_ready",
-          itemId,
-          occurredAt,
-        }),
-      ),
-    ),
-    ...(result.failedItemIds ?? []).map((itemId) =>
-      Effect.runPromise(
-        realtime.publisher.publish(env.KEVA_TENANT_ID ?? "staging", {
-          id: randomUUID(),
-          type: "items.changed",
-          reason: "thumbnail_failed",
-          itemId,
-          occurredAt,
-        }),
-      ),
-    ),
-  ]);
+  await publishMediaResults(realtime, (await response.json()) as MediaDrainResult);
 };
 
 const serverOptionsConfigFor = (
@@ -302,9 +274,7 @@ export default {
               max: 1,
             });
             try {
-              const jobs = makeThumbnailJobStore(sql);
-              await jobs.releaseExpiredLeases();
-              await jobs.enqueueMissing({ limit: 200 });
+              await makeThumbnailJobStore(sql).enqueueMissing({ limit: 200 });
             } finally {
               await sql.end({ timeout: 2 });
             }

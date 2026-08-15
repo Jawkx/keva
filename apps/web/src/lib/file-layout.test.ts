@@ -8,8 +8,15 @@ describe("readFileLayout", () => {
     ).toBe("grid");
   });
 
-  it("defaults invalid and missing preferences to list", () => {
+  it("defaults invalid, missing, and inaccessible preferences to list", () => {
     expect(readFileLayout({ getItem: () => "tiles" })).toBe("list");
     expect(readFileLayout({ getItem: () => null })).toBe("list");
+    expect(
+      readFileLayout({
+        getItem: () => {
+          throw new Error("Storage unavailable");
+        },
+      }),
+    ).toBe("list");
   });
 });

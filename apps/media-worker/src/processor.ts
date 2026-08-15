@@ -16,6 +16,8 @@ const MAX_INPUT_PIXELS = 100_000_000;
 const OUTPUT_SIZE = 640;
 const OUTPUT_QUALITY = 80;
 const PROCESSING_TIMEOUT_MS = 30_000;
+const STORAGE_TIMEOUT_MS = 30_000;
+const LEASE_DURATION_MS = PROCESSING_TIMEOUT_MS + STORAGE_TIMEOUT_MS * 2 + 30_000;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
 interface StorageConfig {
@@ -27,11 +29,16 @@ interface StorageConfig {
   readonly forcePathStyle: boolean;
 }
 
+interface ProcessedItem {
+  readonly tenantId: string;
+  readonly itemId: string;
+}
+
 interface DrainSummary {
   readonly attempted: number;
-  readonly readyItemIds: readonly string[];
-  readonly failedItemIds: readonly string[];
-  readonly retriedItemIds: readonly string[];
+  readonly readyItems: readonly ProcessedItem[];
+  readonly failedItems: readonly ProcessedItem[];
+  readonly retriedItems: readonly ProcessedItem[];
 }
 
 class PermanentProcessingError extends Error {}
@@ -76,7 +83,9 @@ const boundedDownload = async (
   key: string,
   destination: string,
 ): Promise<void> => {
-  const response = await client.fetch(objectUrl(config, key));
+  const response = await client.fetch(objectUrl(config, key), {
+    signal: AbortSignal.timeout(STORAGE_TIMEOUT_MS),
+  });
   if (!response.ok || !response.body) throw new Error(`SourceDownload${response.status}`);
   const declaredSize = Number(response.headers.get("content-length") || "0");
   if (declaredSize > MAX_SOURCE_BYTES) throw new PermanentProcessingError("SourceTooLarge");
@@ -101,7 +110,7 @@ export const renderImageThumbnail = async (
   if (!detected || !ALLOWED_TYPES.has(detected.mime)) {
     throw new PermanentProcessingError("UnsupportedSourceType");
   }
-  const render = sharp(inputPath, { limitInputPixels: MAX_INPUT_PIXELS })
+  const image = sharp(inputPath, { limitInputPixels: MAX_INPUT_PIXELS })
     .rotate()
     .resize({
       width: OUTPUT_SIZE,
@@ -109,16 +118,25 @@ export const renderImageThumbnail = async (
       fit: "inside",
       withoutEnlargement: true,
     })
-    .webp({ quality: OUTPUT_QUALITY })
-    .toFile(outputPath);
+    .webp({ quality: OUTPUT_QUALITY });
+  const render = image.toFile(outputPath);
+  let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      image.destroy();
+      reject(new Error("ProcessingTimeout"));
+    }, PROCESSING_TIMEOUT_MS);
+    timer.unref();
+  });
   try {
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("ProcessingTimeout")), PROCESSING_TIMEOUT_MS);
-    });
     const info = await Promise.race([render, timeout]);
     if (info.size > MAX_OUTPUT_BYTES) throw new PermanentProcessingError("OutputTooLarge");
     return { width: info.width, height: info.height, size: info.size };
+  } catch (error) {
+    if (timedOut) await render.catch(() => undefined);
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -147,6 +165,7 @@ const uploadOutput = async (
 ): Promise<void> => {
   const response = await client.fetch(objectUrl(config, key), {
     method: "PUT",
+    signal: AbortSignal.timeout(STORAGE_TIMEOUT_MS),
     headers: {
       "content-length": String(body.byteLength),
       "content-type": "image/webp",
@@ -155,15 +174,6 @@ const uploadOutput = async (
   });
   await response.body?.cancel();
   if (!response.ok) throw new Error(`OutputUpload${response.status}`);
-};
-
-const deleteOutput = async (
-  client: AwsClient,
-  config: StorageConfig,
-  key: string,
-): Promise<void> => {
-  const response = await client.fetch(objectUrl(config, key), { method: "DELETE" });
-  await response.body?.cancel();
 };
 
 const processJob = async (
@@ -177,7 +187,6 @@ const processJob = async (
   const inputPath = join(directory, "source");
   const outputPath = join(directory, "thumbnail.webp");
   const outputKey = `thumbnails/${job.tenantId}/${job.itemId}/v${job.recipeVersion}.webp`;
-  let uploaded = false;
   try {
     if (!(await verifyClaim(sql, job))) throw new PermanentProcessingError("SourceChanged");
     await boundedDownload(client, config, job.storageKey, inputPath);
@@ -185,7 +194,6 @@ const processJob = async (
     const output = await readFile(outputPath);
     if (!(await verifyClaim(sql, job))) throw new PermanentProcessingError("SourceChanged");
     await uploadOutput(client, config, outputKey, output);
-    uploaded = true;
     const finalized = await jobs.markReady(job.tenantId, job.itemId, job.leaseToken, {
       key: outputKey,
       contentType: "image/webp",
@@ -193,13 +201,9 @@ const processJob = async (
       width: info.width,
       height: info.height,
     });
-    if (!finalized) {
-      await deleteOutput(client, config, outputKey);
-      return "failed";
-    }
+    if (!finalized) return "failed";
     return "ready";
   } catch (error) {
-    if (uploaded) await deleteOutput(client, config, outputKey).catch(() => undefined);
     const errorCode =
       error instanceof Error ? error.message.slice(0, 128) : "UnknownProcessingError";
     if (error instanceof PermanentProcessingError) {
@@ -218,23 +222,28 @@ export const drainThumbnailJobs = async (): Promise<DrainSummary> => {
   const jobs = makeThumbnailJobStore(sql);
   const config = storageConfig();
   const client = awsClient(config);
-  const batchSize = Math.max(1, Math.min(20, Number(process.env.THUMBNAIL_BATCH_SIZE || "5")));
+  const configuredBatchSize = Number(process.env.THUMBNAIL_BATCH_SIZE ?? 5);
+  if (!Number.isSafeInteger(configuredBatchSize) || configuredBatchSize < 1) {
+    throw new Error("THUMBNAIL_BATCH_SIZE must be a positive integer");
+  }
+  const batchSize = Math.min(20, configuredBatchSize);
   const deadline = Date.now() + 8 * 60_000;
-  const readyItemIds: string[] = [];
-  const failedItemIds: string[] = [];
-  const retriedItemIds: string[] = [];
+  const readyItems: ProcessedItem[] = [];
+  const failedItems: ProcessedItem[] = [];
+  const retriedItems: ProcessedItem[] = [];
   let attempted = 0;
   try {
     while (attempted < batchSize && Date.now() < deadline) {
-      const job = await jobs.claimNext({ leaseMs: PROCESSING_TIMEOUT_MS + 30_000 });
+      const job = await jobs.claimNext({ leaseMs: LEASE_DURATION_MS });
       if (!job) break;
       attempted += 1;
       const result = await processJob(sql, job, client, config);
-      if (result === "ready") readyItemIds.push(job.itemId);
-      else if (result === "failed") failedItemIds.push(job.itemId);
-      else retriedItemIds.push(job.itemId);
+      const item = { tenantId: job.tenantId, itemId: job.itemId };
+      if (result === "ready") readyItems.push(item);
+      else if (result === "failed") failedItems.push(item);
+      else retriedItems.push(item);
     }
-    return { attempted, readyItemIds, failedItemIds, retriedItemIds };
+    return { attempted, readyItems, failedItems, retriedItems };
   } finally {
     await sql.end({ timeout: 5 });
   }

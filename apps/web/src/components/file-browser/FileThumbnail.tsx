@@ -21,18 +21,24 @@ export function FileThumbnail({
   readonly contentType: string;
   readonly className?: string;
 }) {
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [failedImage, setFailedImage] = useState<{
+    readonly url: string;
+    readonly dataUpdatedAt: number;
+  } | null>(null);
   const supportsThumbnail = contentType.startsWith("image/") || contentType.startsWith("video/");
+  const hasDurableId = !itemId.startsWith("upload:");
   const thumbnail = useQuery({
     queryKey: thumbnailQueryKey(itemId),
     queryFn: () => loadOptionalThumbnail(() => keva.getThumbnailUrl(itemId)),
-    enabled: supportsThumbnail,
-    staleTime: (query) => thumbnailRefreshInterval(query.state.data?.expiresAt) || 0,
+    enabled: supportsThumbnail && hasDurableId,
+    staleTime: Infinity,
     refetchInterval: (query) => thumbnailRefreshInterval(query.state.data?.expiresAt),
   });
   const KindIcon = fileKindIcon(contentType);
   const url = thumbnail.data?.url;
-  const showImage = Boolean(url && url !== failedUrl);
+  const showImage = Boolean(
+    url && (failedImage?.url !== url || failedImage.dataUpdatedAt !== thumbnail.dataUpdatedAt),
+  );
 
   return (
     <div
@@ -50,7 +56,7 @@ export function FileThumbnail({
           loading="lazy"
           decoding="async"
           className="size-full object-cover"
-          onError={() => setFailedUrl(url ?? null)}
+          onError={() => url && setFailedImage({ url, dataUpdatedAt: thumbnail.dataUpdatedAt })}
         />
       ) : (
         <KindIcon aria-label={`${name} file type`} className="size-10 text-muted-foreground/65" />

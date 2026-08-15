@@ -1,6 +1,4 @@
-import { randomUUID } from "node:crypto";
 import { serve } from "@hono/node-server";
-import { Effect } from "effect";
 import { createApp } from "./app.js";
 import { trustedOriginsFor } from "./origins.js";
 import { s3ConfigFor } from "./s3-config.js";
@@ -9,19 +7,12 @@ import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
 import { MemoryRealtimeGateway } from "./realtime-memory.js";
-
-interface LocalMediaDrainResult {
-  readonly readyItemIds?: readonly string[];
-  readonly failedItemIds?: readonly string[];
-}
+import { publishMediaResults, type MediaDrainResult } from "./media-results.js";
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
-const drainLocalMedia = async (
-  realtime: MemoryRealtimeGateway,
-  tenantId: string,
-): Promise<void> => {
+const drainLocalMedia = async (realtime: MemoryRealtimeGateway): Promise<void> => {
   const url = process.env.MEDIA_WORKER_URL ?? "http://127.0.0.1:8080/drain";
   let response: Response | undefined;
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -34,32 +25,7 @@ const drainLocalMedia = async (
     }
   }
   if (!response?.ok) throw new Error(`Local media drain failed: ${response?.status ?? 503}`);
-  const result = (await response.json()) as LocalMediaDrainResult;
-  const occurredAt = new Date().toISOString();
-  await Promise.all([
-    ...(result.readyItemIds ?? []).map((itemId) =>
-      Effect.runPromise(
-        realtime.publisher.publish(tenantId, {
-          id: randomUUID(),
-          type: "items.changed",
-          reason: "thumbnail_ready",
-          itemId,
-          occurredAt,
-        }),
-      ),
-    ),
-    ...(result.failedItemIds ?? []).map((itemId) =>
-      Effect.runPromise(
-        realtime.publisher.publish(tenantId, {
-          id: randomUUID(),
-          type: "items.changed",
-          reason: "thumbnail_failed",
-          itemId,
-          occurredAt,
-        }),
-      ),
-    ),
-  ]);
+  await publishMediaResults(realtime, (await response.json()) as MediaDrainResult);
 };
 
 const required = (name: string): string => {
@@ -110,9 +76,9 @@ const polar = billingConfigFor({
 });
 const tenantId = process.env.KEVA_TENANT_ID ?? "local";
 let realtime: MemoryRealtimeGateway;
-realtime = new MemoryRealtimeGateway((eventTenantId, event) => {
+realtime = new MemoryRealtimeGateway((_tenantId, event) => {
   if (event.reason !== "uploaded") return;
-  void drainLocalMedia(realtime, eventTenantId).catch((error: unknown) => {
+  void drainLocalMedia(realtime).catch((error: unknown) => {
     console.error(
       JSON.stringify({
         event: "media.local_drain.failed",

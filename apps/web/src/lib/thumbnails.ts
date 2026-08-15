@@ -11,7 +11,9 @@ export const thumbnailRefreshInterval = (
   now = Date.now(),
 ): number | false => {
   if (!expiresAt) return false;
-  return Math.max(1_000, new Date(expiresAt).getTime() - now - THUMBNAIL_EXPIRY_MARGIN_MS);
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs)) return false;
+  return Math.max(1_000, expiresAtMs - now - THUMBNAIL_EXPIRY_MARGIN_MS);
 };
 
 export const loadOptionalThumbnail = async (

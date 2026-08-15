@@ -40,6 +40,7 @@ describe("realtime cache", () => {
       propertySummaryQueryKey,
       propertyKeysQueryKey,
       propertyValuesQueryKey("project"),
+      ["thumbnail"],
     ] as const;
     const shareKey = shareItemsQueryKey("shared");
     seed(client, [...roots, shareKey]);

@@ -41,5 +41,6 @@ describe("thumbnail helpers", () => {
       thumbnailRefreshInterval("2026-01-01T00:00:10.000Z", Date.parse("2026-01-01T00:00:00.000Z")),
     ).toBe(1_000);
     expect(thumbnailRefreshInterval(undefined)).toBe(false);
+    expect(thumbnailRefreshInterval("not-a-date")).toBe(false);
   });
 });
