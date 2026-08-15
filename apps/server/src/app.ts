@@ -208,17 +208,38 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
         context,
         Effect.gen(function* () {
           const principal = yield* principalEffect(context.req.raw.headers);
-          yield* sessionUser(principal);
-          const overview = yield* Effect.tryPromise({
+          const user = yield* sessionUser(principal);
+          let overview = yield* Effect.tryPromise({
             try: () => billing.store.getOverview(principal.tenantId),
             catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
           }).pipe(Effect.flatMap((value) => decode(BillingOverview, value)));
-          if (overview.status.pendingPlan || !overview.status.subscriptionId) return overview;
+          if (!overview.status.subscriptionId) return overview;
           const subscription = yield* Effect.promise(() =>
             billing.polar.subscriptions
               .get({ id: overview.status.subscriptionId! })
               .catch(() => null),
           );
+          if (
+            subscription &&
+            overview.status.currentPeriodEnd &&
+            new Date(overview.status.currentPeriodEnd) <= new Date()
+          ) {
+            yield* Effect.tryPromise({
+              try: () =>
+                billing.store.syncSubscription(
+                  user.id,
+                  principal.tenantId,
+                  subscription,
+                  new Date(),
+                ),
+              catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
+            });
+            overview = yield* Effect.tryPromise({
+              try: () => billing.store.getOverview(principal.tenantId),
+              catch: () => new StorageUnavailable({ message: "Billing status unavailable" }),
+            }).pipe(Effect.flatMap((value) => decode(BillingOverview, value)));
+          }
+          if (overview.status.pendingPlan) return overview;
           const pending = subscription?.pendingUpdate;
           const plan = pending?.productId
             ? overview.plans.find((candidate) => candidate.productId === pending.productId)
