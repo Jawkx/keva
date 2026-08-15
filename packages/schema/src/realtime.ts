@@ -8,6 +8,8 @@ export const RealtimeEventReason = Schema.Literal(
   "trashed",
   "purged",
   "thumbnail_deleted",
+  "thumbnail_ready",
+  "thumbnail_failed",
   "bulk_changed",
 );
 export type RealtimeEventReason = typeof RealtimeEventReason.Type;

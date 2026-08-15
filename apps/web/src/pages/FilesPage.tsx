@@ -4,6 +4,8 @@ import {
   EllipsisVertical,
   Eye,
   Files,
+  LayoutGrid,
+  List,
   Pencil,
   Save,
   Search,
@@ -29,6 +31,7 @@ import { ApiSnippetsPopover } from "../components/ApiSnippetsPopover";
 import { BillingRequiredDialog } from "../components/BillingRequiredDialog";
 import { FileDetail } from "../components/FileDetail";
 import { FileBrowserFrame } from "../components/file-browser/FileBrowserFrame";
+import { FileGrid } from "../components/file-browser/FileGrid";
 import {
   FileTable,
   FileTableBody,
@@ -62,6 +65,7 @@ import {
   usageQueryKey,
 } from "../lib/items-cache";
 import { keva } from "../lib/keva";
+import { setFileLayout, useFileLayout } from "../lib/file-layout";
 import { ACTIVE_METADATA_REFETCH_INTERVAL } from "../lib/query-client";
 import { listShares, sharesQueryKey } from "../lib/shares";
 import { uploadStampFrom } from "../lib/upload-stamp";
@@ -127,6 +131,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { columns, responsiveColumnClass, type FileRow } from "./files/file-columns";
 import {
@@ -186,6 +191,7 @@ function FilesPageContent({
   const { id: selectedId, viewId } = useParams<{ id: string; viewId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const fileLayout = useFileLayout();
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const rememberFile = (id: string) => sessionStorage.setItem("keva:focused-file", id);
@@ -820,6 +826,23 @@ function FilesPageContent({
           )}
           {!selectMode && (
             <div className="flex items-center gap-1.5 sm:gap-2">
+              <ToggleGroup
+                variant="outline"
+                size="sm"
+                value={[fileLayout]}
+                onValueChange={(value) => {
+                  const next = value[0];
+                  if (next === "list" || next === "grid") setFileLayout(next);
+                }}
+                aria-label="File layout"
+              >
+                <ToggleGroupItem value="list" aria-label="List view" title="List view">
+                  <List />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="grid" aria-label="Grid view" title="Grid view">
+                  <LayoutGrid />
+                </ToggleGroupItem>
+              </ToggleGroup>
               <FilterMenuButton
                 draft={filterDraft}
                 onDraftChange={setFilterDraft}
@@ -1032,7 +1055,23 @@ function FilesPageContent({
     </div>
   );
 
-  const tablePane = (
+  const gridActions = {
+    onOpen: (item: FileRow) => {
+      rememberFile(item.id);
+      navigate(item.id === selectedId ? listPath : itemPath(item.id));
+    },
+    onOpenProperties: (item: FileRow) => {
+      const target = new URL(itemPath(item.id), window.location.origin);
+      target.searchParams.set("panel", "properties");
+      navigate(`${target.pathname}${target.search}`);
+    },
+    onDownload: (item: FileRow) => void downloadItem(item),
+    onShare: setShareItem,
+    onRename: (item: FileRow) => setRenameItem({ id: item.id, draft: item.name }),
+    onDelete: setDeleteItem,
+  };
+
+  const collectionPane = (
     <FileTableFrame
       footer={
         <FileTableFooter>
@@ -1077,6 +1116,14 @@ function FilesPageContent({
             </Button>
           ) : null}
         </Empty>
+      ) : fileLayout === "grid" ? (
+        <FileGrid
+          rows={rows}
+          selectedId={selectedId}
+          loading={loading}
+          actions={gridActions}
+          meta={table.options.meta!}
+        />
       ) : (
         tableInner
       )}
@@ -1132,7 +1179,7 @@ function FilesPageContent({
       {browserControls}
 
       <FileBrowserFrame
-        list={tablePane}
+        list={collectionPane}
         detailOpen={Boolean(selectedId)}
         onDetailOpenChange={(open) => {
           if (!open) closeDetail();

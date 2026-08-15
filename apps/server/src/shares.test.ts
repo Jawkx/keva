@@ -1,7 +1,7 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
 import type { CreateShareGrantResult, QueryCondition, Scope, ViewRecord } from "@keva/schema";
 import { Effect, Layer } from "effect";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
 import {
   ApiTokenStore,
@@ -33,6 +33,9 @@ const sql = testSql();
 let mock: S3Mock;
 beforeAll(async () => {
   mock = await startS3Mock();
+});
+beforeEach(async () => {
+  await sql`delete from items`;
 });
 afterAll(async () => {
   await sql.end({ timeout: 5 });

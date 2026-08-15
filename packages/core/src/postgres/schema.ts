@@ -18,6 +18,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -98,6 +99,44 @@ export const items = pgTable(
     check(
       "items_upload_reservation_state_check",
       sql`${table.uploadReservationState} is null or ${table.uploadReservationState} in ('reserved', 'consumed')`,
+    ),
+  ],
+);
+
+export const thumbnailJobs = pgTable(
+  "thumbnail_jobs",
+  {
+    tenantId: text("tenant_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    recipeVersion: integer("recipe_version").notNull(),
+    state: text("state").$type<"pending" | "processing" | "ready" | "failed">().notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: "string" }).notNull(),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "string" }),
+    sourceEtag: text("source_etag"),
+    outputKey: text("output_key"),
+    outputContentType: text("output_content_type"),
+    outputSize: bigint("output_size", { mode: "number" }),
+    outputWidth: integer("output_width"),
+    outputHeight: integer("output_height"),
+    errorCode: text("error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => [
+    foreignKey({
+      name: "thumbnail_jobs_tenant_item_fk",
+      columns: [table.tenantId, table.itemId],
+      foreignColumns: [items.tenantId, items.id],
+    }).onDelete("cascade"),
+    primaryKey({ name: "thumbnail_jobs_tenant_item_pk", columns: [table.tenantId, table.itemId] }),
+    index("thumbnail_jobs_state_next_attempt_idx").on(table.state, table.nextAttemptAt),
+    index("thumbnail_jobs_state_lease_expires_idx").on(table.state, table.leaseExpiresAt),
+    check(
+      "thumbnail_jobs_state_check",
+      sql`${table.state} in ('pending', 'processing', 'ready', 'failed')`,
     ),
   ],
 );

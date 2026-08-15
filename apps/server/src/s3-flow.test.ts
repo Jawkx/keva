@@ -82,6 +82,8 @@ describe("S3 blob store + lifecycle jobs (real byte flow)", () => {
     );
 
   beforeEach(async () => {
+    await sql`delete from upload_attempts`;
+    await sql`delete from items`;
     mock = await startS3Mock();
     runtime = makeRuntime(mock);
   });

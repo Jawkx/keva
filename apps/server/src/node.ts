@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { serve } from "@hono/node-server";
+import { Effect } from "effect";
 import { createApp } from "./app.js";
 import { trustedOriginsFor } from "./origins.js";
 import { s3ConfigFor } from "./s3-config.js";
@@ -7,6 +9,58 @@ import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
 import { MemoryRealtimeGateway } from "./realtime-memory.js";
+
+interface LocalMediaDrainResult {
+  readonly readyItemIds?: readonly string[];
+  readonly failedItemIds?: readonly string[];
+}
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+const drainLocalMedia = async (
+  realtime: MemoryRealtimeGateway,
+  tenantId: string,
+): Promise<void> => {
+  const url = process.env.MEDIA_WORKER_URL ?? "http://127.0.0.1:8080/drain";
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      response = await fetch(url, { method: "POST" });
+      break;
+    } catch {
+      if (attempt === 19) throw new Error("Local media worker is unavailable");
+      await wait(250);
+    }
+  }
+  if (!response?.ok) throw new Error(`Local media drain failed: ${response?.status ?? 503}`);
+  const result = (await response.json()) as LocalMediaDrainResult;
+  const occurredAt = new Date().toISOString();
+  await Promise.all([
+    ...(result.readyItemIds ?? []).map((itemId) =>
+      Effect.runPromise(
+        realtime.publisher.publish(tenantId, {
+          id: randomUUID(),
+          type: "items.changed",
+          reason: "thumbnail_ready",
+          itemId,
+          occurredAt,
+        }),
+      ),
+    ),
+    ...(result.failedItemIds ?? []).map((itemId) =>
+      Effect.runPromise(
+        realtime.publisher.publish(tenantId, {
+          id: randomUUID(),
+          type: "items.changed",
+          reason: "thumbnail_failed",
+          itemId,
+          occurredAt,
+        }),
+      ),
+    ),
+  ]);
+};
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -54,10 +108,22 @@ const polar = billingConfigFor({
   POLAR_PRODUCT_1TB_ID: process.env.POLAR_PRODUCT_1TB_ID,
   POLAR_PRODUCT_2TB_ID: process.env.POLAR_PRODUCT_2TB_ID,
 });
-const realtime = new MemoryRealtimeGateway();
+const tenantId = process.env.KEVA_TENANT_ID ?? "local";
+let realtime: MemoryRealtimeGateway;
+realtime = new MemoryRealtimeGateway((eventTenantId, event) => {
+  if (event.reason !== "uploaded") return;
+  void drainLocalMedia(realtime, eventTenantId).catch((error: unknown) => {
+    console.error(
+      JSON.stringify({
+        event: "media.local_drain.failed",
+        errorType: error instanceof Error ? error.message : typeof error,
+      }),
+    );
+  });
+});
 const appOptions = createServerOptions({
   staticToken: required("KEVA_STATIC_TOKEN"),
-  tenantId: process.env.KEVA_TENANT_ID ?? "local",
+  tenantId,
   baseUrl,
   databaseUrl: required("DATABASE_URL"),
   ...(process.env.BETTER_AUTH_SECRET

@@ -73,6 +73,21 @@ describe("Postgres metadata store", () => {
       return initiated.item.id;
     });
 
+  it("atomically enqueues eligible confirmed uploads only", async () => {
+    const imageId = await run(
+      createReadyWithType(principal("thumbnail-confirm"), "photo.jpg", "image/jpeg", "image"),
+    );
+    const textId = await run(
+      createReadyWithType(principal("thumbnail-confirm"), "notes.txt", "text/plain", "text"),
+    );
+    const rows = await sql<{ item_id: string; state: string; attempts: number }[]>`
+      select item_id, state, attempts from thumbnail_jobs order by item_id
+    `;
+
+    expect(rows).toEqual([{ item_id: imageId, state: "pending", attempts: 0 }]);
+    expect(rows.some((row) => row.item_id === textId)).toBe(false);
+  });
+
   it("applies the checked-in migration indexes", async () => {
     const indexes = await sql<{ indexname: string; indexdef: string }[]>`
       select indexname, indexdef

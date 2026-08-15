@@ -23,7 +23,11 @@ export function invalidateRealtimeEvent(queryClient: QueryClient, event: Realtim
   void queryClient.invalidateQueries({ queryKey: ["trash-item", event.itemId] });
   void queryClient.invalidateQueries({ queryKey: itemEventsQueryKey(event.itemId) });
 
-  if (event.reason === "thumbnail_deleted") {
+  if (
+    event.reason === "thumbnail_deleted" ||
+    event.reason === "thumbnail_ready" ||
+    event.reason === "thumbnail_failed"
+  ) {
     void queryClient.invalidateQueries({ queryKey: ["thumbnail", event.itemId] });
     void queryClient.invalidateQueries({ queryKey: ["trash-thumbnail", event.itemId] });
   }

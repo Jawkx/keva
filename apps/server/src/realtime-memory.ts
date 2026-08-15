@@ -19,10 +19,18 @@ const encoder = new TextEncoder();
 export class MemoryRealtimeGateway implements RealtimeGateway {
   private readonly tenants = new Map<string, TenantSubscribers>();
 
+  constructor(
+    private readonly onPublish?: (
+      tenantId: string,
+      event: ReturnType<typeof validateRealtimeEvent>,
+    ) => void,
+  ) {}
+
   readonly publisher = {
     publish: (tenantId: string, value: unknown) =>
       Effect.sync(() => {
         const event = validateRealtimeEvent(value);
+        this.onPublish?.(tenantId, event);
         const frame = encoder.encode(encodeChangeFrame(event));
         for (const controller of this.tenants.get(tenantId)?.controllers ?? []) {
           controller.enqueue(frame);
