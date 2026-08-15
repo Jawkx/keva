@@ -25,6 +25,7 @@ import {
 import { Effect } from "effect";
 import { ChangePublisher } from "./change-publisher.js";
 import { BlobStore, MetadataStore } from "./services.js";
+import { supportsGeneratedThumbnail, THUMBNAIL_RECIPE_VERSION } from "./thumbnail.js";
 
 export type { LifecycleBatchResult, LifecycleJobOptions } from "./lifecycle.js";
 export { reapPending, sweepDeleting, sweepStaging } from "./lifecycle.js";
@@ -74,24 +75,35 @@ const videoOrNotFound = (item: KevaItem, message = "Item not found") =>
     ? Effect.succeed(item)
     : Effect.fail(new NotFound({ message }));
 
+const thumbnailEligibleOrNotFound = (item: KevaItem, message = "Item not found") =>
+  item.contentType.startsWith("video/") || supportsGeneratedThumbnail(item.contentType)
+    ? Effect.succeed(item)
+    : Effect.fail(new NotFound({ message }));
+
 const thumbnailContentTypes = new Set(["image/webp", "image/jpeg", "image/png", "image/avif"]);
 const thumbnailKey = (tenantId: string, itemId: string): string =>
   `thumbnails/${tenantId}/${itemId}`;
+const generatedThumbnailKey = (tenantId: string, itemId: string): string =>
+  `${thumbnailKey(tenantId, itemId)}/v${THUMBNAIL_RECIPE_VERSION}.webp`;
 
 const downloadThumbnail = (tenantId: string, itemId: string) =>
   Effect.gen(function* () {
     const blobs = yield* BlobStore;
-    const key = thumbnailKey(tenantId, itemId);
-    const head = yield* blobs.head(key);
-    if (
-      !head ||
-      !head.contentType ||
-      !thumbnailContentTypes.has(head.contentType) ||
-      head.size < 1 ||
-      head.size > 1024 * 1024
-    ) {
-      return yield* new NotFound({ message: "Thumbnail not found" });
+    const keys = [generatedThumbnailKey(tenantId, itemId), thumbnailKey(tenantId, itemId)];
+    let key: string | undefined;
+    for (const candidate of keys) {
+      const head = yield* blobs.head(candidate);
+      if (
+        head?.contentType &&
+        thumbnailContentTypes.has(head.contentType) &&
+        head.size >= 1 &&
+        head.size <= 1024 * 1024
+      ) {
+        key = candidate;
+        break;
+      }
     }
+    if (!key) return yield* new NotFound({ message: "Thumbnail not found" });
     const request = yield* blobs.presignDownload(key);
     return { url: request.url, expiresAt: request.expiresAt };
   });
@@ -456,7 +468,9 @@ export const makeKevaEngine = (principal: Principal) => ({
       const metadata = yield* MetadataStore;
       const item = yield* shareVisible(
         principal,
-        yield* videoOrNotFound(yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id))),
+        yield* thumbnailEligibleOrNotFound(
+          yield* readyOrNotFound(yield* metadata.get(principal.tenantId, id)),
+        ),
       );
       return yield* downloadThumbnail(item.tenantId, item.id);
     }),
@@ -608,7 +622,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* forbidShare(principal, "read trash");
       yield* requireScope(principal, "read");
       const metadata = yield* MetadataStore;
-      const item = yield* videoOrNotFound(
+      const item = yield* thumbnailEligibleOrNotFound(
         yield* trashedReadyOrNotFound(yield* metadata.get(principal.tenantId, id)),
         "Item not found in trash",
       );
@@ -643,6 +657,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       if (beganPurge) yield* publishChange(principal.tenantId, "purged", beganPurge.id);
       yield* blobs.delete(current.storageKey);
       yield* blobs.delete(current.stagingKey);
+      yield* blobs.delete(generatedThumbnailKey(principal.tenantId, id));
       yield* blobs.delete(thumbnailKey(principal.tenantId, id));
       const attempts = yield* metadata.listUploadAttemptsForItem(principal.tenantId, id);
       yield* Effect.forEach(attempts, (attempt) =>

@@ -17,6 +17,7 @@ import {
   type EmailVerificationConfig,
 } from "./email-verification.js";
 import { Polar } from "@polar-sh/sdk";
+import { Effect } from "effect";
 import { makeBillingStore, type BillingConfig, type BillingStore } from "./billing.js";
 import { makeUserAvatarResolver } from "./avatar.js";
 import { realtimePublisherLayer, type RealtimeGateway } from "./realtime.js";
@@ -43,6 +44,24 @@ export interface ServerOptionsConfig {
   readonly realtime: RealtimeGateway;
   readonly s3: RuntimeConfig["s3"];
 }
+
+const refreshExpiredSubscription = (
+  billing: BillingStore,
+  polar: Polar,
+  userId: string,
+  tenantId: string,
+) =>
+  Effect.gen(function* () {
+    const overview = yield* Effect.promise(() => billing.getOverview(tenantId));
+    const { currentPeriodEnd, subscriptionId } = overview.status;
+    if (!subscriptionId || !currentPeriodEnd || new Date(currentPeriodEnd) > new Date()) return;
+    const subscription = yield* Effect.promise(() =>
+      polar.subscriptions.get({ id: subscriptionId }),
+    );
+    yield* Effect.promise(() =>
+      billing.syncSubscription(userId, tenantId, subscription, new Date()),
+    );
+  });
 
 const databaseAuth = (config: ServerOptionsConfig, database: DatabaseUnit) => {
   if (!config.betterAuthSecret) return undefined;
@@ -133,7 +152,14 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
             authorizationServer: makeMcpAuthorizationServer(auth.auth),
             resolveTenant: async (userId) => {
               const tenantId = await makeUserTenantResolver(database.db)(userId);
-              if (tenantId && auth.billing) await auth.billing.ensureUnsubscribed(userId, tenantId);
+              if (tenantId && auth.billing) {
+                await auth.billing.ensureUnsubscribed(userId, tenantId);
+                if (auth.polar) {
+                  await Effect.runPromise(
+                    refreshExpiredSubscription(auth.billing, auth.polar, userId, tenantId),
+                  );
+                }
+              }
               return tenantId;
             },
             resolveActorNames: makeMcpActorResolver(database.db),

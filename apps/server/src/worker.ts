@@ -1,3 +1,6 @@
+import { makeThumbnailJobStore } from "@keva/core/postgres";
+import { Effect } from "effect";
+import postgres from "postgres";
 import { createApp } from "./app.js";
 import { runLifecycle } from "./lifecycle.js";
 import { trustedOriginsFor } from "./origins.js";
@@ -6,13 +9,15 @@ import { createServerOptions, type ServerOptionsConfig } from "./server-options.
 import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
+import { MediaContainer, mediaContainerFor, type MediaContainerConfig } from "./media-container.js";
+import { publishMediaResults, type MediaDrainResult } from "./media-results.js";
 import {
   RealtimeHub,
   makeDurableObjectRealtimeGateway,
   type DurableObjectNamespace,
 } from "./realtime-durable-object.js";
 
-export { RealtimeHub };
+export { MediaContainer, RealtimeHub };
 
 interface AssetsBinding {
   readonly fetch: (request: Request) => Promise<Response>;
@@ -28,6 +33,9 @@ interface Env {
   readonly KEVA_TRUSTED_ORIGINS?: string;
   readonly KEVA_PUBLIC_API_HOST?: string;
   readonly KEVA_ENVIRONMENT?: string;
+  readonly MEDIA_DATABASE_URL?: string;
+  readonly MEDIA_DIAGNOSTIC_TOKEN?: string;
+  readonly THUMBNAIL_JOBS_ENABLED?: string;
   readonly RESEND_API_KEY?: string;
   readonly RESEND_FROM?: string;
   readonly GOOGLE_CLIENT_ID?: string;
@@ -41,6 +49,14 @@ interface Env {
   readonly POLAR_PRODUCT_2TB_ID?: string;
   readonly HYPERDRIVE?: { readonly connectionString: string };
   readonly REALTIME?: DurableObjectNamespace;
+  readonly MEDIA?: {
+    readonly getByName: (name: string) => {
+      readonly fetchWithConfig: (
+        request: Request,
+        config: MediaContainerConfig,
+      ) => Promise<Response>;
+    };
+  };
   readonly S3_ENDPOINT?: string;
   readonly S3_REGION?: string;
   readonly S3_ACCESS_KEY_ID?: string;
@@ -84,6 +100,47 @@ const persistentConfigFor = (env: Env) => ({
   s3: s3ConfigFor(env),
 });
 
+const mediaConfigFor = (env: Env): MediaContainerConfig => ({
+  environment: required(env.KEVA_ENVIRONMENT, "KEVA_ENVIRONMENT"),
+  databaseUrl: required(env.MEDIA_DATABASE_URL, "MEDIA_DATABASE_URL"),
+  s3Endpoint: required(env.S3_ENDPOINT, "S3_ENDPOINT"),
+  s3Region: required(env.S3_REGION, "S3_REGION"),
+  s3AccessKeyId: required(env.S3_ACCESS_KEY_ID, "S3_ACCESS_KEY_ID"),
+  s3SecretAccessKey: required(env.S3_SECRET_ACCESS_KEY, "S3_SECRET_ACCESS_KEY"),
+  s3Bucket: required(env.S3_BUCKET, "S3_BUCKET"),
+  s3ForcePathStyle: env.S3_FORCE_PATH_STYLE ?? "true",
+});
+
+const fetchMediaContainer = (env: Env, request: Request): Promise<Response> => {
+  const environment = required(env.KEVA_ENVIRONMENT, "KEVA_ENVIRONMENT");
+  return mediaContainerFor(required(env.MEDIA, "MEDIA"), environment).fetchWithConfig(
+    request,
+    mediaConfigFor(env),
+  );
+};
+
+const wakeMediaJobs = async (
+  env: Env,
+  realtime: ReturnType<typeof makeDurableObjectRealtimeGateway>,
+): Promise<void> => {
+  if (env.THUMBNAIL_JOBS_ENABLED !== "true") return;
+  const databaseUrl = required(env.HYPERDRIVE?.connectionString, "HYPERDRIVE");
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    const jobs = makeThumbnailJobStore(sql);
+    await jobs.releaseExpiredLeases();
+    if (!(await jobs.hasRunnableJobs())) return;
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+  const response = await fetchMediaContainer(
+    env,
+    new Request("http://container/drain", { method: "POST" }),
+  );
+  if (!response.ok) throw new Error(`Media drain failed: ${response.status}`);
+  await publishMediaResults(realtime, (await response.json()) as MediaDrainResult);
+};
+
 const serverOptionsConfigFor = (
   env: Env,
   executionContext: ExecutionContext,
@@ -91,10 +148,25 @@ const serverOptionsConfigFor = (
   const staticToken = required(env.KEVA_STATIC_TOKEN, "KEVA_STATIC_TOKEN");
   const baseUrl = required(env.KEVA_BASE_URL, "KEVA_BASE_URL");
   const { databaseUrl, s3 } = persistentConfigFor(env);
-  const realtime = makeDurableObjectRealtimeGateway(
+  const baseRealtime = makeDurableObjectRealtimeGateway(
     required(env.REALTIME, "REALTIME"),
     executionContext,
   );
+  const realtime = {
+    ...baseRealtime,
+    publisher: {
+      publish: (tenantId: string, event: Parameters<typeof baseRealtime.publisher.publish>[1]) =>
+        baseRealtime.publisher.publish(tenantId, event).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              if (event.reason === "uploaded") {
+                executionContext.waitUntil(wakeMediaJobs(env, baseRealtime));
+              }
+            }),
+          ),
+        ),
+    },
+  };
   const emailVerification = emailVerificationConfigFor(env);
   const googleOAuth = googleOAuthConfigFor(env);
   const polar = billingConfigFor(env);
@@ -133,7 +205,7 @@ const withBrowserSecurityHeaders = (
   const connectSource = storageOrigin ? `'self' ${storageOrigin}` : "'self'";
   headers.set(
     "Content-Security-Policy",
-    `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' blob: data:; media-src ${connectSource} blob:; font-src 'self'; connect-src ${connectSource} https://cdn.jsdelivr.net blob:; worker-src 'self' blob:`,
+    `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src ${connectSource} blob: data:; media-src ${connectSource} blob:; font-src 'self'; connect-src ${connectSource} https://cdn.jsdelivr.net blob:; worker-src 'self' blob:`,
   );
   headers.set("Referrer-Policy", share ? "no-referrer" : "strict-origin-when-cross-origin");
   headers.set("X-Content-Type-Options", "nosniff");
@@ -158,6 +230,21 @@ export default {
     const publicApiRequest = publicApiRequestFor(request, env.KEVA_PUBLIC_API_HOST);
     if (publicApiRequest instanceof Response) return publicApiRequest;
     const url = new URL(publicApiRequest.url);
+    if (url.pathname === "/__dev/media/health" || url.pathname === "/__dev/media/drain") {
+      const diagnosticToken = env.MEDIA_DIAGNOSTIC_TOKEN;
+      if (
+        env.KEVA_ENVIRONMENT !== "staging" ||
+        !diagnosticToken ||
+        request.headers.get("authorization") !== `Bearer ${diagnosticToken}`
+      ) {
+        return Response.json({ message: "Not found" }, { status: 404 });
+      }
+      const endpoint = url.pathname.endsWith("/drain") ? "drain" : "diagnostic";
+      return fetchMediaContainer(
+        env,
+        new Request(`http://container/${endpoint}`, { method: "POST" }),
+      );
+    }
     if (!isServerPath(url.pathname) && env.ASSETS) {
       const response = await env.ASSETS.fetch(publicApiRequest);
       return withBrowserSecurityHeaders(response, env.S3_ENDPOINT, url.pathname.startsWith("/s/"));
@@ -168,10 +255,33 @@ export default {
     return app.fetch(publicApiRequest, env, executionContext);
   },
 
-  scheduled(_controller: unknown, env: Env, context: ExecutionContext): void {
+  scheduled(controller: { readonly cron?: string }, env: Env, context: ExecutionContext): void {
+    const realtime = makeDurableObjectRealtimeGateway(required(env.REALTIME, "REALTIME"), context);
+    if (controller.cron === "*/5 * * * *") {
+      context.waitUntil(
+        wakeMediaJobs(env, realtime).catch(() =>
+          console.error(JSON.stringify({ event: "media.recovery.failed" })),
+        ),
+      );
+      return;
+    }
     context.waitUntil(
       Promise.resolve()
-        .then(() => runLifecycle(persistentConfigFor(env)))
+        .then(async () => {
+          const result = await runLifecycle(persistentConfigFor(env));
+          if (env.THUMBNAIL_JOBS_ENABLED === "true") {
+            const sql = postgres(required(env.HYPERDRIVE?.connectionString, "HYPERDRIVE"), {
+              max: 1,
+            });
+            try {
+              await makeThumbnailJobStore(sql).enqueueMissing({ limit: 200 });
+            } finally {
+              await sql.end({ timeout: 2 });
+            }
+            await wakeMediaJobs(env, realtime);
+          }
+          return result;
+        })
         .then(
           (result) =>
             console.log(JSON.stringify({ event: "lifecycle.cleanup.completed", ...result })),

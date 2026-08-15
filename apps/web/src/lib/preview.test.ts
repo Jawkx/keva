@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { isHtml, isMarkdown, isPreviewable, isVideo } from "./preview";
 
-describe("video previews", () => {
+describe("media previews", () => {
+  it("loads images without applying a browser-side size limit", () => {
+    const image = { contentType: "image/jpeg", size: 10 * 1024 * 1024 * 1024 };
+
+    expect(isPreviewable(image)).toBe(true);
+  });
+
   it("streams videos without applying an in-memory size limit", () => {
     const video = { contentType: "video/mp4", size: 10 * 1024 * 1024 * 1024 };
 

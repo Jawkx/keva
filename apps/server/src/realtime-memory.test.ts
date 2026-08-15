@@ -35,6 +35,15 @@ describe("MemoryRealtimeGateway", () => {
     abortOther.abort();
   });
 
+  it("notifies a local publish observer with the validated event", async () => {
+    const observer = vi.fn();
+    const gateway = new MemoryRealtimeGateway(observer);
+
+    await Effect.runPromise(gateway.publisher.publish("a", event));
+
+    expect(observer).toHaveBeenCalledWith("a", event);
+  });
+
   it("cleans heartbeat timers after abort and rejects excess payload fields", async () => {
     vi.useFakeTimers();
     const gateway = new MemoryRealtimeGateway();

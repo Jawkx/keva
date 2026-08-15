@@ -1,0 +1,31 @@
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY tooling/tsconfig/package.json tooling/tsconfig/package.json
+COPY packages/schema/package.json packages/schema/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY apps/media-worker/package.json apps/media-worker/package.json
+RUN pnpm install --frozen-lockfile --filter @keva/media-worker...
+COPY tooling/tsconfig tooling/tsconfig
+COPY packages/schema packages/schema
+COPY packages/core packages/core
+COPY apps/media-worker apps/media-worker
+RUN pnpm --filter @keva/schema build && pnpm --filter @keva/core build && pnpm --filter @keva/media-worker build
+
+FROM node:22-bookworm-slim
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/apps/media-worker/node_modules ./apps/media-worker/node_modules
+COPY --from=build /app/apps/media-worker/package.json ./apps/media-worker/package.json
+COPY --from=build /app/apps/media-worker/dist ./apps/media-worker/dist
+COPY --from=build /app/packages/core/node_modules ./packages/core/node_modules
+COPY --from=build /app/packages/core/package.json ./packages/core/package.json
+COPY --from=build /app/packages/core/dist ./packages/core/dist
+COPY --from=build /app/packages/schema/node_modules ./packages/schema/node_modules
+COPY --from=build /app/packages/schema/package.json ./packages/schema/package.json
+COPY --from=build /app/packages/schema/dist ./packages/schema/dist
+USER node
+EXPOSE 8080
+CMD ["node", "apps/media-worker/dist/server.js"]

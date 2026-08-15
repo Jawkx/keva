@@ -7,6 +7,26 @@ import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
 import { MemoryRealtimeGateway } from "./realtime-memory.js";
+import { publishMediaResults, type MediaDrainResult } from "./media-results.js";
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+const drainLocalMedia = async (realtime: MemoryRealtimeGateway): Promise<void> => {
+  const url = process.env.MEDIA_WORKER_URL ?? "http://127.0.0.1:8080/drain";
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      response = await fetch(url, { method: "POST" });
+      break;
+    } catch {
+      if (attempt === 19) throw new Error("Local media worker is unavailable");
+      await wait(250);
+    }
+  }
+  if (!response?.ok) throw new Error(`Local media drain failed: ${response?.status ?? 503}`);
+  await publishMediaResults(realtime, (await response.json()) as MediaDrainResult);
+};
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -54,10 +74,22 @@ const polar = billingConfigFor({
   POLAR_PRODUCT_1TB_ID: process.env.POLAR_PRODUCT_1TB_ID,
   POLAR_PRODUCT_2TB_ID: process.env.POLAR_PRODUCT_2TB_ID,
 });
-const realtime = new MemoryRealtimeGateway();
+const tenantId = process.env.KEVA_TENANT_ID ?? "local";
+let realtime: MemoryRealtimeGateway;
+realtime = new MemoryRealtimeGateway((_tenantId, event) => {
+  if (event.reason !== "uploaded") return;
+  void drainLocalMedia(realtime).catch((error: unknown) => {
+    console.error(
+      JSON.stringify({
+        event: "media.local_drain.failed",
+        errorType: error instanceof Error ? error.message : typeof error,
+      }),
+    );
+  });
+});
 const appOptions = createServerOptions({
   staticToken: required("KEVA_STATIC_TOKEN"),
-  tenantId: process.env.KEVA_TENANT_ID ?? "local",
+  tenantId,
   baseUrl,
   databaseUrl: required("DATABASE_URL"),
   ...(process.env.BETTER_AUTH_SECRET

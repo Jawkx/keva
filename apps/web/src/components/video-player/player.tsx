@@ -47,6 +47,7 @@ export interface VideoPlayerProps extends PlaybackSourceControllerProps<VideoPla
    * Props to pass to the underlying video element.
    */
   mediaProps?: Omit<React.VideoHTMLAttributes<HTMLVideoElement>, "as" | "src">;
+  style?: React.CSSProperties;
   /**
    * @default dark
    */
@@ -65,6 +66,7 @@ export const VideoPlayer = React.forwardRef<HTMLDivElement, VideoPlayerProps>(fu
     mediaProps,
     source,
     sourceKey,
+    style,
     theme = "dark",
   },
   ref,
@@ -75,6 +77,7 @@ export const VideoPlayer = React.forwardRef<HTMLDivElement, VideoPlayerProps>(fu
         className={cn(className, theme === "dark" && "dark")}
         layout={layout}
         ref={ref}
+        style={style}
       >
         <PlaybackSourceController
           {...(autoLoad === undefined ? {} : { autoLoad })}

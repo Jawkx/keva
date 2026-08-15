@@ -7,7 +7,6 @@ export interface NamedPreviewable extends Previewable {
   name: string;
 }
 
-const IMAGE_MAX = 5 * 1024 * 1024;
 const PDF_MAX = 25 * 1024 * 1024;
 const TEXT_MAX = 256 * 1024;
 
@@ -28,6 +27,6 @@ export const isText = (o: Previewable) =>
   o.contentType === "application/xml";
 export const isPreviewable = (o: Previewable) =>
   isVideo(o) ||
-  (isImage(o) && (o.size ?? Infinity) <= IMAGE_MAX) ||
+  isImage(o) ||
   (isPdf(o) && (o.size ?? Infinity) <= PDF_MAX) ||
   (isText(o) && (o.size ?? Infinity) <= TEXT_MAX);

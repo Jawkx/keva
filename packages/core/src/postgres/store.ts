@@ -37,7 +37,9 @@ import {
   type UploadAttemptRow,
 } from "./mappers.js";
 import { anyOf, compileCondition, escapeLikePattern, queryOrder, type Fragment } from "./query.js";
+import { supportsGeneratedThumbnail } from "../thumbnail.js";
 import { insertItemRow, reserveTenantQuota } from "./quota.js";
+import { enqueueThumbnailJob } from "./thumbnail-jobs.js";
 
 export interface PostgresConfig {
   readonly url: string;
@@ -274,6 +276,14 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         if (!updated[0]) return null;
         const item = mapRow(updated[0]);
         await insertEvent(transaction as unknown as Sql, event(item));
+        if (patch.status === "ready" && supportsGeneratedThumbnail(item.contentType)) {
+          await enqueueThumbnailJob(transaction as unknown as Sql, {
+            tenantId: item.tenantId,
+            itemId: item.id,
+            sourceEtag: item.etag ?? null,
+            now: new Date(patch.updatedAt),
+          });
+        }
         return item;
       }),
     ),

@@ -141,6 +141,13 @@
       "when": 1785938540229,
       "tag": "0019_quiet_texas_twister",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786770536500,
+      "tag": "0020_freezing_king_bedlam",
+      "breakpoints": true
     }
   ]
 }
