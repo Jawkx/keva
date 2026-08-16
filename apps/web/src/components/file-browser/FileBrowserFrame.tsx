@@ -43,7 +43,7 @@ export function FileBrowserFrame({
           <ResizablePanel id="list" defaultSize={64} minSize={38} className="min-w-0">
             {list}
           </ResizablePanel>
-          <ResizableHandle withHandle className="bg-transparent" />
+          <ResizableHandle withHandle disableDoubleClick className="bg-transparent" />
           <ResizablePanel
             id="detail"
             defaultSize={36}

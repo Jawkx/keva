@@ -134,6 +134,7 @@ export function ImagePreviewViewer({
       <img
         src={src}
         alt={alt}
+        draggable={false}
         className={cn(
           "h-full w-full object-contain",
           animateRotation &&
@@ -179,6 +180,7 @@ export function ImagePreviewViewer({
             <img
               src={src}
               alt={alt}
+              draggable={false}
               className="h-full w-full object-contain"
               style={{ transform: `rotate(${displayRotation}deg) scale(${scale})` }}
             />
