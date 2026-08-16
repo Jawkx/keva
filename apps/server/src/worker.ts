@@ -39,6 +39,7 @@ interface Env {
   readonly KEVA_PUBLIC_API_HOST?: string;
   readonly KEVA_ENVIRONMENT?: string;
   readonly MEDIA_DATABASE_URL?: string;
+  readonly MEDIA_WORKER_URL?: string;
   readonly MEDIA_DIAGNOSTIC_TOKEN?: string;
   readonly THUMBNAIL_JOBS_ENABLED?: string;
   readonly RESEND_API_KEY?: string;
@@ -110,6 +111,10 @@ const mediaConfigFor = (env: Env): MediaContainerConfig => ({
 });
 
 const fetchMediaContainer = (env: Env, request: Request): Promise<Response> => {
+  if (env.MEDIA_WORKER_URL) {
+    const target = new URL(new URL(request.url).pathname, env.MEDIA_WORKER_URL);
+    return fetch(new Request(target, request));
+  }
   const environment = required(env.KEVA_ENVIRONMENT, "KEVA_ENVIRONMENT");
   return mediaContainerFor(required(env.MEDIA, "MEDIA"), environment).fetchWithConfig(
     request,
