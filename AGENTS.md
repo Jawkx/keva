@@ -16,7 +16,7 @@ pnpm + Turborepo monorepo (Node 22+, pnpm 11+).
 ## Commands
 
 - Install: `pnpm install`
-- Dev (all): `pnpm dev` — or `pnpm dev:app`, `pnpm dev:server`, `pnpm dev:web`
+- Dev (all): `pnpm dev` — or `pnpm dev:app`, `pnpm dev:server`, `pnpm dev:web`; the server runs with Wrangler
 - Build: `pnpm build`
 - Typecheck: `pnpm typecheck`
 - Test: `pnpm test`
@@ -24,10 +24,10 @@ pnpm + Turborepo monorepo (Node 22+, pnpm 11+).
 - Format: `pnpm format` / check with `pnpm format:check` (oxfmt)
 - DB: `pnpm db:generate`, `pnpm db:migrate` (set `DATABASE_URL` first)
 
-Run the server locally with `pnpm --filter @keva/server dev` after configuring
-`KEVA_STATIC_TOKEN`, `DATABASE_URL`, and the required `S3_*` values. The server
-always uses Postgres metadata and S3-compatible blob storage and fails closed
-when their configuration is incomplete.
+Run the Worker locally with `pnpm --filter @keva/server dev` after configuring
+`KEVA_STATIC_TOKEN`, the local `HYPERDRIVE` connection, `MEDIA_DATABASE_URL`, and
+the required `S3_*` values. Cloudflare Workers is the only supported server
+runtime; Postgres metadata and S3-compatible blob storage remain required.
 
 ## Conventions
 

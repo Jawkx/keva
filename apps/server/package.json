@@ -5,10 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "pnpm --filter @keva/core build && node --env-file-if-exists=.env node_modules/tsx/dist/cli.mjs watch src/node.ts",
-    "dev:raw": "pnpm --filter @keva/core build && tsx watch src/node.ts",
-    "start": "node dist/node.js",
-    "jobs": "tsx src/jobs.ts",
+    "dev": "pnpm --filter @keva/core build && node -e \"require('node:fs').mkdirSync('../web/dist',{recursive:true})\" && wrangler dev",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run src",
     "lint": "tsc -p tsconfig.json --noEmit",
@@ -17,7 +14,6 @@
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.6.22",
     "@cloudflare/containers": "0.3.7",
-    "@hono/node-server": "2.0.5",
     "@keva/core": "workspace:*",
     "@keva/mcp": "workspace:*",
     "@keva/schema": "workspace:*",
@@ -36,7 +32,6 @@
     "@keva/tsconfig": "workspace:*",
     "@types/node": "22.15.30",
     "auth": "1.6.22",
-    "tsx": "4.22.4",
     "vitest": "4.1.9"
   }
 }

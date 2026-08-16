@@ -2,28 +2,46 @@
 
 Metadata-rich, S3-backed object storage for people, applications, and agents.
 
+## Hosting
+
+Keva runs on Cloudflare Workers and uses Durable Objects, Hyperdrive, Workers
+Assets, scheduled handlers, and Cloudflare Containers. Other server runtimes are
+not supported. Postgres remains the metadata store and any S3-compatible service
+can store blobs.
+
+To deploy your own instance, create a Cloudflare account, replace the Hyperdrive
+IDs and environment-specific values in [`apps/server/wrangler.toml`](./apps/server/wrangler.toml),
+set the required secrets with `wrangler secret put --env <environment>`, run the
+database migrations, build the web app, and deploy:
+
+```sh
+DATABASE_URL=postgres://... pnpm db:migrate
+pnpm --filter @keva/web build
+pnpm --filter @keva/server exec wrangler deploy --env <environment>
+```
+
+The required secrets are `KEVA_STATIC_TOKEN`, `S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`, and `MEDIA_DATABASE_URL`. Authentication, email, OAuth,
+and billing require their corresponding values from `apps/server/.env.example`.
+
 ## Local development
 
-Requirements: Node.js 22+, pnpm 11+, Postgres, and an S3-compatible bucket.
+Requirements: Node.js 22+, pnpm 11+, Wrangler, Postgres, an S3-compatible bucket,
+and Docker for the media Container. Wrangler runs the same Worker entrypoint and
+Cloudflare bindings used in production.
 
-Use an existing Postgres installation by setting `DATABASE_URL`. On macOS with
-Homebrew, start it with `brew services start postgresql@14` (replace `14` with
-your installed version). Alternatively, start the provided container with
-`pnpm dev:postgres`; this requires Docker Desktop, Colima, or another running
-Docker daemon.
+Start Postgres yourself or run `pnpm dev:postgres`, then configure and start the
+stack:
 
 ```sh
 pnpm install
-pnpm build
 cp apps/server/.env.example apps/server/.env
-# Configure DATABASE_URL and the S3_* values in apps/server/.env, then:
-pnpm db:migrate
+# Configure the Hyperdrive, media database, and S3 values in apps/server/.env.
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/keva pnpm db:migrate
 pnpm dev:app
 ```
 
-The server always uses Postgres for metadata and S3-compatible storage for blobs.
-It fails to start when either configuration is incomplete. See
-[`apps/server/.env.example`](./apps/server/.env.example).
+The Worker fails closed when required bindings or configuration are missing.
 
 ### Local billing
 
