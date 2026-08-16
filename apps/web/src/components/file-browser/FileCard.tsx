@@ -62,7 +62,7 @@ export function FileCard({
       aria-label={item.name}
       data-state={row.getIsSelected() ? "selected" : undefined}
       data-current={current ? "true" : undefined}
-      className="group relative min-w-0 overflow-hidden rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md data-[current=true]:border-primary data-[current=true]:ring-1 data-[current=true]:ring-primary/30 data-[state=selected]:border-primary/70"
+      className="group relative min-w-0 overflow-hidden rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-md data-[current=true]:border-primary data-[current=true]:ring-1 data-[current=true]:ring-primary/30 data-[state=selected]:border-primary/70"
       onContextMenu={() => !upload && row.toggleSelected(true)}
     >
       {!upload && (
@@ -75,7 +75,7 @@ export function FileCard({
       )}
       <FileThumbnail itemId={item.id} name={item.name} contentType={item.contentType} />
       <div
-        className="absolute top-2 left-2 z-20 flex size-7 items-center justify-center rounded-md border bg-background/90 shadow-sm backdrop-blur-sm"
+        className="absolute top-2 left-2 z-20 flex size-4 items-center justify-center rounded bg-background/90 backdrop-blur-sm"
         onClick={(event) => event.stopPropagation()}
       >
         {upload?.status === "uploading" ? (
@@ -100,7 +100,7 @@ export function FileCard({
           />
         )}
       </div>
-      <div className="pointer-events-none flex min-w-0 flex-col gap-2 p-3">
+      <div className="pointer-events-none flex min-w-0 flex-col gap-2 rounded-b-xl bg-muted/40 p-3 transition-colors group-hover:bg-muted/70">
         {renaming ? (
           <Input
             ref={meta?.renameInputRef}
@@ -122,19 +122,21 @@ export function FileCard({
             <span className="shrink-0">{filename.extension}</span>
           </div>
         )}
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="tabular-nums">{formatBytes(item.size)}</span>
-          <span className="truncate">{formatRelative(item.updatedAt)}</span>
-        </div>
-        <div
-          className="pointer-events-auto relative z-20"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <FileProperties
-            properties={item.properties}
-            limit={2}
-            onFilter={meta?.onFilterByProperty}
-          />
+        <div className="-mx-3 -mb-3 mt-2 px-3 py-2">
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="tabular-nums">{formatBytes(item.size)}</span>
+            <span className="truncate">{formatRelative(item.updatedAt)}</span>
+          </div>
+          <div
+            className="pointer-events-auto relative z-20"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <FileProperties
+              properties={item.properties}
+              limit={2}
+              onFilter={meta?.onFilterByProperty}
+            />
+          </div>
         </div>
       </div>
     </article>
