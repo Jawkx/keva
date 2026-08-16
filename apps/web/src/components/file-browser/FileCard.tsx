@@ -62,7 +62,7 @@ export function FileCard({
       aria-label={item.name}
       data-state={row.getIsSelected() ? "selected" : undefined}
       data-current={current ? "true" : undefined}
-      className="group relative min-w-0 overflow-hidden rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-md data-[current=true]:border-primary data-[current=true]:ring-1 data-[current=true]:ring-primary/30 data-[state=selected]:border-primary/70"
+      className="group relative min-w-0 overflow-hidden rounded-xl border bg-card transition-colors hover:border-foreground/20 data-[current=true]:border-primary data-[current=true]:ring-1 data-[current=true]:ring-primary/30 data-[state=selected]:border-primary/70"
       onContextMenu={() => !upload && row.toggleSelected(true)}
     >
       {!upload && (
@@ -75,7 +75,7 @@ export function FileCard({
       )}
       <FileThumbnail itemId={item.id} name={item.name} contentType={item.contentType} />
       <div
-        className="absolute top-2 left-2 z-20 flex size-4 items-center justify-center rounded bg-background/90 backdrop-blur-sm"
+        className="absolute top-3 left-3 z-20 flex size-6 items-center justify-center rounded-md bg-background/90 backdrop-blur-sm"
         onClick={(event) => event.stopPropagation()}
       >
         {upload?.status === "uploading" ? (
@@ -95,6 +95,7 @@ export function FileCard({
         ) : (
           <Checkbox
             aria-label={`Select ${item.name}`}
+            className="size-6 rounded-md [&_[data-slot=checkbox-indicator]>svg]:size-5"
             checked={row.getIsSelected()}
             onCheckedChange={(checked) => row.toggleSelected(checked)}
           />
