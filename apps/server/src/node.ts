@@ -7,25 +7,44 @@ import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
 import { MemoryRealtimeGateway } from "./realtime-memory.js";
+import { Cause, Effect, Exit } from "effect";
 import { publishMediaResults, type MediaDrainResult } from "./media-results.js";
 
-const wait = (milliseconds: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+class LocalMediaError extends Error {
+  readonly _tag = "LocalMediaError";
+}
 
-const drainLocalMedia = async (realtime: MemoryRealtimeGateway): Promise<void> => {
+const drainLocalMedia = (realtime: MemoryRealtimeGateway): Effect.Effect<void, LocalMediaError> => {
   const url = process.env.MEDIA_WORKER_URL ?? "http://127.0.0.1:8080/drain";
-  let response: Response | undefined;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      response = await fetch(url, { method: "POST" });
-      break;
-    } catch {
-      if (attempt === 19) throw new Error("Local media worker is unavailable");
-      await wait(250);
+  const request = (attempt: number): Effect.Effect<Response, LocalMediaError> =>
+    Effect.tryPromise({
+      try: () => fetch(url, { method: "POST" }),
+      catch: (cause) => new LocalMediaError("Local media worker is unavailable", { cause }),
+    }).pipe(
+      Effect.catch((error) =>
+        attempt === 19
+          ? Effect.fail(error)
+          : Effect.sleep(250).pipe(Effect.flatMap(() => request(attempt + 1))),
+      ),
+    );
+  return Effect.gen(function* () {
+    const response = yield* request(0);
+    if (!response.ok) {
+      return yield* Effect.fail(
+        new LocalMediaError(`Local media drain failed: ${response.status}`),
+      );
     }
-  }
-  if (!response?.ok) throw new Error(`Local media drain failed: ${response?.status ?? 503}`);
-  await publishMediaResults(realtime, (await response.json()) as MediaDrainResult);
+    const result = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<MediaDrainResult>,
+      catch: (cause) =>
+        new LocalMediaError("Local media drain returned an invalid response", { cause }),
+    });
+    yield* publishMediaResults(realtime, result).pipe(
+      Effect.mapError(
+        (cause) => new LocalMediaError("Failed to publish local media results", { cause }),
+      ),
+    );
+  });
 };
 
 const required = (name: string): string => {
@@ -78,7 +97,7 @@ const tenantId = process.env.KEVA_TENANT_ID ?? "local";
 let realtime: MemoryRealtimeGateway;
 realtime = new MemoryRealtimeGateway((_tenantId, event) => {
   if (event.reason !== "uploaded") return;
-  void drainLocalMedia(realtime).catch((error: unknown) => {
+  void Effect.runPromise(drainLocalMedia(realtime)).catch((error: unknown) => {
     console.error(
       JSON.stringify({
         event: "media.local_drain.failed",
@@ -118,32 +137,34 @@ const server = serve(
   },
 );
 
+const closeServer = Effect.callback<void, Error>((resume) => {
+  server.close((error) => resume(error ? Effect.fail(error) : Effect.void));
+});
+
 let shuttingDown = false;
-const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
-  if (shuttingDown) return;
+const shutdown = (signal: NodeJS.Signals): Effect.Effect<void, unknown> => {
+  if (shuttingDown) return Effect.void;
   shuttingDown = true;
-  console.log(JSON.stringify({ event: "server.shutdown.started", signal }));
-  const failures: unknown[] = [];
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
-  } catch (error) {
-    failures.push(error);
-  }
-  try {
-    await app.dispose();
-  } catch (error) {
-    failures.push(error);
-  }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, "Server shutdown failed");
-  console.log(JSON.stringify({ event: "server.shutdown.completed", signal }));
+  return Effect.gen(function* () {
+    console.log(JSON.stringify({ event: "server.shutdown.started", signal }));
+    const [serverExit, appExit] = yield* Effect.all([
+      Effect.exit(closeServer),
+      Effect.exit(Effect.tryPromise(() => app.dispose())),
+    ]);
+    const failures = [serverExit, appExit]
+      .filter(Exit.isFailure)
+      .map((exit) => Cause.squash(exit.cause));
+    if (failures.length === 1) return yield* Effect.fail(failures[0]);
+    if (failures.length > 1) {
+      return yield* Effect.fail(new AggregateError(failures, "Server shutdown failed"));
+    }
+    console.log(JSON.stringify({ event: "server.shutdown.completed", signal }));
+  });
 };
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    void shutdown(signal).catch((error: unknown) => {
+    void Effect.runPromise(shutdown(signal)).catch((error: unknown) => {
       console.error(
         JSON.stringify({
           event: "server.shutdown.failed",

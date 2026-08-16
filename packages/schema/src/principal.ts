@@ -39,5 +39,5 @@ export const SharePrincipal = Schema.Struct({
 });
 export type SharePrincipal = typeof SharePrincipal.Type;
 
-export const Principal = Schema.Union(SessionPrincipal, TokenPrincipal, SharePrincipal);
+export const Principal = Schema.Union([SessionPrincipal, TokenPrincipal, SharePrincipal]);
 export type Principal = typeof Principal.Type;

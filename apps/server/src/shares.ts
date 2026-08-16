@@ -98,10 +98,9 @@ export interface ShareGrantStoreService {
   ) => Effect.Effect<ViewRecord | null, StorageUnavailable | Conflict | Forbidden>;
 }
 
-export class ShareGrantStore extends Context.Tag("@keva/server/ShareGrantStore")<
-  ShareGrantStore,
-  ShareGrantStoreService
->() {}
+export class ShareGrantStore extends Context.Service<ShareGrantStore, ShareGrantStoreService>()(
+  "@keva/server/ShareGrantStore",
+) {}
 
 // `view_conditions` is joined in from the referenced view (share_grants no
 // longer stores its own conditions) — read live, so the record and the resolved

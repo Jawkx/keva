@@ -371,7 +371,7 @@ function HeaderAccount() {
   const onSignOut = () => {
     setSigningOut(true);
     const signOut = authOperationEffect(() => authClient.signOut()).pipe(
-      Effect.catchAll((failure) => Effect.sync(() => toast.error(errorMessage(failure)))),
+      Effect.catch((failure) => Effect.sync(() => toast.error(errorMessage(failure)))),
       Effect.ensuring(
         Effect.sync(() => {
           queryClient.clear();

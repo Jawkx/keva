@@ -112,10 +112,9 @@ export interface BillingMeterService {
   readonly consumeApiRequest: (tenantId: string) => Effect.Effect<void, RateLimitExceeded>;
 }
 
-export class BillingMeter extends Context.Tag("@keva/server/BillingMeter")<
-  BillingMeter,
-  BillingMeterService
->() {}
+export class BillingMeter extends Context.Service<BillingMeter, BillingMeterService>()(
+  "@keva/server/BillingMeter",
+) {}
 
 export const BillingMeterLive = (store?: BillingStore): Layer.Layer<BillingMeter> =>
   Layer.succeed(BillingMeter, {

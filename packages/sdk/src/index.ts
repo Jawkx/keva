@@ -169,7 +169,7 @@ export class KevaTransportError extends Error {
 
 export type KevaClientError = KevaErrorType | KevaProtocolError | KevaTransportError;
 
-const decode = <A, I>(schema: Schema.Schema<A, I>, value: unknown): A =>
+const decode = <A>(schema: Schema.Codec<A, unknown, never>, value: unknown): A =>
   Schema.decodeUnknownSync(schema)(value);
 
 interface RequestConfig {
@@ -210,18 +210,20 @@ const downloadBytesFromUrlEffect = (
     catch: (cause) => (cause instanceof KevaProtocolError ? cause : new KevaTransportError(cause)),
   });
 
-const decodeResponse = <A, I>(
-  schema: Schema.Schema<A, I>,
+const decodeResponse = <A>(
+  schema: Schema.Codec<A, unknown, never>,
   value: unknown,
   message: string,
 ): Effect.Effect<A, KevaProtocolError> =>
-  Schema.decodeUnknown(schema)(value).pipe(Effect.mapError(() => new KevaProtocolError(message)));
+  Schema.decodeUnknownEffect(schema)(value).pipe(
+    Effect.mapError(() => new KevaProtocolError(message)),
+  );
 
-const httpRequestEffect = <A, I>(
+const httpRequestEffect = <A>(
   config: RequestConfig,
   method: string,
   path: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, unknown, never>,
   body?: unknown,
 ): Effect.Effect<A, KevaClientError> =>
   Effect.gen(function* () {
@@ -250,16 +252,16 @@ const httpRequestEffect = <A, I>(
     );
   });
 
-const httpRequest = <A, I>(
+const httpRequest = <A>(
   config: RequestConfig,
   method: string,
   path: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, unknown, never>,
   body?: unknown,
 ): Promise<A> =>
   Effect.runPromiseExit(httpRequestEffect(config, method, path, schema, body)).then((exit) => {
     if (Exit.isSuccess(exit)) return exit.value;
-    const failure = Cause.failureOption(exit.cause);
+    const failure = Cause.findErrorOption(exit.cause);
     if (Option.isNone(failure)) throw Cause.squash(exit.cause);
     throw failure.value instanceof KevaTransportError ? failure.value.cause : failure.value;
   });
@@ -277,10 +279,10 @@ export class KevaClient {
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
-  #request<A, I>(
+  #request<A>(
     method: string,
     path: string,
-    schema: Schema.Schema<A, I>,
+    schema: Schema.Codec<A, unknown, never>,
     body?: unknown,
   ): Promise<A> {
     return httpRequest(
@@ -297,10 +299,10 @@ export class KevaClient {
     );
   }
 
-  #requestEffect<A, I>(
+  #requestEffect<A>(
     method: string,
     path: string,
-    schema: Schema.Schema<A, I>,
+    schema: Schema.Codec<A, unknown, never>,
     body?: unknown,
   ): Effect.Effect<A, KevaClientError> {
     return httpRequestEffect(
@@ -847,19 +849,19 @@ export class ShareClient {
     };
   }
 
-  #request<A, I>(
+  #request<A>(
     method: string,
     path: string,
-    schema: Schema.Schema<A, I>,
+    schema: Schema.Codec<A, unknown, never>,
     body?: unknown,
   ): Promise<A> {
     return httpRequest(this.#config, method, path, schema, body);
   }
 
-  #requestEffect<A, I>(
+  #requestEffect<A>(
     method: string,
     path: string,
-    schema: Schema.Schema<A, I>,
+    schema: Schema.Codec<A, unknown, never>,
     body?: unknown,
   ): Effect.Effect<A, KevaClientError> {
     return httpRequestEffect(this.#config, method, path, schema, body);
@@ -1026,19 +1028,19 @@ export class SharedViewClient implements ShareAccessClient {
     this.#prefix = `/shared-views/${encodeURIComponent(options.grantId)}`;
   }
 
-  #request<A, I>(
+  #request<A>(
     method: string,
     path: string,
-    schema: Schema.Schema<A, I>,
+    schema: Schema.Codec<A, unknown, never>,
     body?: unknown,
   ): Promise<A> {
     return httpRequest(this.#config, method, `${this.#prefix}${path}`, schema, body);
   }
 
-  #requestEffect<A, I>(
+  #requestEffect<A>(
     method: string,
     path: string,
-    schema: Schema.Schema<A, I>,
+    schema: Schema.Codec<A, unknown, never>,
     body?: unknown,
   ): Effect.Effect<A, KevaClientError> {
     return httpRequestEffect(this.#config, method, `${this.#prefix}${path}`, schema, body);

@@ -3,13 +3,13 @@ import { Schema } from "effect";
 export const ITEM_ID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-export const Scope = Schema.Literal("read", "write", "delete", "views", "shares", "admin");
+export const Scope = Schema.Literals(["read", "write", "delete", "views", "shares", "admin"]);
 export type Scope = typeof Scope.Type;
 
-export const ItemStatus = Schema.Literal("pending", "confirming", "ready", "deleting");
+export const ItemStatus = Schema.Literals(["pending", "confirming", "ready", "deleting"]);
 export type ItemStatus = typeof ItemStatus.Type;
 
-export const ItemId = Schema.String.pipe(Schema.pattern(ITEM_ID_PATTERN));
+export const ItemId = Schema.String.pipe(Schema.check(Schema.isPattern(ITEM_ID_PATTERN)));
 export type ItemId = typeof ItemId.Type;
 
 // Accepts any RFC-3339 / ISO-8601 instant: date + time + zone, with optional
@@ -25,7 +25,7 @@ export const isFutureInstant = (value: string, now = Date.now()): boolean =>
   isIsoInstant(value) && Date.parse(value) > now;
 
 export const IsoInstant = Schema.String.pipe(
-  Schema.filter(isIsoInstant, { message: () => "Expected an ISO-8601 instant" }),
+  Schema.check(Schema.makeFilter(isIsoInstant, { message: "Expected an ISO-8601 instant" })),
 );
 export type IsoInstant = typeof IsoInstant.Type;
 

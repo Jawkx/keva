@@ -36,7 +36,7 @@ export class Internal extends Schema.TaggedError<Internal>()("Internal", {
   message: Schema.String,
 }) {}
 
-export const KevaError = Schema.Union(
+export const KevaError = Schema.Union([
   ValidationError,
   Unauthorized,
   Forbidden,
@@ -47,14 +47,17 @@ export const KevaError = Schema.Union(
   RateLimitExceeded,
   StorageUnavailable,
   Internal,
-);
+]);
 export type KevaError = typeof KevaError.Type;
 
 export const BatchPatchResult = Schema.Struct({
   updated: Schema.Array(
     Schema.Struct({
       id: ItemId,
-      revision: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
+      revision: Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(1)),
+      ),
     }),
   ),
   failed: Schema.Array(Schema.Struct({ id: ItemId, error: KevaError })),

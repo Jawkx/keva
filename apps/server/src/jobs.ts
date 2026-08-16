@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { s3ConfigFor } from "./s3-config.js";
 import { runLifecycle } from "./lifecycle.js";
 
@@ -15,6 +16,6 @@ const s3 = s3ConfigFor({
 console.log(
   JSON.stringify({
     event: "lifecycle.cleanup.completed",
-    ...(await runLifecycle({ databaseUrl, s3 })),
+    ...(await Effect.runPromise(runLifecycle({ databaseUrl, s3 }))),
   }),
 );

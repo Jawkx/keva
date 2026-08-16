@@ -100,7 +100,7 @@ export interface FieldDescriptor {
   readonly column: string;
   readonly itemField: keyof KevaItem;
   readonly queryType: FieldQueryType;
-  readonly valueSchema?: Schema.Schema<string, string>;
+  readonly valueSchema?: Schema.Schema<string>;
 }
 
 export const FIELDS: readonly FieldDescriptor[] = [

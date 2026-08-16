@@ -28,10 +28,9 @@ export interface ViewStoreService {
   readonly delete: (tenantId: string, id: string) => Effect.Effect<boolean, StorageUnavailable>;
 }
 
-export class ViewStore extends Context.Tag("@keva/server/ViewStore")<
-  ViewStore,
-  ViewStoreService
->() {}
+export class ViewStore extends Context.Service<ViewStore, ViewStoreService>()(
+  "@keva/server/ViewStore",
+) {}
 
 interface ViewRow {
   readonly id: string;

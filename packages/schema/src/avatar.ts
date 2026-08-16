@@ -129,21 +129,24 @@ export const AVATAR_VARIANTS = {
 } as const;
 
 const OptionalAvatarFeature = <Values extends readonly [string, ...string[]]>(values: Values) =>
-  Schema.optional(Schema.NullOr(Schema.Literal(...values)));
+  Schema.optional(Schema.NullOr(Schema.Literals(values)));
 
 export const AvatarRecipe = Schema.Struct({
   version: Schema.Literal(1),
-  seed: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(128)),
+  seed: Schema.String.pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(128)),
+  ),
   beard: OptionalAvatarFeature(AVATAR_VARIANTS.beard),
   earrings: OptionalAvatarFeature(AVATAR_VARIANTS.earrings),
-  eyebrows: Schema.optional(Schema.Literal(...AVATAR_VARIANTS.eyebrows)),
-  eyes: Schema.optional(Schema.Literal(...AVATAR_VARIANTS.eyes)),
+  eyebrows: Schema.optional(Schema.Literals(AVATAR_VARIANTS.eyebrows)),
+  eyes: Schema.optional(Schema.Literals(AVATAR_VARIANTS.eyes)),
   freckles: Schema.optional(Schema.Boolean),
   glasses: OptionalAvatarFeature(AVATAR_VARIANTS.glasses),
-  hair: Schema.optional(Schema.Literal(...AVATAR_VARIANTS.hair)),
+  hair: Schema.optional(Schema.Literals(AVATAR_VARIANTS.hair)),
   hairAccessory: Schema.optional(Schema.NullOr(Schema.Literal("flowers"))),
-  head: Schema.optional(Schema.Literal(...AVATAR_VARIANTS.head)),
-  mouth: Schema.optional(Schema.Literal(...AVATAR_VARIANTS.mouth)),
-  nose: Schema.optional(Schema.Literal(...AVATAR_VARIANTS.nose)),
+  head: Schema.optional(Schema.Literals(AVATAR_VARIANTS.head)),
+  mouth: Schema.optional(Schema.Literals(AVATAR_VARIANTS.mouth)),
+  nose: Schema.optional(Schema.Literals(AVATAR_VARIANTS.nose)),
 });
 export type AvatarRecipe = typeof AvatarRecipe.Type;

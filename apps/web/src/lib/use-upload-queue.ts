@@ -81,7 +81,7 @@ export function useUploadQueue({
     if (!thumbnailJob) {
       thumbnailJob = Effect.runPromise(
         generateVideoThumbnailEffect(upload.file).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.sync(() => {
               console.warn("Could not generate video thumbnail", error);
               return null;
@@ -154,7 +154,7 @@ export function useUploadQueue({
                   )
                 : Effect.void,
             ),
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() => console.warn("Could not upload video thumbnail", error)),
             ),
           );

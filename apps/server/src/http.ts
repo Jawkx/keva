@@ -18,8 +18,8 @@ import { Authenticator } from "./auth.js";
 import { BillingMeter, isProgrammaticPrincipal } from "./billing.js";
 import { defectTypes, failureOrElse } from "./effect-failure.js";
 
-export const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
-  Schema.decodeUnknown(schema)(value).pipe(
+export const decode = <A>(schema: Schema.ConstraintDecoder<A>, value: unknown) =>
+  Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError(() => new ValidationError({ message: "Request validation failed" })),
   );
 
@@ -38,7 +38,7 @@ export const failureFrom = (cause: Cause.Cause<KevaError>): KevaError =>
   failureOrElse(cause, () => new Internal({ message: "Internal server error" }));
 
 export const reportDefect = (context: Context, cause: Cause.Cause<unknown>): void => {
-  if (Option.isSome(Cause.failureOption(cause))) return;
+  if (Option.isSome(Cause.findErrorOption(cause))) return;
   console.error(
     JSON.stringify({
       event: "http.request.defect",
@@ -70,7 +70,7 @@ export const execute = async <A>(
   if (Exit.isSuccess(exit)) return context.json(exit.value as never);
   reportDefect(context, exit.cause);
   const error = failureFrom(exit.cause);
-  if (Option.isSome(Cause.failureOption(exit.cause))) reportServiceFailure(context, error);
+  if (Option.isSome(Cause.findErrorOption(exit.cause))) reportServiceFailure(context, error);
   return context.json(error, statusFor(error) as never);
 };
 

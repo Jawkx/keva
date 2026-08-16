@@ -786,7 +786,7 @@ describe("Postgres metadata store", () => {
         yield* stage(initiated.item.stagingKey, bytes, "text/plain");
 
         const [confirmExit, reaped] = yield* Effect.all(
-          [Effect.either(engine.confirm(initiated.item.id)), reapPending({ pendingTtlMs: 1 })],
+          [Effect.result(engine.confirm(initiated.item.id)), reapPending({ pendingTtlMs: 1 })],
           { concurrency: "unbounded" },
         );
 
@@ -796,11 +796,11 @@ describe("Postgres metadata store", () => {
       }),
     );
 
-    if (outcome.confirmExit._tag === "Right") {
+    if (outcome.confirmExit._tag === "Success") {
       expect(outcome.status).toBe("ready");
       expect(outcome.reaped).toEqual({ completed: 0, failed: 0 });
     } else {
-      expect(outcome.confirmExit.left._tag).toBe("Conflict");
+      expect(outcome.confirmExit.failure._tag).toBe("Conflict");
       expect(outcome.status).toBe("deleting");
       expect(outcome.reaped).toEqual({ completed: 1, failed: 0 });
     }

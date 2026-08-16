@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderImageThumbnail } from "./processor.js";
@@ -30,7 +31,7 @@ describe("renderImageThumbnail", () => {
       .png()
       .toFile(input);
 
-    const result = await renderImageThumbnail(input, output);
+    const result = await Effect.runPromise(renderImageThumbnail(input, output));
     const metadata = await sharp(output).metadata();
 
     expect(metadata.format).toBe("webp");
@@ -43,8 +44,8 @@ describe("renderImageThumbnail", () => {
     const input = join(path, "corrupt.jpg");
     await writeFile(input, "not an image");
 
-    await expect(renderImageThumbnail(input, join(path, "output.webp"))).rejects.toThrow(
-      "UnsupportedSourceType",
-    );
+    await expect(
+      Effect.runPromise(renderImageThumbnail(input, join(path, "output.webp"))),
+    ).rejects.toThrow("UnsupportedSourceType");
   });
 });

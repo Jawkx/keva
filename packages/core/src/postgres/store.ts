@@ -804,7 +804,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
 });
 
 export const PostgresMetadataStoreLive = (config: PostgresConfig): Layer.Layer<MetadataStore> =>
-  Layer.scoped(
+  Layer.effect(
     MetadataStore,
     Effect.acquireRelease(
       Effect.sync(() =>

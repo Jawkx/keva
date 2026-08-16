@@ -34,7 +34,7 @@ const runLifecycleBatch = <R>(
     (item) =>
       operation(item).pipe(
         Effect.map((completed) => ({ completed, failed: false })),
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.logWarning(
             JSON.stringify({
               event: "lifecycle.item.failed",
@@ -95,7 +95,7 @@ export const sweepDeleting = (options: LifecycleJobOptions = {}) =>
             blobs
               .delete(attempt.stagingKey)
               .pipe(
-                Effect.zipRight(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" })),
+                Effect.andThen(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" })),
               ),
           );
           return yield* metadata.remove(item.tenantId, item.id, "deleting");
@@ -112,14 +112,14 @@ export const sweepStaging = (options: LifecycleJobOptions = {}) =>
       attempts,
       (attempt) =>
         blobs.delete(attempt.stagingKey).pipe(
-          Effect.zipRight(
+          Effect.andThen(
             attempt.state === "abandoned" || attempt.state === "confirming"
               ? blobs.delete(attempt.storageKey)
               : Effect.void,
           ),
-          Effect.zipRight(metadata.removeUploadAttempt(attempt.id)),
+          Effect.andThen(metadata.removeUploadAttempt(attempt.id)),
           Effect.map((completed) => ({ completed, failed: false })),
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             metadata
               .updateUploadAttempt(attempt.id, {
                 retryCount: attempt.retryCount + 1,

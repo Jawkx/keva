@@ -33,9 +33,9 @@ const stagePolicy = <A, E>(
   shouldRetry: ((error: E) => boolean) | undefined,
 ): Effect.Effect<A, E | UploadTimedOut> =>
   (shouldRetry ? effect.pipe(Effect.retry({ times: 2, while: shouldRetry })) : effect).pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: timeout,
-      onTimeout: () => new UploadTimedOut({ stage }),
+      orElse: () => Effect.fail(new UploadTimedOut({ stage })),
     }),
   );
 

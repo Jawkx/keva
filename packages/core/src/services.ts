@@ -43,7 +43,9 @@ export interface BlobStoreService {
   readonly delete: (key: string) => Effect.Effect<void, KevaError>;
 }
 
-export class BlobStore extends Context.Tag("@keva/core/BlobStore")<BlobStore, BlobStoreService>() {}
+export class BlobStore extends Context.Service<BlobStore, BlobStoreService>()(
+  "@keva/core/BlobStore",
+) {}
 
 export const SUGGESTION_KEY_LIMIT = 500;
 export const SUGGESTION_VALUE_LIMIT = 100;
@@ -228,7 +230,6 @@ export interface ItemPatchResult {
   readonly updated: KevaItem;
 }
 
-export class MetadataStore extends Context.Tag("@keva/core/MetadataStore")<
-  MetadataStore,
-  MetadataStoreService
->() {}
+export class MetadataStore extends Context.Service<MetadataStore, MetadataStoreService>()(
+  "@keva/core/MetadataStore",
+) {}

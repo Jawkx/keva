@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { MemoryRealtimeGateway } from "./realtime-memory.js";
 import { publishMediaResults } from "./media-results.js";
@@ -11,10 +12,12 @@ describe("publishMediaResults", () => {
       published.push({ tenantId, reason: event.reason, itemId: event.itemId });
     });
 
-    await publishMediaResults(realtime, {
-      readyItems: [{ tenantId: "tenant-a", itemId: id("01") }],
-      failedItems: [{ tenantId: "tenant-b", itemId: id("02") }],
-    });
+    await Effect.runPromise(
+      publishMediaResults(realtime, {
+        readyItems: [{ tenantId: "tenant-a", itemId: id("01") }],
+        failedItems: [{ tenantId: "tenant-b", itemId: id("02") }],
+      }),
+    );
 
     expect(published).toEqual([
       { tenantId: "tenant-a", reason: "thumbnail_ready", itemId: id("01") },

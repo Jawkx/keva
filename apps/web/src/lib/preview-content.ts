@@ -12,9 +12,9 @@ export const loadPreviewContent = <E>(
   binary: boolean,
 ): Effect.Effect<PreviewContent, E | PreviewTimeoutError> =>
   bytes.pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: 2 * 60_000,
-      onTimeout: () => new PreviewTimeoutError("Preview download timed out"),
+      orElse: () => Effect.fail(new PreviewTimeoutError("Preview download timed out")),
     }),
     Effect.map((content) =>
       binary

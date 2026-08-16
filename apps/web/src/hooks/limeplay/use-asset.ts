@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 import type shaka from "shaka-player";
 
 import { useCallback, useEffect } from "react";
@@ -471,10 +471,10 @@ export function assetFeature(): MediaFeature<
               ...(preloadManager === undefined ? {} : { preloadManager }),
               signal: abortController.signal,
               ...(startTime === undefined ? {} : { startTime }),
-            }).pipe(Effect.either),
+            }).pipe(Effect.result),
           );
 
-          if (Either.isRight(result)) {
+          if (Result.isSuccess(result)) {
             if (preloadManager) {
               const updated = new Map(preloadManagers);
               updated.delete(assetId);
@@ -493,7 +493,7 @@ export function assetFeature(): MediaFeature<
             return true;
           }
 
-          const workflowError = result.left;
+          const workflowError = result.failure;
           if (isWorkflowCancellation(workflowError)) {
             return false;
           }
@@ -642,19 +642,19 @@ export function assetFeature(): MediaFeature<
               player,
               preloadDefault,
               signal: abortController.signal,
-            }).pipe(Effect.either),
+            }).pipe(Effect.result),
           );
 
-          if (Either.isLeft(result)) {
-            if (!isWorkflowCancellation(result.left)) {
-              const error = toWorkflowError(getWorkflowCause(result.left));
+          if (Result.isFailure(result)) {
+            if (!isWorkflowCancellation(result.failure)) {
+              const error = toWorkflowError(getWorkflowCause(result.failure));
               events.emit("assetpreloaderror", { asset, error });
               console.error("[useAsset] Preload error:", error);
             }
             return;
           }
 
-          const manager = result.right;
+          const manager = result.success;
           if (!isCurrentPreload()) {
             if (manager) void Effect.runPromiseExit(destroyPreloadManagerEffect(manager));
             return;
@@ -893,7 +893,7 @@ function subscribeAssetEvents(
       },
       catch: toWorkflowError,
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() =>
           console.error("[useAsset] recover.playbackError callback failed:", error),
         ),

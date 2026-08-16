@@ -45,7 +45,7 @@ export function pictureInPictureFeature(): MediaFeature<PictureInPictureStore> {
 
           await Effect.runPromise(
             enterPictureInPictureEffect(media).pipe(
-              Effect.catchAll((error) =>
+              Effect.catch((error) =>
                 Effect.sync(() => console.error("Failed to enter Picture-in-Picture mode:", error)),
               ),
             ),
@@ -57,7 +57,7 @@ export function pictureInPictureFeature(): MediaFeature<PictureInPictureStore> {
 
           await Effect.runPromise(
             exitPictureInPictureEffect(media, document).pipe(
-              Effect.catchAll((error) =>
+              Effect.catch((error) =>
                 Effect.sync(() => console.error("Failed to exit Picture-in-Picture mode:", error)),
               ),
             ),

@@ -57,7 +57,10 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
       },
       catch: storageError,
     }).pipe(
-      Effect.timeoutFail({ duration: requestTimeoutMs, onTimeout: storageError }),
+      Effect.timeoutOrElse({
+        duration: requestTimeoutMs,
+        orElse: () => Effect.fail(storageError()),
+      }),
       Effect.flatMap((response) =>
         accepts(response) ? Effect.succeed(response) : Effect.fail(storageError()),
       ),

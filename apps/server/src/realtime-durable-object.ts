@@ -36,26 +36,34 @@ export const makeDurableObjectRealtimeGateway = (
       Effect.sync(() => {
         const payload = validateRealtimeEvent(event);
         const stub = namespace.get(namespace.idFromName(tenantId));
-        const publication = stub
-          .fetch(
-            internalRequest("/publish", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(payload),
-            }),
-          )
-          .then((response) => {
-            if (!response.ok) throw new Error(`Realtime publish failed: ${response.status}`);
-          })
-          .catch((error: unknown) => {
-            console.warn(
-              JSON.stringify({
-                event: "realtime.publish.failed",
-                errorType: error instanceof Error ? error.name : typeof error,
+        const publication = Effect.tryPromise({
+          try: () =>
+            stub.fetch(
+              internalRequest("/publish", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(payload),
               }),
-            );
-          });
-        executionContext.waitUntil(publication);
+            ),
+          catch: (cause) => new Error("Realtime publish request failed", { cause }),
+        }).pipe(
+          Effect.flatMap((response) =>
+            response.ok
+              ? Effect.void
+              : Effect.fail(new Error(`Realtime publish failed: ${response.status}`)),
+          ),
+          Effect.catch((error) =>
+            Effect.sync(() =>
+              console.warn(
+                JSON.stringify({
+                  event: "realtime.publish.failed",
+                  errorType: error.name,
+                }),
+              ),
+            ),
+          ),
+        );
+        executionContext.waitUntil(Effect.runPromise(publication));
       }),
   },
   stream: (tenantId, signal) => {

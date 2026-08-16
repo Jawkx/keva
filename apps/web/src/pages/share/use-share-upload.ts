@@ -132,7 +132,7 @@ export function useShareUpload(): ShareUpload {
     const identity = self.allowOwnDelete ? ensureShareIdentityEffect : Effect.void;
     const workflow = identity.pipe(
       Effect.andThen(Effect.forEach(entries, uploadOne, { concurrency: 3, discard: true })),
-      Effect.catchAll((error) => Effect.sync(() => failUploads(entries, error))),
+      Effect.catch((error) => Effect.sync(() => failUploads(entries, error))),
       Effect.ensuring(Effect.sync(() => controllers.current.delete(controller))),
     );
     void Effect.runPromise(workflow, { signal: controller.signal });

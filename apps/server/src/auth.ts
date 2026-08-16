@@ -23,10 +23,9 @@ export interface AuthenticatorService {
   ) => Effect.Effect<Principal, Unauthorized | StorageUnavailable>;
 }
 
-export class Authenticator extends Context.Tag("@keva/server/Authenticator")<
-  Authenticator,
-  AuthenticatorService
->() {}
+export class Authenticator extends Context.Service<Authenticator, AuthenticatorService>()(
+  "@keva/server/Authenticator",
+) {}
 
 export type AuthStrategy = (
   request: AuthRequest,
@@ -112,10 +111,9 @@ export interface ApiTokenStoreService {
   readonly revoke: (tenantId: string, id: string) => Effect.Effect<boolean, StorageUnavailable>;
 }
 
-export class ApiTokenStore extends Context.Tag("@keva/server/ApiTokenStore")<
-  ApiTokenStore,
-  ApiTokenStoreService
->() {}
+export class ApiTokenStore extends Context.Service<ApiTokenStore, ApiTokenStoreService>()(
+  "@keva/server/ApiTokenStore",
+) {}
 
 export const randomTokenPart = (bytes: number): string => {
   const value = crypto.getRandomValues(new Uint8Array(bytes));

@@ -5,10 +5,10 @@ import { runEffectPromise } from "./effect-runtime";
 
 export type SessionApiError = KevaErrorType | KevaProtocolError | KevaTransportError;
 
-export const sessionApiRequestEffect = <A, I>(
+export const sessionApiRequestEffect = <A>(
   method: string,
   path: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.ConstraintDecoder<A>,
   body?: unknown,
 ): Effect.Effect<A, SessionApiError> =>
   Effect.gen(function* () {
@@ -25,23 +25,23 @@ export const sessionApiRequestEffect = <A, I>(
     });
     const payload: unknown = yield* Effect.promise(() => response.json().catch(() => undefined));
     if (!response.ok) {
-      const error = yield* Schema.decodeUnknown(KevaError)(payload).pipe(
+      const error = yield* Schema.decodeUnknownEffect(KevaError)(payload).pipe(
         Effect.mapError(
           () => new KevaProtocolError(`Request to ${path} failed with ${response.status}`),
         ),
       );
       return yield* Effect.fail(error);
     }
-    return yield* Schema.decodeUnknown(schema)(payload).pipe(
+    return yield* Schema.decodeUnknownEffect(schema)(payload).pipe(
       Effect.mapError(
         () => new KevaProtocolError(`Request to ${path} returned an invalid response`),
       ),
     );
   });
 
-export const sessionApiRequest = <A, I>(
+export const sessionApiRequest = <A>(
   method: string,
   path: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.ConstraintDecoder<A>,
   body?: unknown,
 ): Promise<A> => runEffectPromise(sessionApiRequestEffect(method, path, schema, body));

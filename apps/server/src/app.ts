@@ -99,23 +99,18 @@ const makeServices = (options: AppServiceOptions): ResolvedServices => ({
   ...(options.dispose ? { dispose: options.dispose } : {}),
 });
 
-const disposeServices = async (services: ResolvedServices): Promise<void> => {
-  const failures: unknown[] = [];
-  try {
-    await services.runtime.dispose();
-  } catch (error) {
-    failures.push(error);
-  }
-  try {
-    await services.dispose?.();
-  } catch (error) {
-    failures.push(error);
-  }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) {
-    throw new AggregateError(failures, "Failed to dispose server services");
-  }
-};
+const disposeServices = (services: ResolvedServices) =>
+  Effect.gen(function* () {
+    const exits = yield* Effect.all([
+      Effect.exit(Effect.tryPromise(() => services.runtime.dispose())),
+      Effect.exit(Effect.tryPromise(() => services.dispose?.() ?? Promise.resolve())),
+    ]);
+    const failures = exits.filter(Exit.isFailure).map((exit) => Cause.squash(exit.cause));
+    if (failures.length === 1) return yield* Effect.fail(failures[0]);
+    if (failures.length > 1) {
+      return yield* Effect.fail(new AggregateError(failures, "Failed to dispose server services"));
+    }
+  });
 
 export const createApp = (options: CreateAppOptions): KevaApp => {
   const app = new Hono() as KevaApp;
@@ -124,7 +119,9 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
   let disposePromise: Promise<void> | undefined;
   Object.defineProperty(app, "dispose", {
     value: () =>
-      (disposePromise ??= fixedServices ? disposeServices(fixedServices) : Promise.resolve()),
+      (disposePromise ??= fixedServices
+        ? Effect.runPromise(disposeServices(fixedServices))
+        : Promise.resolve()),
   });
   const resolveServices = (context: Context): ResolvedServices =>
     fixedServices ?? makeServices(getRequestServices!(context));
@@ -137,7 +134,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
     try {
       return await handler(services);
     } finally {
-      if (!fixedServices) await disposeServices(services);
+      if (!fixedServices) await Effect.runPromise(disposeServices(services));
     }
   };
 
@@ -173,7 +170,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
       }
       reportDefect(context, exit.cause);
       const error = failureFrom(exit.cause);
-      if (Option.isSome(Cause.failureOption(exit.cause))) reportServiceFailure(context, error);
+      if (Option.isSome(Cause.findErrorOption(exit.cause))) reportServiceFailure(context, error);
       const status = error._tag === "Unauthorized" ? 401 : error._tag === "Forbidden" ? 403 : 503;
       return context.json(error, status);
     }),
@@ -191,7 +188,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
       );
       if (Exit.isSuccess(ready)) return context.json({ ok: true, service: "keva" });
       reportDefect(context, ready.cause);
-      if (Option.isSome(Cause.failureOption(ready.cause))) {
+      if (Option.isSome(Cause.findErrorOption(ready.cause))) {
         reportServiceFailure(context, failureFrom(ready.cause));
       }
       return context.json({ ok: false, service: "keva" }, 503);
@@ -457,7 +454,10 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
             limitRaw === undefined
               ? undefined
               : yield* decode(
-                  Schema.NumberFromString.pipe(Schema.int(), Schema.between(1, 200)),
+                  Schema.NumberFromString.check(
+                    Schema.isInt(),
+                    Schema.isBetween({ minimum: 1, maximum: 200 }),
+                  ),
                   limitRaw,
                 );
           const cursor = context.req.query("cursor");
@@ -567,7 +567,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           (id) =>
             engine.restore(id).pipe(
               Effect.as({ id, error: undefined as string | undefined }),
-              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+              Effect.catch((error) => Effect.succeed({ id, error: error.message })),
             ),
           { concurrency: 8 },
         );
@@ -593,7 +593,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           (id) =>
             engine.purge(id).pipe(
               Effect.as({ id, error: undefined as string | undefined }),
-              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+              Effect.catch((error) => Effect.succeed({ id, error: error.message })),
             ),
           { concurrency: 8 },
         );
@@ -658,7 +658,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           (id) =>
             engine.delete(id).pipe(
               Effect.as({ id, error: undefined as string | undefined }),
-              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+              Effect.catch((error) => Effect.succeed({ id, error: error.message })),
             ),
           { concurrency: 8 },
         );

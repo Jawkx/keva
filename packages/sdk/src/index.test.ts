@@ -103,11 +103,11 @@ describe("KevaClient", () => {
         Response.json({ _tag: "NotFound", message: "Item not found" }, { status: 404 }),
     });
 
-    const result = await Effect.runPromise(client.getEffect("missing").pipe(Effect.either));
+    const result = await Effect.runPromise(client.getEffect("missing").pipe(Effect.result));
 
     expect(result).toMatchObject({
-      _tag: "Left",
-      left: { _tag: "NotFound", message: "Item not found" },
+      _tag: "Failure",
+      failure: { _tag: "NotFound", message: "Item not found" },
     });
   });
 
@@ -136,7 +136,7 @@ describe("KevaClient", () => {
     controller.abort();
     const exit = await running;
 
-    expect(Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)).toBe(true);
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
   });
 
   it("preserves Promise transport rejection compatibility", async () => {
@@ -188,7 +188,7 @@ describe("KevaClient", () => {
     const exit = await running;
 
     expect(bodyAborted).toBe(true);
-    expect(Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)).toBe(true);
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
   });
 
   it("passes upload bodies directly to fetch", async () => {

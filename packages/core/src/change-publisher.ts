@@ -5,10 +5,9 @@ export interface ChangePublisherService {
   readonly publish: (tenantId: string, event: RealtimeEvent) => Effect.Effect<void, never>;
 }
 
-export class ChangePublisher extends Context.Tag("@keva/core/ChangePublisher")<
-  ChangePublisher,
-  ChangePublisherService
->() {}
+export class ChangePublisher extends Context.Service<ChangePublisher, ChangePublisherService>()(
+  "@keva/core/ChangePublisher",
+) {}
 
 export const ChangePublisherNoop = Layer.succeed(ChangePublisher, {
   publish: () => Effect.void,

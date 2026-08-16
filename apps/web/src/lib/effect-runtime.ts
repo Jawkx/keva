@@ -6,6 +6,6 @@ export const runEffectPromise = <A, E>(
 ): Promise<A> =>
   Effect.runPromiseExit(effect, signal ? { signal } : undefined).then((exit) => {
     if (Exit.isSuccess(exit)) return exit.value;
-    const failure = Cause.failureOption(exit.cause);
+    const failure = Cause.findErrorOption(exit.cause);
     throw Option.isSome(failure) ? failure.value : Cause.squash(exit.cause);
   });

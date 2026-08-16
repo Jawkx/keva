@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 import {
   AuthProtocolError,
   AuthRejected,
@@ -21,30 +21,30 @@ describe("authOperationEffect", () => {
       authOperationEffect(async () => ({
         data: null,
         error: { code: "INVALID_CREDENTIALS", message: "Wrong password" },
-      })).pipe(Effect.either),
+      })).pipe(Effect.result),
     );
 
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) expect(result.left).toBeInstanceOf(AuthRejected);
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) expect(result.failure).toBeInstanceOf(AuthRejected);
   });
 
   it("normalizes thrown transport errors", async () => {
     const result = await Effect.runPromise(
       authOperationEffect(async () => {
         throw new Error("offline");
-      }).pipe(Effect.either),
+      }).pipe(Effect.result),
     );
 
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) expect(result.left).toBeInstanceOf(AuthTransportError);
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) expect(result.failure).toBeInstanceOf(AuthTransportError);
   });
 
   it("rejects invalid responses", async () => {
     const result = await Effect.runPromise(
-      authOperationEffect(async () => null as never).pipe(Effect.either),
+      authOperationEffect(async () => null as never).pipe(Effect.result),
     );
 
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) expect(result.left).toBeInstanceOf(AuthProtocolError);
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) expect(result.failure).toBeInstanceOf(AuthProtocolError);
   });
 });

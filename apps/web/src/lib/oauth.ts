@@ -60,7 +60,7 @@ export const submitConsentEffect = (
         new OAuthConsentError(message ?? "Could not record your decision."),
       );
     }
-    const result = yield* Schema.decodeUnknown(ConsentResponse)(payload).pipe(
+    const result = yield* Schema.decodeUnknownEffect(ConsentResponse)(payload).pipe(
       Effect.mapError(() => new KevaProtocolError("Consent response was invalid")),
     );
     return result.redirectURI;

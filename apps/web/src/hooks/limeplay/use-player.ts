@@ -1,6 +1,6 @@
 "use client";
 
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 import React, { useRef } from "react";
 import shaka from "shaka-player";
 
@@ -143,10 +143,11 @@ export function usePlayer<TAsset extends { id: string }>(options?: UsePlayerOpti
             }
           },
           catch: (cause) => cause,
-        }).pipe(Effect.either),
+        }).pipe(Effect.result),
       );
-      if (Either.isRight(loaded)) return true;
-      if (!isLoadInterrupted(loaded.left)) options.onError(toWorkflowError(loaded.left), asset);
+      if (Result.isSuccess(loaded)) return true;
+      if (!isLoadInterrupted(loaded.failure))
+        options.onError(toWorkflowError(loaded.failure), asset);
       return false;
     },
     [mediaElement, options, store],
@@ -163,17 +164,17 @@ export function usePlayer<TAsset extends { id: string }>(options?: UsePlayerOpti
         Effect.tryPromise({
           try: () => options.onPreload!(asset, currentPlayer),
           catch: (cause) => cause,
-        }).pipe(Effect.either),
+        }).pipe(Effect.result),
       );
-      if (Either.isLeft(preloaded)) {
-        const error = toWorkflowError(preloaded.left);
+      if (Result.isFailure(preloaded)) {
+        const error = toWorkflowError(preloaded.failure);
         options.onError(error, asset);
         console.error("[usePlayer] Preload error:", error);
         return;
       }
-      if (preloaded.right) {
+      if (preloaded.success) {
         const preloadManagers = store.getState().player.preloadManagers;
-        preloadManagers.set(asset.id, preloaded.right);
+        preloadManagers.set(asset.id, preloaded.success);
         store.setState(({ player }) => {
           player.preloadManagers = new Map(preloadManagers);
         });
@@ -240,15 +241,15 @@ function PlayerSetup() {
 
       const localPlayer = new shaka.Player();
       const attached = await Effect.runPromise(
-        attachPlayerEffect(localPlayer, mediaElement, () => aborted).pipe(Effect.either),
+        attachPlayerEffect(localPlayer, mediaElement, () => aborted).pipe(Effect.result),
       );
 
-      if (Either.isLeft(attached)) {
-        if (attached.left instanceof MediaWorkflowAborted) {
+      if (Result.isFailure(attached)) {
+        if (attached.failure instanceof MediaWorkflowAborted) {
           void Effect.runPromiseExit(destroyPlayerEffect(localPlayer));
           return;
         }
-        const error = toWorkflowError(attached.left.cause);
+        const error = toWorkflowError(attached.failure.cause);
         console.error("[usePlayer] Failed to attach player to media element:", error);
         events.emit("playererror", { error });
         return;

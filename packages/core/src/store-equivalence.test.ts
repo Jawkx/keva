@@ -198,13 +198,13 @@ const patchAtPropertyLimit = async () => {
     store.patch(tenant, id, { fields: {}, set: properties, unset: [] }, timestamp),
   );
   const rejected = await Effect.runPromise(
-    Effect.either(
+    Effect.result(
       store.patch(tenant, id, { fields: {}, set: { overflow: "yes" }, unset: [] }, timestamp),
     ),
   );
   const item = await Effect.runPromise(store.get(tenant, id));
   return {
-    rejected: rejected._tag === "Left" ? rejected.left._tag : null,
+    rejected: rejected._tag === "Failure" ? rejected.failure._tag : null,
     properties: item?.properties,
   };
 };
@@ -392,7 +392,7 @@ describe("postgres store semantics", () => {
     );
 
     const result = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         store.query(tenant, {
           where: [],
           limit: 1,
@@ -401,6 +401,6 @@ describe("postgres store semantics", () => {
         }),
       ),
     );
-    expect(result).toMatchObject({ _tag: "Left", left: { _tag: "ValidationError" } });
+    expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "ValidationError" } });
   });
 });

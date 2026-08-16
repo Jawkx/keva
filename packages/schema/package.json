@@ -16,7 +16,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "effect": "3.21.4"
+    "effect": "4.0.0-rc.109"
   },
   "devDependencies": {
     "@keva/tsconfig": "workspace:*",

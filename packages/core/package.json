@@ -31,7 +31,7 @@
     "@keva/schema": "workspace:*",
     "aws4fetch": "1.0.20",
     "drizzle-orm": "0.45.2",
-    "effect": "3.21.4",
+    "effect": "4.0.0-rc.109",
     "postgres": "3.4.9"
   },
   "devDependencies": {

@@ -85,8 +85,8 @@ export const principalFromMcpToken = (
   },
 });
 
-const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
-  Schema.decodeUnknown(schema)(value).pipe(
+const decode = <A>(schema: Schema.ConstraintDecoder<A>, value: unknown) =>
+  Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError(() => new ValidationError({ message: "Tool input validation failed" })),
   );
 
@@ -96,7 +96,7 @@ const runEngine = async <A>(
 ): Promise<A> => {
   const exit = await runtime.runPromiseExit(effect);
   if (Exit.isSuccess(exit)) return exit.value;
-  if (Option.isNone(Cause.failureOption(exit.cause))) {
+  if (Option.isNone(Cause.findErrorOption(exit.cause))) {
     console.error(
       JSON.stringify({ event: "mcp.engine.defect", defectTypes: defectTypes(exit.cause) }),
     );
@@ -105,16 +105,16 @@ const runEngine = async <A>(
   throw new ClientSafeToolError(error.message);
 };
 
-const runValidated = <A, I>(
+const runValidated = <A>(
   runtime: AppRuntime,
   effect: Effect.Effect<A, KevaError, RuntimeServices>,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.ConstraintDecoder<A>,
 ): Promise<A> =>
   runEngine(
     runtime,
     effect.pipe(
       Effect.flatMap((value) =>
-        Schema.decodeUnknown(schema)(value).pipe(
+        Schema.decodeUnknownEffect(schema)(value).pipe(
           Effect.mapError(() => new Internal({ message: "Invalid engine response" })),
         ),
       ),
@@ -226,9 +226,9 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
             },
             catch: () => new StorageUnavailable({ message: "Blob upload failed" }),
           }).pipe(
-            Effect.timeoutFail({
+            Effect.timeoutOrElse({
               duration: 30_000,
-              onTimeout: () => new StorageUnavailable({ message: "Blob upload failed" }),
+              orElse: () => Effect.fail(new StorageUnavailable({ message: "Blob upload failed" })),
             }),
           );
           return toOwnerItem(yield* engine.confirm(result.item.id));
@@ -278,7 +278,7 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
             (id) =>
               engine.delete(id).pipe(
                 Effect.as({ id, error: undefined as string | undefined }),
-                Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+                Effect.catch((error) => Effect.succeed({ id, error: error.message })),
               ),
             { concurrency: 8 },
           );
@@ -429,18 +429,18 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
         const names = await deps.resolveActorNames(session.userId, session.clientId);
         const principal = principalFromMcpToken(session, tenantId, names);
         const metered = await runtime.runPromise(
-          Effect.either(
+          Effect.result(
             Effect.gen(function* () {
               const billing = yield* BillingMeter;
               yield* billing.consumeApiRequest(tenantId);
             }),
           ),
         );
-        if (metered._tag === "Left") {
+        if (metered._tag === "Failure") {
           return Response.json(
             {
               jsonrpc: "2.0",
-              error: { code: -32029, message: metered.left.message },
+              error: { code: -32029, message: metered.failure.message },
               id: null,
             },
             { status: 429, headers: { "Retry-After": "3600" } },

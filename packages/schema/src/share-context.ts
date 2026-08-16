@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { Properties } from "./properties.js";
 import { QueryCondition } from "./query.js";
 
-export const ShareScope = Schema.Literal("read", "write");
+export const ShareScope = Schema.Literals(["read", "write"]);
 export type ShareScope = typeof ShareScope.Type;
 
 // The slice of a resolved share grant the engine needs to enforce access. Built

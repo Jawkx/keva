@@ -43,7 +43,7 @@ const publishChange = (tenantId: string, reason: RealtimeEventReason, itemId?: s
       occurredAt: now(),
     });
   }).pipe(
-    Effect.catchAllCause(() =>
+    Effect.catchCause(() =>
       Effect.logWarning(
         JSON.stringify({
           event: "items.changed.publish.failed",
@@ -412,7 +412,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* publishChange(principal.tenantId, "uploaded", confirmed.id);
       yield* metadata.updateUploadAttempt(attempt.id, { state: "confirmed" });
       yield* blobs.delete(item.stagingKey).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.logWarning(
             JSON.stringify({
               event: "lifecycle.staging_cleanup.failed",
@@ -506,7 +506,7 @@ export const makeKevaEngine = (principal: Principal) => ({
               id,
               revision: item.revision,
             })),
-            Effect.catchAll((error) => Effect.succeed({ status: "failed" as const, id, error })),
+            Effect.catch((error) => Effect.succeed({ status: "failed" as const, id, error })),
           ),
         { concurrency: 8 },
       );
@@ -663,7 +663,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* Effect.forEach(attempts, (attempt) =>
         blobs
           .delete(attempt.stagingKey)
-          .pipe(Effect.zipRight(metadata.removeUploadAttempt(attempt.id))),
+          .pipe(Effect.andThen(metadata.removeUploadAttempt(attempt.id))),
       );
       yield* metadata.remove(principal.tenantId, id, "deleting");
     }),
@@ -723,7 +723,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* Effect.forEach(attempts, (attempt) =>
         blobs
           .delete(attempt.stagingKey)
-          .pipe(Effect.zipRight(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" }))),
+          .pipe(Effect.andThen(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" }))),
       );
       yield* metadata.remove(principal.tenantId, id, "deleting");
     }),
