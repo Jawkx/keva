@@ -54,7 +54,7 @@ export const inferPropertyValue = (raw: string): PropertyInputResult => {
 };
 
 export const scalarToInput = (value: PropertyValue): string =>
-  typeof value === "string" ? value : "";
+  Schema.is(Schema.String)(value) ? value : "";
 
 export const validateKey = (key: string): string | null => {
   if (!key) return "Key is required";
@@ -68,26 +68,28 @@ export type ParseResult =
   | { ok: true; value: Record<string, PropertyValue> }
   | { ok: false; error: string };
 
+const JsonObject = Schema.Record(Schema.String, Schema.Unknown);
+
 export const parsePropertiesJson = (text: string): ParseResult => {
   let data: unknown;
   try {
     data = JSON.parse(text);
-  } catch (err) {
-    return { ok: false, error: `Invalid JSON — ${(err as Error).message}` };
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return { ok: false, error: `Invalid JSON — ${message}` };
   }
-  if (data === null || typeof data !== "object" || Array.isArray(data))
+  if (!Schema.is(JsonObject)(data))
     return { ok: false, error: "The top level must be a JSON object" };
 
-  const entries = Object.entries(data as Record<string, unknown>);
-
-  for (const [key, value] of entries) {
+  const value: Record<string, PropertyValue> = {};
+  for (const [key, entry] of Object.entries(data)) {
     const keyError = validateKey(key);
     if (keyError) return { ok: false, error: `Key “${key}” — ${keyError}` };
-    if (!Schema.is(PropertyValueSchema)(value))
+    if (!Schema.is(PropertyValueSchema)(entry))
       return { ok: false, error: `“${key}” has an invalid property value` };
+    value[key] = entry;
   }
 
-  const value = Object.fromEntries(entries) as Record<string, PropertyValue>;
   const failure = validateProperties(value);
   if (failure) return { ok: false, error: formatPropertyLimitFailure(failure) };
   return { ok: true, value };
@@ -99,10 +101,15 @@ const valuesEqual = (a: PropertyValue, b: PropertyValue): boolean => {
   return a === b;
 };
 
+export interface PropertyDiff {
+  readonly set: Record<string, PropertyValue>;
+  readonly unset: string[];
+}
+
 export const diffProperties = (
   original: Record<string, PropertyValue>,
   next: Record<string, PropertyValue>,
-): { set: Record<string, PropertyValue>; unset: string[] } => {
+): PropertyDiff => {
   const set: Record<string, PropertyValue> = {};
   for (const [key, value] of Object.entries(next)) {
     if (!(key in original) || !valuesEqual(original[key]!, value)) set[key] = value;

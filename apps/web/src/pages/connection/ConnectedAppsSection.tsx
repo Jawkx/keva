@@ -26,10 +26,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmRevoke } from "./ConfirmRevoke";
 
-const connectionStatus = (connection: {
-  active: boolean;
-  observed: boolean;
-}): { label: string; variant: "default" | "secondary" | "outline" } => {
+interface ConnectionStatus {
+  readonly label: string;
+  readonly variant: "default" | "secondary" | "outline";
+}
+
+const connectionStatus = (connection: { active: boolean; observed: boolean }): ConnectionStatus => {
   if (connection.active && connection.observed) return { label: "Connected", variant: "default" };
   if (connection.active) return { label: "Authorized", variant: "secondary" };
   return { label: "Reconnect required", variant: "outline" };

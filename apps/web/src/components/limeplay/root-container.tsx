@@ -2,6 +2,8 @@
 
 import { composeRefs } from "@radix-ui/react-compose-refs";
 import { Slot } from "@radix-ui/react-slot";
+import isNumber from "lodash/isNumber";
+import isString from "lodash/isString";
 import React from "react";
 
 import { cn } from "@/lib/utils";
@@ -58,6 +60,16 @@ export const RootContainer = React.forwardRef<HTMLDivElement, RootContainerProps
       [aspectRatioProp, height, width],
     );
     const Component = render ? Slot : asChild ? Slot : "div";
+    const rootStyle = {
+      ...style,
+      "--aspect-ratio": aspectRatio,
+      "--height": height,
+      "--width": width,
+    } satisfies React.CSSProperties & {
+      "--aspect-ratio": string | undefined;
+      "--height": number;
+      "--width": number;
+    };
 
     return (
       <Component
@@ -75,12 +87,7 @@ export const RootContainer = React.forwardRef<HTMLDivElement, RootContainerProps
         data-status={status}
         ref={composeRefs(forwardedRef, setPlayerContainerRef)}
         role="region"
-        style={{
-          ...style,
-          ["--aspect-ratio" as string]: aspectRatio,
-          ["--height" as string]: height,
-          ["--width" as string]: width,
-        }}
+        style={rootStyle}
         {...etc}
       >
         {render ? React.cloneElement(render, undefined, children) : children}
@@ -109,8 +116,8 @@ function resolveAspectRatio(
   height?: number,
 ) {
   if (aspectRatio === false) return undefined;
-  if (typeof aspectRatio === "number") return String(aspectRatio);
-  if (typeof aspectRatio === "string") {
+  if (isNumber(aspectRatio)) return String(aspectRatio);
+  if (isString(aspectRatio)) {
     return aspectRatio.split(":").join("/");
   }
 

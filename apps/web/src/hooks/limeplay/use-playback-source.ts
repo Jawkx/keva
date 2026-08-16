@@ -1,3 +1,4 @@
+import isString from "lodash/isString";
 import { useEffect, useMemo, useRef } from "react";
 
 import type { GetAssetId, PlayerSource, TAsset, UseAssetOptions } from "@/hooks/limeplay/use-asset";
@@ -25,8 +26,14 @@ function getSourceOrigin<TItem extends TAsset>(
   source: PlayerSource<TItem> | undefined,
 ): Parameters<GetAssetId<TItem>>[1]["origin"] {
   if (Array.isArray(source)) return AssetSourceOrigin.Playlist;
-  if (typeof source === "string") return AssetSourceOrigin.MediaProps;
+  if (isString(source)) return AssetSourceOrigin.MediaProps;
   return AssetSourceOrigin.Asset;
+}
+
+function isAssetSourceArray<TItem extends TAsset>(
+  source: PlayerSource<TItem> | undefined,
+): source is readonly TItem[] {
+  return Array.isArray(source);
 }
 
 function usePlaybackSource<TItem extends TAsset>(
@@ -34,11 +41,9 @@ function usePlaybackSource<TItem extends TAsset>(
 ): void {
   const { autoLoad = true, initialIndex = 0, loading, source, sourceKey } = options;
 
-  const assets = useMemo(() => {
-    if (Array.isArray(source)) return [...source];
-    if (typeof source === "string") return [{ src: source } as TItem];
-    if (source) return [source];
-
+  const assets = useMemo((): TItem[] => {
+    if (isAssetSourceArray(source)) return [...source];
+    if (source && !isString(source)) return [source];
     return [];
   }, [source]);
   const player = usePlayerStore((state) => state.instance);
@@ -51,6 +56,8 @@ function usePlaybackSource<TItem extends TAsset>(
 
   const resolvedSourceKey = useMemo(() => {
     if (sourceKey) return sourceKey;
+
+    if (isString(source)) return source;
 
     return assets
       .map((item, index) => {
@@ -79,17 +86,25 @@ function usePlaybackSource<TItem extends TAsset>(
   }, [requestKey]);
 
   useEffect(() => {
-    if (!autoLoad || !player || source === undefined || assets.length === 0) return;
+    if (
+      !autoLoad ||
+      !player ||
+      source === undefined ||
+      (Array.isArray(source) && source.length === 0)
+    ) {
+      return;
+    }
 
     if (loadedSourceKeyRef.current === requestKey) return;
     loadedSourceKeyRef.current = requestKey;
 
-    loadSource(source, {
+    const loadOptions: Parameters<typeof loadSource>[1] = {
       initialIndex,
-      ...(loading === undefined ? {} : { loading }),
-      ...(sourceKey === undefined ? {} : { sourceKey }),
       sourceType,
-    });
+    };
+    if (loading !== undefined) loadOptions.loading = loading;
+    if (sourceKey !== undefined) loadOptions.sourceKey = sourceKey;
+    loadSource(source, loadOptions);
   }, [
     assets,
     autoLoad,

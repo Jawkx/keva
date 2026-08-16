@@ -59,10 +59,10 @@ type Preview =
 
 type Panel = "preview" | "info";
 
-const PANEL_LABELS: Record<Panel, string> = {
+const PANEL_LABELS = {
   preview: "Preview",
   info: "Info",
-};
+} satisfies Readonly<Record<Panel, string>>;
 
 interface ShareFileDetailProps {
   itemId: string;
@@ -125,7 +125,8 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
     () => (item && isPreviewable(item) ? ["preview", "info"] : ["info"]),
     [item],
   );
-  const panel: Panel = activePanel && panels.includes(activePanel) ? activePanel : panels[0]!;
+  const panel: Panel =
+    activePanel && panels.includes(activePanel) ? activePanel : (panels[0] ?? "info");
 
   const loadVideoSource = useCallback(() => client.getDownloadUrl(itemId), [client, itemId]);
 
@@ -218,8 +219,8 @@ export function ShareFileDetail({ itemId, onClose }: ShareFileDetailProps) {
             variant="outline"
             value={[panel]}
             onValueChange={(value) => {
-              const next = value[0] as Panel | undefined;
-              if (next) setActivePanel(next);
+              const next = value[0];
+              if (next === "preview" || next === "info") setActivePanel(next);
             }}
             className="w-full"
             aria-label="Detail panel"

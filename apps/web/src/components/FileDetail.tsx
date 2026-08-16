@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { ItemPresentation, PropertyValue } from "@keva/schema";
+import type { ImageRotation, ItemPresentation, PropertyValue } from "@keva/schema";
 import type { KevaItem } from "@keva/sdk";
 import { FileActivity } from "./FileActivity";
 import { PropertiesEditor } from "./PropertiesEditor";
@@ -60,14 +60,32 @@ type Preview =
 
 type Panel = "preview" | "properties" | "activity";
 
-const PANEL_LABELS: Record<Panel, string> = {
+const PANEL_LABELS = {
   preview: "Preview",
   properties: "Properties",
   activity: "Activity",
-};
+} satisfies Readonly<Record<Panel, string>>;
 
 const panelsFor = (o: KevaItem): Panel[] =>
   isPreviewable(o) ? ["preview", "properties", "activity"] : ["properties", "activity"];
+
+const panelFromParam = (value: string | null): Panel | null => {
+  if (value === "preview" || value === "properties" || value === "activity") return value;
+  return null;
+};
+
+const nextImageRotation = (rotation: ImageRotation, direction: -1 | 1): ImageRotation => {
+  if (direction === 1) {
+    if (rotation === 0) return 90;
+    if (rotation === 90) return 180;
+    if (rotation === 180) return 270;
+    return 0;
+  }
+  if (rotation === 0) return 270;
+  if (rotation === 90) return 0;
+  if (rotation === 180) return 90;
+  return 180;
+};
 
 const extensionStart = (name: string): number => {
   const dot = name.lastIndexOf(".");
@@ -149,12 +167,12 @@ export function FileDetail({
     return { kind: "text", text: contentQuery.data.text };
   }, [item, contentQuery.data, itemId]);
 
-  const panels = useMemo(
-    () => (item ? (trashMode ? (["preview"] as Panel[]) : panelsFor(item)) : []),
-    [item, trashMode],
-  );
+  const panels = useMemo<Panel[]>(() => {
+    if (!item) return [];
+    return trashMode ? ["preview"] : panelsFor(item);
+  }, [item, trashMode]);
 
-  const paramPanel = searchParams.get("panel") as Panel | null;
+  const paramPanel = panelFromParam(searchParams.get("panel"));
   const activePanel: Panel =
     paramPanel && panels.includes(paramPanel) ? paramPanel : (panels[0] ?? "properties");
 
@@ -324,7 +342,7 @@ export function FileDetail({
 
   const rotateImage = (direction: -1 | 1) => {
     if (!item || rotationMutation.isPending) return;
-    const rotation = ((((imageRotation + direction * 90) % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+    const rotation = nextImageRotation(imageRotation, direction);
     rotationMutation.mutate({
       presentation: {
         ...item.presentation,
@@ -508,7 +526,7 @@ export function FileDetail({
             variant="outline"
             value={[activePanel]}
             onValueChange={(value) => {
-              const next = value[0] as Panel | undefined;
+              const next = panelFromParam(value[0] ?? null);
               if (next) setPanel(next);
             }}
             className="w-full"

@@ -8,10 +8,22 @@ export interface PictureInPictureMedia extends HTMLVideoElement {
   webkitSupportsPresentationMode?: (mode: string) => boolean;
 }
 
-export const isWebkitPictureInPictureSupported = (media: PictureInPictureMedia): boolean =>
-  typeof media.webkitSupportsPresentationMode === "function" &&
-  media.webkitSupportsPresentationMode("picture-in-picture") &&
-  typeof media.webkitSetPresentationMode === "function";
+type WebkitPictureInPictureMedia = PictureInPictureMedia & {
+  webkitSetPresentationMode: (mode: string) => void;
+  webkitSupportsPresentationMode: (mode: string) => boolean;
+};
+
+export const isWebkitPictureInPictureSupported = (
+  media: PictureInPictureMedia,
+): media is WebkitPictureInPictureMedia => {
+  const supportsPresentationMode = media.webkitSupportsPresentationMode;
+  const setPresentationMode = media.webkitSetPresentationMode;
+  return Boolean(
+    supportsPresentationMode &&
+    setPresentationMode &&
+    supportsPresentationMode.call(media, "picture-in-picture"),
+  );
+};
 
 export const enterPictureInPictureEffect = (
   media: PictureInPictureMedia,
@@ -20,7 +32,7 @@ export const enterPictureInPictureEffect = (
     catch: (cause) => new PictureInPictureFailed({ cause: toWorkflowError(cause) }),
     try: async () => {
       if (isWebkitPictureInPictureSupported(media)) {
-        media.webkitSetPresentationMode!("picture-in-picture");
+        media.webkitSetPresentationMode("picture-in-picture");
       } else {
         await media.requestPictureInPicture();
       }
@@ -35,7 +47,7 @@ export const exitPictureInPictureEffect = (
     catch: (cause) => new PictureInPictureFailed({ cause: toWorkflowError(cause) }),
     try: async () => {
       if (isWebkitPictureInPictureSupported(media)) {
-        media.webkitSetPresentationMode!("inline");
+        media.webkitSetPresentationMode("inline");
       } else if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
       }

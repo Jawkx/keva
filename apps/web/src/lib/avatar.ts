@@ -32,21 +32,26 @@ const optionalFeature = <Name extends string>(
       ? { [`${name}Variant`]: value, [`${name}Probability`]: 100 }
       : {};
 
-const optionsFor = (recipe: AvatarRecipeType): StyleOptions<typeof lorelei> => ({
-  seed: recipe.seed,
-  scale: 1.15,
-  ...optionalFeature("beard", recipe.beard),
-  ...optionalFeature("earrings", recipe.earrings),
-  ...(recipe.eyebrows ? { eyebrowsVariant: recipe.eyebrows, eyebrowsProbability: 100 } : {}),
-  ...(recipe.eyes ? { eyesVariant: recipe.eyes, eyesProbability: 100 } : {}),
-  ...(recipe.freckles === undefined ? {} : { frecklesProbability: recipe.freckles ? 100 : 0 }),
-  ...optionalFeature("glasses", recipe.glasses),
-  ...(recipe.hair ? { hairVariant: recipe.hair, hairProbability: 100 } : {}),
-  ...optionalFeature("hairAccessories", recipe.hairAccessory),
-  ...(recipe.head ? { headVariant: recipe.head, headProbability: 100 } : {}),
-  ...(recipe.mouth ? { mouthVariant: recipe.mouth, mouthProbability: 100 } : {}),
-  ...(recipe.nose ? { noseVariant: recipe.nose, noseProbability: 100 } : {}),
-});
+const optionsFor = (recipe: AvatarRecipeType): StyleOptions<typeof lorelei> => {
+  let options: StyleOptions<typeof lorelei> = {
+    seed: recipe.seed,
+    scale: 1.15,
+    ...optionalFeature("beard", recipe.beard),
+    ...optionalFeature("earrings", recipe.earrings),
+    ...optionalFeature("glasses", recipe.glasses),
+    ...optionalFeature("hairAccessories", recipe.hairAccessory),
+  };
+  if (recipe.eyebrows)
+    options = { ...options, eyebrowsVariant: recipe.eyebrows, eyebrowsProbability: 100 };
+  if (recipe.eyes) options = { ...options, eyesVariant: recipe.eyes, eyesProbability: 100 };
+  if (recipe.freckles !== undefined)
+    options = { ...options, frecklesProbability: recipe.freckles ? 100 : 0 };
+  if (recipe.hair) options = { ...options, hairVariant: recipe.hair, hairProbability: 100 };
+  if (recipe.head) options = { ...options, headVariant: recipe.head, headProbability: 100 };
+  if (recipe.mouth) options = { ...options, mouthVariant: recipe.mouth, mouthProbability: 100 };
+  if (recipe.nose) options = { ...options, noseVariant: recipe.nose, noseProbability: 100 };
+  return options;
+};
 
 export const resolveAvatarRecipe = (recipe: AvatarRecipeType): AvatarRecipeType => {
   const options = new Avatar(style, optionsFor(recipe)).toJSON().options;

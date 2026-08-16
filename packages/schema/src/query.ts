@@ -37,11 +37,16 @@ const QueryOperand = Schema.Union([
   Schema.Null,
   Schema.Array(Schema.String),
 ]);
+type QueryOperand = typeof QueryOperand.Type;
 
-const isNonEmptyUniqueStrings = (value: unknown): value is readonly string[] =>
-  Array.isArray(value) &&
+const isString = Schema.is(Schema.String);
+const isNumber = Schema.is(Schema.Number);
+const isStringArray = Schema.is(Schema.Array(Schema.String));
+
+const isNonEmptyUniqueStrings = (value: QueryOperand | undefined): value is readonly string[] =>
+  isStringArray(value) &&
   value.length > 0 &&
-  value.every((entry) => typeof entry === "string" && entry.length > 0) &&
+  value.every((entry) => entry.length > 0) &&
   new Set(value).size === value.length;
 
 export const QueryCondition = Schema.Struct({
@@ -56,7 +61,7 @@ export const QueryCondition = Schema.Struct({
         if (!field) {
           if (["exists", "missing", "is_tag"].includes(op)) return value === undefined;
           if (op === "has_value" || op === "contains_text")
-            return typeof value === "string" && value.length > 0;
+            return isString(value) && value.length > 0;
           if (op === "has_any" || op === "has_all" || op === "contains_any")
             return isNonEmptyUniqueStrings(value);
           return false;
@@ -67,23 +72,22 @@ export const QueryCondition = Schema.Struct({
         const nullable = !field.required;
         if (op === "eq" || op === "neq") {
           if (value === null) return nullable;
-          if (field.queryType === "number") return typeof value === "number";
-          if (field.queryType === "timestamp")
-            return typeof value === "string" && isIsoInstant(value);
-          return typeof value === "string" && value.length > 0;
+          if (field.queryType === "number") return isNumber(value);
+          if (field.queryType === "timestamp") return isString(value) && isIsoInstant(value);
+          return isString(value) && value.length > 0;
         }
         if (op === "in") {
           return field.queryType === "string" && isNonEmptyUniqueStrings(value);
         }
         if (["gt", "gte", "lt", "lte"].includes(op)) {
           return field.queryType === "number"
-            ? typeof value === "number"
-            : field.queryType === "timestamp" && typeof value === "string" && isIsoInstant(value);
+            ? isNumber(value)
+            : field.queryType === "timestamp" && isString(value) && isIsoInstant(value);
         }
         if (op === "contains_text")
           return (
             (field.queryType === "string" || field.queryType === "nullable-string") &&
-            typeof value === "string" &&
+            isString(value) &&
             value.length > 0
           );
         if (op === "contains_any")

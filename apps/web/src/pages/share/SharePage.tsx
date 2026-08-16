@@ -109,8 +109,8 @@ function ShareSession({ token }: { token: string }) {
   const [linkDead, setLinkDead] = useState(false);
   const client = useMemo(() => new ShareClient({ baseUrl: "/api", shareToken: token }), [token]);
   const [queryClient] = useState(() => {
-    const markDead = (error: unknown) => {
-      if (isShareGone(error)) setLinkDead(true);
+    const markDead = (cause: unknown) => {
+      if (isShareGone(cause)) setLinkDead(true);
     };
     return new QueryClient({
       queryCache: new QueryCache({ onError: markDead }),

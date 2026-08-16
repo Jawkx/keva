@@ -1,4 +1,6 @@
 import { Effect, Result } from "effect";
+import isNumber from "lodash/isNumber";
+import isString from "lodash/isString";
 import type shaka from "shaka-player";
 
 import { useCallback, useEffect } from "react";
@@ -401,10 +403,10 @@ export function assetFeature(): MediaFeature<
         isFirstLoad: true,
         loadAbortController: null,
         loadAsset: async (asset, startTime, sourceType) => {
-          const player = get().player.instance as null | shaka.Player;
+          const player = get().player.instance;
           const media = get().media.mediaElement;
           const session = get().asset.activeSession;
-          const options = session?.loading as undefined | UseAssetOptions<TAsset>;
+          const options = session?.loading;
 
           if (sourceType) {
             set(({ asset }) => {
@@ -440,38 +442,41 @@ export function assetFeature(): MediaFeature<
             sourceType: sourceType ?? get().asset.sourceType,
           });
 
-          const preloadManagers = get().player.preloadManagers as Map<
-            string,
-            shaka.media.PreloadManager
-          >;
+          const preloadManagers = get().player.preloadManagers;
           const preloadManager = preloadManagers.get(assetId);
-          const loadDefault = createDefaultLoad({
+          const defaultLoadContext: Parameters<typeof createDefaultLoad>[0] = {
             asset,
             assetId,
             player,
-            ...(preloadManager === undefined ? {} : { preloadManager }),
-            ...(startTime === undefined ? {} : { startTime }),
-          });
+          };
+          if (preloadManager !== undefined) {
+            defaultLoadContext.preloadManager = preloadManager;
+          }
+          if (startTime !== undefined) {
+            defaultLoadContext.startTime = startTime;
+          }
+          const loadDefault = createDefaultLoad(defaultLoadContext);
           const shouldAutoplay =
             media.autoplay &&
             media.paused &&
             (!get().asset.isFirstLoad || Boolean(options?.autoplayFirst));
+          const loadWorkflowContext = {
+            asset,
+            generation,
+            getGeneration: () => get().asset.loadGeneration,
+            getPreviousError: () => get().asset.previousError ?? undefined,
+            getRetryCount: () => get().asset.retryCount,
+            loadDefault,
+            media,
+            options,
+            play: shouldAutoplay ? () => get().playback.play() : undefined,
+            player,
+            preloadManager,
+            signal: abortController.signal,
+            startTime,
+          };
           const result = await Effect.runPromise(
-            loadAssetEffect({
-              asset,
-              generation,
-              getGeneration: () => get().asset.loadGeneration,
-              getPreviousError: () => get().asset.previousError ?? undefined,
-              getRetryCount: () => get().asset.retryCount,
-              loadDefault,
-              media,
-              ...(options === undefined ? {} : { options }),
-              ...(shouldAutoplay ? { play: () => get().playback.play() } : {}),
-              player,
-              ...(preloadManager === undefined ? {} : { preloadManager }),
-              signal: abortController.signal,
-              ...(startTime === undefined ? {} : { startTime }),
-            }).pipe(Effect.result),
+            loadAssetEffect(loadWorkflowContext).pipe(Effect.result),
           );
 
           if (Result.isSuccess(result)) {
@@ -583,9 +588,9 @@ export function assetFeature(): MediaFeature<
         },
         preloadAbortControllers: {},
         preloadAsset: async (asset) => {
-          const player = get().player.instance as null | shaka.Player;
+          const player = get().player.instance;
           const session = get().asset.activeSession;
-          const options = session?.loading as undefined | UseAssetOptions<TAsset>;
+          const options = session?.loading;
           if (!player) return;
 
           const assetId = getNormalizedAssetId(asset, options, {
@@ -614,7 +619,7 @@ export function assetFeature(): MediaFeature<
             const normalizedSource = normalizePlaybackSource(source);
             const resolvedSource = normalizedSource.source ?? asset.src;
 
-            if (!resolvedSource || typeof resolvedSource !== "string") {
+            if (!resolvedSource || !isString(resolvedSource)) {
               throw new MediaSourceMissing({ assetId });
             }
 
@@ -638,7 +643,7 @@ export function assetFeature(): MediaFeature<
               getIsCurrentPreload: isCurrentPreload,
               getPreviousError: () => get().asset.previousError ?? undefined,
               getRetryCount: () => get().asset.retryCount,
-              ...(options === undefined ? {} : { options }),
+              options,
               player,
               preloadDefault,
               signal: abortController.signal,
@@ -661,10 +666,7 @@ export function assetFeature(): MediaFeature<
           }
 
           if (manager) {
-            const existing = get().player.preloadManagers as Map<
-              string,
-              shaka.media.PreloadManager
-            >;
+            const existing = get().player.preloadManagers;
             const previousManager = existing.get(assetId);
 
             if (previousManager && previousManager !== manager) {
@@ -686,7 +688,7 @@ export function assetFeature(): MediaFeature<
           const nextItem = playlist.queue[nextIndex];
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- noUncheckedIndexedAccess is off; index can be out of bounds
           if (nextItem) {
-            await get().asset.preloadAsset(nextItem.properties as unknown as TAsset);
+            await get().asset.preloadAsset(nextItem.properties);
           }
         },
         previousError: null,
@@ -712,26 +714,12 @@ export function assetFeature(): MediaFeature<
  * the active source session.
  */
 export function useAsset<TItem extends TAsset = TAsset>(): UseAssetReturn<TItem> {
-  const api = useMediaFeatureApi<AssetStore>(ASSET_FEATURE_KEY);
+  const api = useMediaFeatureApi<AssetStore & PlayerStore>(ASSET_FEATURE_KEY);
   const playlist = usePlaylist<TItem>();
-  const loadAssetAction = useAssetStore((state) => state.loadAsset) as (
-    asset: TItem,
-    startTime?: number,
-    sourceType?: AssetSourceType,
-  ) => Promise<boolean>;
-  const loadPlaylist = useAssetStore((state) => state.loadPlaylist) as (
-    assets: TItem[],
-    startIndex?: number,
-    sourceType?: AssetSourceType,
-    options?: Omit<AssetLoadSourceOptions<TItem>, "initialIndex" | "sourceType">,
-  ) => void;
-  const loadSourceAction = useAssetStore((state) => state.loadSource) as (
-    source: PlayerSource<TItem>,
-    options?: AssetLoadSourceOptions<TItem>,
-  ) => void;
-  const preloadAsset = useAssetStore((state) => state.preloadAsset) as (
-    asset: TItem,
-  ) => Promise<void>;
+  const loadAssetAction = useAssetStore((state) => state.loadAsset);
+  const loadPlaylistAction = useAssetStore((state) => state.loadPlaylist);
+  const loadSourceAction = useAssetStore((state) => state.loadSource);
+  const preloadAsset = useAssetStore((state) => state.preloadAsset);
   const preloadNext = useAssetStore((state) => state.preloadNext);
   const sourceType = useAssetStore((state) => state.sourceType);
 
@@ -740,8 +728,20 @@ export function useAsset<TItem extends TAsset = TAsset>(): UseAssetReturn<TItem>
     [loadAssetAction, sourceType],
   );
 
+  const loadPlaylist = useCallback<UseAssetReturn<TItem>["loadPlaylist"]>(
+    (assets, startIndex, playlistSourceType, options) =>
+      loadPlaylistAction(
+        assets,
+        startIndex,
+        playlistSourceType,
+        adaptAssetLoadOptions(options, assets),
+      ),
+    [loadPlaylistAction],
+  );
+
   const loadSource = useCallback<UseAssetReturn<TItem>["loadSource"]>(
-    (source, options) => loadSourceAction(source, options),
+    (source, options) =>
+      loadSourceAction(source, adaptAssetSourceOptions(options, getOwnedAssets(source))),
     [loadSourceAction],
   );
 
@@ -750,19 +750,18 @@ export function useAsset<TItem extends TAsset = TAsset>(): UseAssetReturn<TItem>
       const preloadAbortController = api.getState().asset.preloadAbortControllers[assetId];
       preloadAbortController?.abort();
 
-      const preloadManagers = (api.getState() as unknown as PlayerStore).player
-        .preloadManagers as Map<string, shaka.media.PreloadManager>;
+      const preloadManagers = api.getState().player.preloadManagers;
       const manager = preloadManagers.get(assetId);
       if (manager) {
         manager.destroy();
         const updated = new Map(preloadManagers);
         updated.delete(assetId);
-        (api as unknown as ImmerStoreApi<PlayerStore>).setState(({ player }) => {
+        api.setState(({ player }) => {
           player.preloadManagers = updated;
         });
       }
 
-      (api as unknown as ImmerStoreApi<AssetStore>).setState(({ asset }) => {
+      api.setState(({ asset }) => {
         delete asset.preloadAbortControllers[assetId];
       });
     },
@@ -771,12 +770,7 @@ export function useAsset<TItem extends TAsset = TAsset>(): UseAssetReturn<TItem>
 
   const isPreloaded = useCallback(
     (assetId: string) => {
-      return (
-        (api.getState() as unknown as PlayerStore).player.preloadManagers as Map<
-          string,
-          shaka.media.PreloadManager
-        >
-      ).has(assetId);
+      return api.getState().player.preloadManagers.has(assetId);
     },
     [api],
   );
@@ -830,11 +824,11 @@ function subscribeAssetEvents(
   const offPlaylistChange = events.on("playlistchange", (event) => {
     const item = event.currentItem;
     if (!item) return;
-    events.emit("assetchange", event as PlaylistChangeEvent<TAsset>);
+    events.emit("assetchange", event);
     void api
       .getState()
       .asset.loadAsset(
-        item.properties as unknown as TAsset,
+        item.properties,
         undefined,
         api.getState().asset.sourceType ?? AssetSourceType.Playlist,
       );
@@ -844,7 +838,7 @@ function subscribeAssetEvents(
     const state = api.getState();
     const { currentItem } = state.playlist;
     const sessionId = state.asset.activeSession?.id;
-    const options = state.asset.activeSession?.loading as undefined | UseAssetOptions<TAsset>;
+    const options = state.asset.activeSession?.loading;
     if (!currentItem) return;
     const currentItemId = currentItem.id;
 
@@ -863,11 +857,9 @@ function subscribeAssetEvents(
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           payload.currentTime ?? mediaElement?.currentTime ?? 0;
         const decision = options?.recover?.playbackError
-          ? await options.recover.playbackError(
-              currentItem.properties as unknown as TAsset,
-              payload.error,
-              { currentTime },
-            )
+          ? await options.recover.playbackError(currentItem.properties, payload.error, {
+              currentTime,
+            })
           : {
               action: AssetRecoveryAction.Stop,
             };
@@ -875,7 +867,7 @@ function subscribeAssetEvents(
         if (!freshCurrentItem) return;
 
         if (decision.action === AssetRecoveryAction.Reload) {
-          const assetToLoad = (decision.asset ?? freshCurrentItem.properties) as unknown as TAsset;
+          const assetToLoad = decision.asset ?? freshCurrentItem.properties;
           const startTime = decision.startTime ?? currentTime;
           api.setState(({ asset }) => {
             asset.previousError = payload.error;
@@ -915,16 +907,138 @@ function subscribeAssetEvents(
   };
 }
 
+function adaptAssetLoadOptions<TItem extends TAsset>(
+  options: Omit<AssetLoadSourceOptions<TItem>, "initialIndex" | "sourceType"> | undefined,
+  assets: TItem[],
+): Omit<AssetLoadSourceOptions<TAsset>, "initialIndex" | "sourceType"> | undefined {
+  if (!options) return undefined;
+
+  const adapted: Omit<AssetLoadSourceOptions<TAsset>, "initialIndex" | "sourceType"> = {};
+  if (options.loading !== undefined) {
+    adapted.loading = createAssetOptionsAdapter(options.loading, assets);
+  }
+  if (options.sourceKey !== undefined) {
+    adapted.sourceKey = options.sourceKey;
+  }
+  return adapted;
+}
+
+function adaptAssetSourceOptions<TItem extends TAsset>(
+  options: AssetLoadSourceOptions<TItem> | undefined,
+  assets: TItem[],
+): AssetLoadSourceOptions<TAsset> | undefined {
+  if (!options) return undefined;
+
+  const adapted: AssetLoadSourceOptions<TAsset> = {};
+  if (options.initialIndex !== undefined) {
+    adapted.initialIndex = options.initialIndex;
+  }
+  if (options.loading !== undefined) {
+    adapted.loading = createAssetOptionsAdapter(options.loading, assets);
+  }
+  if (options.sourceKey !== undefined) {
+    adapted.sourceKey = options.sourceKey;
+  }
+  if (options.sourceType !== undefined) {
+    adapted.sourceType = options.sourceType;
+  }
+  return adapted;
+}
+
+function createAssetOptionsAdapter<TItem extends TAsset>(
+  options: UseAssetOptions<TItem>,
+  assets: TItem[],
+): UseAssetOptions<TAsset> {
+  const ownedAssets = new Map<TAsset, TItem>(assets.map((asset) => [asset, asset]));
+  const parseAsset = (asset: TAsset): TItem => {
+    const ownedAsset = ownedAssets.get(asset);
+    if (!ownedAsset) {
+      throw new Error("Asset does not belong to the active typed source");
+    }
+    return ownedAsset;
+  };
+  const adapted: UseAssetOptions<TAsset> = {};
+
+  if (options.autoplayFirst !== undefined) adapted.autoplayFirst = options.autoplayFirst;
+  if (options.getAssetId) {
+    adapted.getAssetId = (asset, context) => options.getAssetId?.(parseAsset(asset), context);
+  }
+  if (options.loader) {
+    adapted.loader = {};
+    if (options.loader.load) {
+      adapted.loader.load = (context) => {
+        const typedContext: AssetLoadContext<TItem> = {
+          asset: parseAsset(context.asset),
+          loadDefault: context.loadDefault,
+          media: context.media,
+          player: context.player,
+          retryCount: context.retryCount,
+          signal: context.signal,
+        };
+        if (context.preloadManager !== undefined) {
+          typedContext.preloadManager = context.preloadManager;
+        }
+        if (context.previousError !== undefined) {
+          typedContext.previousError = context.previousError;
+        }
+        if (context.startTime !== undefined) {
+          typedContext.startTime = context.startTime;
+        }
+        return options.loader?.load?.(typedContext) ?? Promise.resolve();
+      };
+    }
+    if (options.loader.preload) {
+      adapted.loader.preload = (context) => {
+        const typedContext: AssetPreloadContext<TItem> = {
+          asset: parseAsset(context.asset),
+          player: context.player,
+          preloadDefault: context.preloadDefault,
+          retryCount: context.retryCount,
+          signal: context.signal,
+        };
+        if (context.previousError !== undefined) {
+          typedContext.previousError = context.previousError;
+        }
+        return options.loader?.preload?.(typedContext) ?? Promise.resolve(null);
+      };
+    }
+  }
+  if (options.maxRetries !== undefined) adapted.maxRetries = options.maxRetries;
+  if (options.recover) {
+    adapted.recover = {};
+    if (options.recover.loadError) {
+      adapted.recover.loadError = (asset, error, context) =>
+        options.recover?.loadError?.(parseAsset(asset), error, context) ?? AssetRecoveryAction.Stop;
+    }
+    if (options.recover.playbackError) {
+      adapted.recover.playbackError = (asset, error, context) =>
+        options.recover?.playbackError?.(parseAsset(asset), error, context) ??
+        Promise.resolve({ action: AssetRecoveryAction.Stop });
+    }
+  }
+  if (options.resolveSource) {
+    adapted.resolveSource = (context) =>
+      options.resolveSource?.({ ...context, asset: parseAsset(context.asset) });
+  }
+
+  return adapted;
+}
+
 function createAssetSession(
   sourceType: AssetSourceType,
   options?: Omit<AssetLoadSourceOptions<TAsset>, "initialIndex" | "sourceType">,
 ): AssetSession {
-  return {
+  const session: AssetSession = {
     id: generateAssetSessionId(),
-    ...(options?.loading === undefined ? {} : { loading: options.loading }),
-    ...(options?.sourceKey === undefined ? {} : { sourceKey: options.sourceKey }),
     sourceType,
   };
+  if (options?.loading !== undefined) {
+    session.loading = options.loading;
+  }
+  if (options?.sourceKey !== undefined) {
+    session.sourceKey = options.sourceKey;
+  }
+  return session;
 }
 
 function createDefaultLoad({
@@ -960,8 +1074,9 @@ function createDefaultLoad({
       ? (preloadManager ?? normalizedSource.source ?? asset.src)
       : normalizedSource.source;
 
-    const finalStartTime =
-      typeof loadOptions === "number" ? loadOptions : (loadOptions?.startTime ?? startTime);
+    const finalStartTime = isNumber(loadOptions)
+      ? loadOptions
+      : (loadOptions?.startTime ?? startTime);
     const timeToLoad = finalStartTime ?? undefined;
 
     if (!resolvedSource) {
@@ -1057,10 +1172,28 @@ function normalizeAssets(assets: TAsset[], options?: UseAssetOptions<TAsset>): N
   });
 }
 
+function isAssetArray<TItem extends TAsset>(
+  source: PlayerSource<TItem>,
+): source is readonly TItem[] {
+  return Array.isArray(source);
+}
+
+function getOwnedAssets<TItem extends TAsset>(source: PlayerSource<TItem>): TItem[] {
+  if (isAssetArray(source)) return [...source];
+  if (isString(source)) return [];
+  return [source];
+}
+
+function isPlaybackSource(
+  source: PlaybackSource | shaka.media.PreloadManager,
+): source is PlaybackSource {
+  return "src" in source || "config" in source || "mimeType" in source;
+}
+
 function normalizePlaybackSource(
   source?: null | PlaybackSource | shaka.media.PreloadManager | string,
 ): NormalizedSource {
-  if (typeof source === "string") {
+  if (isString(source)) {
     return { source };
   }
 
@@ -1068,21 +1201,25 @@ function normalizePlaybackSource(
     return {};
   }
 
-  if ("src" in source || "config" in source || "mimeType" in source) {
-    const playbackSource = source as PlaybackSource;
-
-    return {
-      ...(playbackSource.config === undefined ? {} : { config: playbackSource.config }),
-      ...(playbackSource.mimeType === undefined ? {} : { mimeType: playbackSource.mimeType }),
-      ...(playbackSource.src === undefined ? {} : { source: playbackSource.src }),
-    };
+  if (isPlaybackSource(source)) {
+    const normalized: NormalizedSource = {};
+    if (source.config !== undefined) {
+      normalized.config = source.config;
+    }
+    if (source.mimeType !== undefined) {
+      normalized.mimeType = source.mimeType;
+    }
+    if (source.src !== undefined) {
+      normalized.source = source.src;
+    }
+    return normalized;
   }
 
-  return { source: source as shaka.media.PreloadManager };
+  return { source };
 }
 
 function normalizePlayerSource(source: PlayerSource<TAsset>): TAsset[] {
-  if (Array.isArray(source)) return [...source];
-  if (typeof source === "string") return [{ src: source }];
-  return [source as TAsset];
+  if (isAssetArray(source)) return [...source];
+  if (isString(source)) return [{ src: source }];
+  return [source];
 }

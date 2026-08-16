@@ -15,6 +15,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Schema } from "effect";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -57,6 +58,7 @@ const PAGES: ReadonlyArray<{
 ];
 
 const RECENT_SEARCHES_KEY = "keva:recent-searches:v1";
+const RecentSearches = Schema.Array(Schema.String);
 
 const highlighted = (text: string, query: string) => {
   const index = text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase());
@@ -74,10 +76,8 @@ const highlighted = (text: string, query: string) => {
 
 const readRecentSearches = (): string[] => {
   try {
-    const stored = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]") as unknown;
-    return Array.isArray(stored)
-      ? stored.filter((value): value is string => typeof value === "string").slice(0, 5)
-      : [];
+    const stored: unknown = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]");
+    return Schema.is(RecentSearches)(stored) ? stored.slice(0, 5) : [];
   } catch {
     return [];
   }

@@ -1,6 +1,11 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
-import type { MintTokenResult, Principal, TokenRecord } from "@keva/schema";
-import { Effect, Layer } from "effect";
+import {
+  MintTokenResult,
+  OwnerInitiateUploadResult,
+  TokenRecord,
+  type Principal,
+} from "@keva/schema";
+import { Effect, Layer, Schema } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import {
@@ -12,6 +17,7 @@ import {
 import { ShareGrantStore } from "./shares.js";
 import { testSql } from "./test/db.js";
 import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
+import { decodeResponseJson } from "./test/http.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
@@ -163,7 +169,7 @@ describe("server token subsystem", () => {
       body: JSON.stringify({ name: "agent-key", scopes: ["read", "write"] }),
     });
     expect(minted.status).toBe(200);
-    const mintBody = (await minted.json()) as MintTokenResult;
+    const mintBody = await decodeResponseJson(MintTokenResult, minted);
     expect(mintBody.token).toMatch(/^keva_sk_/);
     expect(mintBody.record.scopes).toEqual(["read", "write"]);
 
@@ -178,7 +184,7 @@ describe("server token subsystem", () => {
       }),
     });
     expect(initiated.status).toBe(200);
-    const initiatedBody = (await initiated.json()) as { item: Record<string, unknown> };
+    const initiatedBody = await decodeResponseJson(OwnerInitiateUploadResult, initiated);
     expect(initiatedBody.item).not.toHaveProperty("tenantId");
     expect(initiatedBody.item).not.toHaveProperty("storageKey");
     expect(initiatedBody.item).not.toHaveProperty("stagingKey");
@@ -191,7 +197,7 @@ describe("server token subsystem", () => {
       headers: adminSession,
       body: JSON.stringify({ name: "ro", scopes: ["read"] }),
     });
-    const { token } = (await minted.json()) as MintTokenResult;
+    const { token } = await decodeResponseJson(MintTokenResult, minted);
 
     const initiate = await app.request("/api/items", {
       method: "POST",
@@ -209,7 +215,7 @@ describe("server token subsystem", () => {
       headers: adminSession,
       body: JSON.stringify({ name: "temp", scopes: ["read"] }),
     });
-    const mintBody = (await minted.json()) as MintTokenResult;
+    const mintBody = await decodeResponseJson(MintTokenResult, minted);
     const id = mintBody.record.id;
 
     const listed = await app.request("/api/tokens", {
@@ -217,7 +223,7 @@ describe("server token subsystem", () => {
       headers: { cookie: ADMIN_COOKIE },
     });
     expect(listed.status).toBe(200);
-    const records = (await listed.json()) as TokenRecord[];
+    const records = await decodeResponseJson(Schema.Array(TokenRecord), listed);
     expect(records.map((r) => r.id)).toContain(id);
 
     const revoked = await app.request(`/api/tokens/${id}`, {

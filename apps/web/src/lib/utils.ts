@@ -17,6 +17,7 @@ export function off<TEvent extends Event>(
   callback: (event: TEvent) => void,
 ) {
   for (const event of Array.isArray(events) ? events : [events]) {
+    // SAFETY: Callers pair each event name with TEvent; EventTarget's string API erases that mapping.
     element.removeEventListener(event, callback as EventListener);
   }
 
@@ -29,6 +30,7 @@ export function on<TEvent extends Event>(
   callback: (event: TEvent) => void,
 ) {
   for (const event of Array.isArray(events) ? events : [events]) {
+    // SAFETY: Callers pair each event name with TEvent; EventTarget's string API erases that mapping.
     element.addEventListener(event, callback as EventListener);
   }
 

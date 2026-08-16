@@ -20,7 +20,7 @@ export const loadPreviewContent = <E>(
       binary
         ? ({
             kind: "blob",
-            blob: new Blob([content.slice().buffer as ArrayBuffer], { type: contentType }),
+            blob: new Blob([new Uint8Array(content)], { type: contentType }),
           } satisfies PreviewContent)
         : ({
             kind: "text",

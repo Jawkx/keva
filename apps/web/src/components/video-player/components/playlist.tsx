@@ -1,7 +1,7 @@
 "use client";
 
 import { CardsThreeIcon, PlayIcon } from "@phosphor-icons/react";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 
 import type { VideoPlayerAsset } from "@/components/video-player/player";
 
@@ -17,28 +17,17 @@ import {
 import { Button } from "@/components/video-player/components/button";
 import { useMediaStore } from "@/hooks/limeplay/use-media";
 import { usePlayerStore } from "@/hooks/limeplay/use-player";
-import { usePlaylistStore } from "@/hooks/limeplay/use-playlist";
+import { usePlaylist } from "@/hooks/limeplay/use-playlist";
+
+interface PlaylistCollisionProps {
+  collisionBoundary?: Element;
+  collisionPadding: number;
+}
 
 export function Playlist() {
-  const currentItem = usePlaylistStore(
-    (state) => state.currentItem as null | { id: string; properties: VideoPlayerAsset },
-  );
+  const { currentItem, orderedItems, skipToId } = usePlaylist<VideoPlayerAsset>();
   const containerRef = usePlayerStore((state) => state.containerRef);
   const setForceIdle = useMediaStore((state) => state.setForceIdle);
-  const queue = usePlaylistStore(
-    (state) => state.queue as { id: string; properties: VideoPlayerAsset }[],
-  );
-  const shuffle = usePlaylistStore((state) => state.shuffle);
-  const shuffleOrder = usePlaylistStore((state) => state.shuffleOrder);
-  const skipToId = usePlaylistStore((state) => state.skipToId);
-
-  const orderedItems = useMemo(() => {
-    if (!shuffle || shuffleOrder.length === 0) return queue;
-
-    return shuffleOrder
-      .map((index) => queue[index])
-      .filter((item): item is { id: string; properties: VideoPlayerAsset } => Boolean(item));
-  }, [queue, shuffle, shuffleOrder]);
 
   useEffect(() => {
     return () => {
@@ -52,13 +41,12 @@ export function Playlist() {
     await skipToId(assetId);
   };
 
-  const dropdownCollisionProps: {
-    collisionBoundary?: Element;
-    collisionPadding?: number;
-  } = {
-    ...(containerRef === null ? {} : { collisionBoundary: containerRef }),
+  const dropdownCollisionProps: PlaylistCollisionProps = {
     collisionPadding: 12,
   };
+  if (containerRef !== null) {
+    dropdownCollisionProps.collisionBoundary = containerRef;
+  }
 
   return (
     <DropdownMenu onOpenChange={setForceIdle}>

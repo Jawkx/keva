@@ -61,27 +61,48 @@ type ShareOptions = {
   readonly limits?: SharePrincipal["share"]["limits"];
 };
 
-const sharePrincipal = (tenantId: string, options: ShareOptions = {}): Principal => ({
-  tenantId,
-  scopes: options.scopes ?? ["read"],
-  via: "share",
-  ...(options.user
-    ? {
-        actor: {
-          user: options.user,
-          share: { grantId: options.grantId ?? "grant-1", name: "Test share" },
-        },
-      }
-    : {}),
-  share: {
-    grantId: options.grantId ?? "grant-1",
-    ...(options.user ? { identityId: options.user.id } : {}),
+interface ShareContextDraft {
+  grantId: SharePrincipal["share"]["grantId"];
+  identityId?: SharePrincipal["share"]["identityId"];
+  conditions: SharePrincipal["share"]["conditions"];
+  writeStamp?: SharePrincipal["share"]["writeStamp"];
+  allowOwnDelete: SharePrincipal["share"]["allowOwnDelete"];
+  limits?: SharePrincipal["share"]["limits"];
+}
+
+interface SharePrincipalDraft {
+  tenantId: SharePrincipal["tenantId"];
+  scopes: SharePrincipal["scopes"];
+  via: SharePrincipal["via"];
+  actor?: SharePrincipal["actor"];
+  share: SharePrincipal["share"];
+}
+
+const sharePrincipal = (tenantId: string, options: ShareOptions = {}): Principal => {
+  const grantId = options.grantId ?? "grant-1";
+  const share: ShareContextDraft = {
+    grantId,
     conditions: options.conditions ?? [{ key: "project", op: "has_value", value: "alpha" }],
-    ...(options.writeStamp === undefined ? {} : { writeStamp: options.writeStamp }),
     allowOwnDelete: options.allowOwnDelete ?? false,
-    ...(options.limits === undefined ? {} : { limits: options.limits }),
-  },
-});
+  };
+  if (options.user) share.identityId = options.user.id;
+  if (options.writeStamp !== undefined) share.writeStamp = options.writeStamp;
+  if (options.limits !== undefined) share.limits = options.limits;
+
+  const principal: SharePrincipalDraft = {
+    tenantId,
+    scopes: options.scopes ?? ["read"],
+    via: "share",
+    share,
+  };
+  if (options.user) {
+    principal.actor = {
+      user: options.user,
+      share: { grantId, name: "Test share" },
+    };
+  }
+  return principal;
+};
 
 const shareUpload = (p: Principal, name: string, bytes: Uint8Array) =>
   Effect.gen(function* () {

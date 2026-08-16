@@ -1,8 +1,8 @@
 import { Check, ListFilter, LockKeyhole, Plus, X } from "lucide-react";
 import { useMemo, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import {
+  Operator,
   QueryCondition as QueryConditionSchema,
-  type Operator,
   type PropertySummary,
   type PropertyValue,
   type QueryCondition,
@@ -594,7 +594,7 @@ export function PropertyStampChips({
           >
             <ScalarValueMenu
               keyName={row.key}
-              values={typeof row.value === "string" ? [row.value] : []}
+              values={Schema.is(Schema.String)(row.value) ? [row.value] : []}
               multi={false}
               suggest={keySet.has(row.key)}
               onChange={(values) => {
@@ -765,7 +765,12 @@ function AdvancedConditionDialog({
           </Field>
           <Field>
             <FieldLabel>Operator</FieldLabel>
-            <Select value={op} onValueChange={(next) => setOp(next as Operator)}>
+            <Select
+              value={op}
+              onValueChange={(next) => {
+                if (Schema.is(Operator)(next)) setOp(next);
+              }}
+            >
               <SelectTrigger aria-label="Condition operator">
                 <SelectValue>{(current: Operator) => FILTER_OPERATOR_LABELS[current]}</SelectValue>
               </SelectTrigger>

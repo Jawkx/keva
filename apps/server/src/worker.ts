@@ -1,5 +1,5 @@
 import { makeThumbnailJobStore } from "@keva/core/postgres";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import postgres from "postgres";
 import { createApp } from "./app.js";
 import { runLifecycle } from "./lifecycle.js";
@@ -9,8 +9,13 @@ import { createServerOptions, type ServerOptionsConfig } from "./server-options.
 import { emailVerificationConfigFor } from "./email-verification.js";
 import { billingConfigFor } from "./billing-config.js";
 import { googleOAuthConfigFor } from "./google-oauth-config.js";
-import { MediaContainer, mediaContainerFor, type MediaContainerConfig } from "./media-container.js";
-import { publishMediaResults, type MediaDrainResult } from "./media-results.js";
+import {
+  MediaContainer,
+  mediaContainerFor,
+  type MediaContainerConfig,
+  type MediaContainerNamespace,
+} from "./media-container.js";
+import { publishMediaResults } from "./media-results.js";
 import {
   RealtimeHub,
   makeDurableObjectRealtimeGateway,
@@ -49,14 +54,7 @@ interface Env {
   readonly POLAR_PRODUCT_2TB_ID?: string;
   readonly HYPERDRIVE?: { readonly connectionString: string };
   readonly REALTIME?: DurableObjectNamespace;
-  readonly MEDIA?: {
-    readonly getByName: (name: string) => {
-      readonly fetchWithConfig: (
-        request: Request,
-        config: MediaContainerConfig,
-      ) => Promise<Response>;
-    };
-  };
+  readonly MEDIA?: MediaContainerNamespace;
   readonly S3_ENDPOINT?: string;
   readonly S3_REGION?: string;
   readonly S3_ACCESS_KEY_ID?: string;
@@ -70,7 +68,7 @@ let app: ReturnType<typeof createApp> | undefined;
 interface ExecutionContext {
   waitUntil: (promise: Promise<unknown>) => void;
   passThroughOnException: () => void;
-  readonly props: Record<string, unknown>;
+  readonly props: Readonly<Record<string, never>>;
 }
 
 const serverPaths = ["/api", "/mcp", "/.well-known", "/health", "/ready", "/__dev"];
@@ -118,6 +116,30 @@ const fetchMediaContainer = (env: Env, request: Request): Promise<Response> => {
     mediaConfigFor(env),
   );
 };
+
+const MediaDrainResultResponse = Schema.Struct({
+  readyItems: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ tenantId: Schema.String, itemId: Schema.String })),
+  ),
+  failedItems: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ tenantId: Schema.String, itemId: Schema.String })),
+  ),
+});
+
+interface ServerOptionsConfigBuilder {
+  staticToken: string;
+  tenantId: string;
+  baseUrl: string;
+  databaseUrl: string;
+  betterAuthSecret?: string;
+  betterAuthUrl?: string;
+  trustedOrigins?: ReadonlyArray<string>;
+  emailVerification?: NonNullable<ServerOptionsConfig["emailVerification"]>;
+  googleOAuth?: NonNullable<ServerOptionsConfig["googleOAuth"]>;
+  polar?: NonNullable<ServerOptionsConfig["polar"]>;
+  realtime: ServerOptionsConfig["realtime"];
+  s3: ServerOptionsConfig["s3"];
+}
 
 class MediaJobError extends Error {
   readonly _tag = "MediaJobError";
@@ -172,7 +194,7 @@ const wakeMediaJobs = (
       return yield* Effect.fail(new MediaJobError(`Media drain failed: ${response.status}`));
     }
     const result = yield* Effect.tryPromise({
-      try: () => response.json() as Promise<MediaDrainResult>,
+      try: async () => Schema.decodeUnknownPromise(MediaDrainResultResponse)(await response.json()),
       catch: (cause) => mediaJobFailure("Media drain returned an invalid response", cause),
     });
     yield* publishMediaResults(realtime, result).pipe(
@@ -180,6 +202,16 @@ const wakeMediaJobs = (
     );
   });
 };
+
+const recoverMediaJobs = (
+  env: Env,
+  realtime: ReturnType<typeof makeDurableObjectRealtimeGateway>,
+) =>
+  wakeMediaJobs(env, realtime).pipe(
+    Effect.catch(() =>
+      Effect.sync(() => console.error(JSON.stringify({ event: "media.recovery.failed" }))),
+    ),
+  );
 
 const serverOptionsConfigFor = (
   env: Env,
@@ -200,7 +232,7 @@ const serverOptionsConfigFor = (
           Effect.tap(() =>
             Effect.sync(() => {
               if (event.reason === "uploaded") {
-                executionContext.waitUntil(Effect.runPromise(wakeMediaJobs(env, baseRealtime)));
+                executionContext.waitUntil(Effect.runPromise(recoverMediaJobs(env, baseRealtime)));
               }
             }),
           ),
@@ -211,28 +243,31 @@ const serverOptionsConfigFor = (
   const googleOAuth = googleOAuthConfigFor(env);
   const polar = billingConfigFor(env);
 
-  return {
+  const config: ServerOptionsConfigBuilder = {
     staticToken,
     tenantId: env.KEVA_TENANT_ID ?? "local",
     baseUrl,
     databaseUrl,
-    ...(env.BETTER_AUTH_SECRET ? { betterAuthSecret: env.BETTER_AUTH_SECRET } : {}),
-    ...(env.BETTER_AUTH_URL ? { betterAuthUrl: env.BETTER_AUTH_URL } : {}),
-    ...(emailVerification ? { emailVerification } : {}),
-    ...(googleOAuth ? { googleOAuth } : {}),
-    ...(polar ? { polar } : {}),
     trustedOrigins: trustedOriginsFor(baseUrl, env.KEVA_TRUSTED_ORIGINS),
     realtime,
     s3,
   };
+  if (env.BETTER_AUTH_SECRET) config.betterAuthSecret = env.BETTER_AUTH_SECRET;
+  if (env.BETTER_AUTH_URL) config.betterAuthUrl = env.BETTER_AUTH_URL;
+  if (emailVerification) config.emailVerification = emailVerification;
+  if (googleOAuth) config.googleOAuth = googleOAuth;
+  if (polar) config.polar = polar;
+  return config;
 };
 
 const makeApp = (): ReturnType<typeof createApp> =>
   createApp({
-    getRequestServices: (context) =>
-      createServerOptions(
+    getRequestServices: (context) => {
+      // SAFETY: Hono receives these values directly from this Worker's typed fetch entrypoint.
+      return createServerOptions(
         serverOptionsConfigFor(context.env as Env, context.executionCtx as ExecutionContext),
-      ),
+      );
+    },
   });
 
 const withBrowserSecurityHeaders = (
@@ -298,15 +333,7 @@ export default {
   scheduled(controller: { readonly cron?: string }, env: Env, context: ExecutionContext): void {
     const realtime = makeDurableObjectRealtimeGateway(required(env.REALTIME, "REALTIME"), context);
     if (controller.cron === "*/5 * * * *") {
-      context.waitUntil(
-        Effect.runPromise(
-          wakeMediaJobs(env, realtime).pipe(
-            Effect.catch(() =>
-              Effect.sync(() => console.error(JSON.stringify({ event: "media.recovery.failed" }))),
-            ),
-          ),
-        ),
-      );
+      context.waitUntil(Effect.runPromise(recoverMediaJobs(env, realtime)));
       return;
     }
     const lifecycle = Effect.gen(function* () {

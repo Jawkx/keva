@@ -25,6 +25,8 @@ import type {
 } from "@keva/schema";
 import { z } from "zod";
 
+const stringValue = z.string();
+const numberValue = z.number();
 const nonEmptyString = z.string().min(1);
 const uniqueNonEmptyStrings = z
   .array(nonEmptyString)
@@ -97,11 +99,12 @@ const queryCondition = z
         return;
       }
       if (field.queryType === "number") {
-        if (typeof condition.value !== "number") fail();
+        if (!numberValue.safeParse(condition.value).success) fail();
         return;
       }
-      if (typeof condition.value !== "string") return fail();
-      if (field.queryType === "timestamp" && !isIsoInstant(condition.value)) fail();
+      const parsedValue = stringValue.safeParse(condition.value);
+      if (!parsedValue.success) return fail();
+      if (field.queryType === "timestamp" && !isIsoInstant(parsedValue.data)) fail();
       return;
     }
     if (
@@ -111,13 +114,14 @@ const queryCondition = z
       condition.op === "lte"
     ) {
       if (field.queryType === "number") {
-        if (typeof condition.value !== "number") fail();
+        if (!numberValue.safeParse(condition.value).success) fail();
         return;
       }
+      const parsedValue = stringValue.safeParse(condition.value);
       if (
         field.queryType !== "timestamp" ||
-        typeof condition.value !== "string" ||
-        !isIsoInstant(condition.value)
+        !parsedValue.success ||
+        !isIsoInstant(parsedValue.data)
       )
         fail();
       return;
@@ -379,11 +383,12 @@ export interface KevaMcpServerOptions {
 
 export class ClientSafeToolError extends Error {}
 
-const ok = (data: unknown): CallToolResult => ({
-  content: [
-    { type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) },
-  ],
-});
+const ok = <A>(data: A): CallToolResult => {
+  const text = stringValue.safeParse(data);
+  return {
+    content: [{ type: "text", text: text.success ? text.data : JSON.stringify(data, null, 2) }],
+  };
+};
 
 const fail = (message: string): CallToolResult => ({
   content: [{ type: "text", text: message }],
@@ -398,7 +403,7 @@ const runResult = async (fn: () => Promise<CallToolResult>): Promise<CallToolRes
   }
 };
 
-const run = (fn: () => Promise<unknown>): Promise<CallToolResult> =>
+const run = <A>(fn: () => Promise<A>): Promise<CallToolResult> =>
   runResult(async () => ok(await fn()));
 
 const itemContentResult = ({ item, download }: McpItemContent): CallToolResult => {
@@ -461,7 +466,7 @@ export const createKevaMcpServer = (
         title: "Query items",
         description:
           "Find items by property conditions and/or a name search. Returns matching items with their metadata and properties.",
-        inputSchema: queryArgs.shape,
+        inputSchema: queryArgs,
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       (input) => run(() => engine.queryItems(input)),
@@ -472,7 +477,7 @@ export const createKevaMcpServer = (
       {
         title: "Get item",
         description: "Fetch a single item's metadata and properties by id.",
-        inputSchema: itemIdArgs.shape,
+        inputSchema: itemIdArgs,
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ id }) => run(() => engine.getItem(id)),
@@ -484,8 +489,8 @@ export const createKevaMcpServer = (
         title: "Get item content",
         description:
           "Get an item's file contents as a transferable file reference with its name, MIME type, size, and short-lived download access.",
-        inputSchema: itemIdArgs.shape,
-        outputSchema: itemContentOutput.shape,
+        inputSchema: itemIdArgs,
+        outputSchema: itemContentOutput,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ id }) => runResult(async () => itemContentResult(await engine.getItemContent(id))),
@@ -496,7 +501,7 @@ export const createKevaMcpServer = (
       {
         title: "Get item activity",
         description: "Get an item's audit history, newest first, including actor snapshots.",
-        inputSchema: itemEventsArgs.shape,
+        inputSchema: itemEventsArgs,
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       (input) => run(() => engine.getItemEvents(input)),
@@ -532,7 +537,7 @@ export const createKevaMcpServer = (
         title: "List property values",
         description:
           "List the distinct scalar values seen for a single property key, for discovering valid filter values.",
-        inputSchema: propertyValuesArgs.shape,
+        inputSchema: propertyValuesArgs,
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       (input) => run(() => engine.listPropertyValues(input)),
@@ -558,7 +563,7 @@ export const createKevaMcpServer = (
         title: "Begin file upload",
         description:
           "Create a pending item and return uploadUrl, required headers, and an item id. The MCP host must PUT exactly 'size' bytes to uploadUrl using every returned header. Do not send Keva OAuth credentials to the storage URL. Call complete_upload only after the PUT returns a successful 2xx response.",
-        inputSchema: uploadArgs.shape,
+        inputSchema: uploadArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       },
       (input) => run(() => engine.beginUpload(input)),
@@ -570,7 +575,7 @@ export const createKevaMcpServer = (
         title: "Complete file upload",
         description:
           "Confirm a pending item after its presigned PUT succeeded and make it available in Keva. Do not call this before uploading the exact declared byte size. If the upload URL expired, call begin_upload again instead.",
-        inputSchema: itemIdArgs.shape,
+        inputSchema: itemIdArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       ({ id }) => run(() => engine.completeUpload(id)),
@@ -582,7 +587,7 @@ export const createKevaMcpServer = (
         title: "Upload small file content",
         description:
           "Upload UTF-8 text or base64-encoded bytes as a file in one call. Decoded content is limited to 1 MiB. Base64 must contain encoded data only, without a data: URL prefix. Use begin_upload followed by an external PUT and complete_upload for larger files.",
-        inputSchema: uploadContentArgs.shape,
+        inputSchema: uploadContentArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) => run(() => engine.uploadContent(input)),
@@ -595,7 +600,7 @@ export const createKevaMcpServer = (
         description:
           "Set or unset an item's user properties (and the writable 'name' field). Other properties are left unchanged. " +
           "Note keva's null semantics: setting a key to null creates a bare TAG (membership marker), it does not clear the key — deletion is only via 'unset'.",
-        inputSchema: setPropertiesArgs.shape,
+        inputSchema: setPropertiesArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) => run(() => engine.setProperties(input)),
@@ -607,7 +612,7 @@ export const createKevaMcpServer = (
         title: "Set properties on multiple items",
         description:
           "Apply the same set/unset patch to up to 1000 items. Each item may include an expected revision for optimistic concurrency. Returns separate updated and failed results; one item failure does not stop the others. Setting null creates a bare tag, while 'unset' deletes a property.",
-        inputSchema: setPropertiesBulkArgs.shape,
+        inputSchema: setPropertiesBulkArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) => run(() => engine.setPropertiesBulk(input)),
@@ -620,7 +625,7 @@ export const createKevaMcpServer = (
       {
         title: "Delete item",
         description: "Permanently delete an item and its file contents.",
-        inputSchema: itemIdArgs.shape,
+        inputSchema: itemIdArgs,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       ({ id }) =>
@@ -636,7 +641,7 @@ export const createKevaMcpServer = (
         title: "Delete items",
         description:
           "Permanently delete up to 1000 items, returning separate deleted and failed results.",
-        inputSchema: deleteItemsArgs.shape,
+        inputSchema: deleteItemsArgs,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       ({ ids }) => run(() => engine.deleteItems(ids)),
@@ -649,7 +654,7 @@ export const createKevaMcpServer = (
       {
         title: "Create saved view",
         description: "Create a named saved view from query conditions.",
-        inputSchema: createViewArgs.shape,
+        inputSchema: createViewArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) => run(() => engine.createView(input)),
@@ -669,7 +674,7 @@ export const createKevaMcpServer = (
       {
         title: "Get saved view",
         description: "Get one saved view by id.",
-        inputSchema: viewIdArgs.shape,
+        inputSchema: viewIdArgs,
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ id }) => run(() => engine.getView(id)),
@@ -680,7 +685,7 @@ export const createKevaMcpServer = (
         title: "Update saved view",
         description:
           "Update a saved view's name, icon, and/or conditions. If active shares use the view, this immediately changes their access and requires shares plus each delegated read/write scope.",
-        inputSchema: updateViewArgs.shape,
+        inputSchema: updateViewArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       ({ id, ...input }) => run(() => engine.updateView(id, input)),
@@ -691,7 +696,7 @@ export const createKevaMcpServer = (
         title: "Delete saved view",
         description:
           "Delete a saved view and revoke its associated share links. Items remain intact.",
-        inputSchema: viewIdArgs.shape,
+        inputSchema: viewIdArgs,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       ({ id }) => run(() => engine.deleteView(id)),
@@ -705,7 +710,7 @@ export const createKevaMcpServer = (
         title: "Create share link",
         description:
           "Create a share for an existing saved view or a new inline view. Download shares require read access; upload shares require write access. The secret token is returned only once.",
-        inputSchema: createShareArgs.shape,
+        inputSchema: createShareArgs,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) => run(() => engine.createShare(input)),
@@ -726,7 +731,7 @@ export const createKevaMcpServer = (
       {
         title: "Revoke share link",
         description: "Immediately and permanently revoke a share link.",
-        inputSchema: shareIdArgs.shape,
+        inputSchema: shareIdArgs,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       ({ id }) => run(() => engine.revokeShare(id)),

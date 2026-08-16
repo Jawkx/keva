@@ -60,12 +60,17 @@ export type ThumbnailError =
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(maximum, Math.max(minimum, value));
 
+interface Dimensions {
+  readonly width: number;
+  readonly height: number;
+}
+
 const dimensionsWithin = (
   width: number,
   height: number,
   maxWidth: number,
   maxHeight: number,
-): { readonly width: number; readonly height: number } => {
+): Dimensions => {
   const scale = Math.min(maxWidth / width, maxHeight / height, 1);
   return {
     width: Math.max(1, Math.round(width * scale)),

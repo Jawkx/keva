@@ -25,7 +25,7 @@ export const FILTER_OPERATORS = [
   "exists",
 ] as const satisfies readonly Operator[];
 
-export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
+export const FILTER_OPERATOR_LABELS = {
   eq: "is",
   neq: "is not",
   gt: "greater than",
@@ -41,7 +41,7 @@ export const FILTER_OPERATOR_LABELS: Record<Operator, string> = {
   contains_text: "contains",
   contains_any: "contains",
   in: "is one of",
-};
+} satisfies Readonly<Record<Operator, string>>;
 
 export const opNeedsValue = (op: Operator): boolean =>
   op !== "exists" && op !== "missing" && op !== "is_tag";
@@ -166,8 +166,8 @@ export interface FilterDraft {
 let fallbackConditionId = 0;
 
 const nextConditionId = () => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `condition:${crypto.randomUUID()}`;
+  if (globalThis.crypto?.randomUUID) {
+    return `condition:${globalThis.crypto.randomUUID()}`;
   }
   fallbackConditionId += 1;
   return `condition:${fallbackConditionId}`;
@@ -235,12 +235,11 @@ export const buildFilterWhere = (draft: FilterDraft): QueryCondition[] => [
   ...draft.rows.map(rowCondition).filter((c): c is QueryCondition => c !== null),
 ];
 
-const isScalar = (value: unknown): value is FilterScalar =>
-  typeof value === "string" || typeof value === "number";
+const isScalar = Schema.is(Schema.Union([Schema.String, Schema.Number]));
 
 const matchKindCondition = (condition: QueryCondition): KindId[] | null => {
   if (condition.key !== CONTENT_TYPE_KEY) return null;
-  if (condition.op === "contains_text" && typeof condition.value === "string") {
+  if (condition.op === "contains_text" && Schema.is(Schema.String)(condition.value)) {
     const value = condition.value;
     const kind = KIND_OPTIONS.find(
       (option) => option.alternatives.length === 1 && option.alternatives[0] === value,
@@ -280,8 +279,8 @@ export const draftFromConditions = (conditions: readonly QueryCondition[]): Filt
     const min = sizeRows.find((c) => c.op === "gte")?.value;
     const max = sizeRows.find((c) => c.op === "lt")?.value;
     const matched = matchSizeFacet(
-      typeof min === "number" ? min : undefined,
-      typeof max === "number" ? max : undefined,
+      Schema.is(Schema.Number)(min) ? min : undefined,
+      Schema.is(Schema.Number)(max) ? max : undefined,
     );
     if (matched) {
       size = matched;
@@ -301,12 +300,12 @@ export const draftFromConditions = (conditions: readonly QueryCondition[]): Filt
   return { kinds, size, rows };
 };
 
-const SIZE_PHRASE: Record<Exclude<SizeFacetId, "any">, string> = {
+const SIZE_PHRASE = {
   sm: "Smaller than 1 MB",
   md: "Between 1 and 10 MB",
   lg: "Between 10 and 100 MB",
   xl: "Larger than 100 MB",
-};
+} satisfies Readonly<Record<Exclude<SizeFacetId, "any">, string>>;
 
 const joinOr = (parts: readonly string[]): string =>
   parts.length <= 1

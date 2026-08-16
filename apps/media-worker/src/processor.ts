@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { makeThumbnailJobStore, type ClaimedThumbnailJob } from "@keva/core/postgres";
 import { AwsClient } from "aws4fetch";
@@ -104,7 +105,8 @@ const boundedDownload = (
         orElse: () => Effect.fail(processingError("StorageTimeout")),
       }),
     );
-    if (!response.ok || !response.body)
+    const responseBody = response.body;
+    if (!response.ok || !responseBody)
       return yield* processingError(`SourceDownload${response.status}`);
     if (Number(response.headers.get("content-length") || "0") > MAX_SOURCE_BYTES)
       return yield* processingError("SourceTooLarge", true);
@@ -118,11 +120,11 @@ const boundedDownload = (
         );
       },
     });
-    yield* tryProcessing(
-      () =>
-        pipeline(Readable.fromWeb(response.body as never), limiter, createWriteStream(destination)),
-      "SourceDownload",
-    );
+    yield* tryProcessing(() => {
+      // SAFETY: Fetch and node:stream/web implement the same Web ReadableStream contract.
+      const source = responseBody as NodeReadableStream;
+      return pipeline(Readable.fromWeb(source), limiter, createWriteStream(destination));
+    }, "SourceDownload");
   });
 
 export const renderImageThumbnail = (inputPath: string, outputPath: string) =>
@@ -164,7 +166,7 @@ const uploadOutput = (client: AwsClient, config: StorageConfig, key: string, bod
           method: "PUT",
           signal,
           headers: { "content-length": String(body.byteLength), "content-type": "image/webp" },
-          body: body as unknown as BodyInit,
+          body: Buffer.from(body),
         }),
       "OutputUpload",
     ).pipe(

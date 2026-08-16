@@ -1,23 +1,30 @@
-export interface TaggedError {
-  readonly _tag: string;
-  readonly message?: string;
-}
+import { Schema } from "effect";
 
-const hasTag = (value: unknown): value is TaggedError =>
-  typeof value === "object" && value !== null && "_tag" in value;
+const TaggedError = Schema.Struct({
+  _tag: Schema.String,
+  message: Schema.optional(Schema.String),
+});
 
-export const isUnauthorized = (error: unknown): boolean =>
-  hasTag(error) && error._tag === "Unauthorized";
+export interface TaggedError extends Schema.Schema.Type<typeof TaggedError> {}
 
-export const isShareGone = (error: unknown): boolean =>
-  hasTag(error) &&
-  (error._tag === "Unauthorized" || error._tag === "NotFound" || error._tag === "Forbidden");
+const parseTaggedError = (cause: unknown): TaggedError | null =>
+  Schema.is(TaggedError)(cause) ? cause : null;
 
-export const errorMessage = (error: unknown): string => {
-  if (hasTag(error)) {
+export const isUnauthorized = (cause: unknown): boolean =>
+  parseTaggedError(cause)?._tag === "Unauthorized";
+
+export const isShareGone = (cause: unknown): boolean => {
+  const tag = parseTaggedError(cause)?._tag;
+  return tag === "Unauthorized" || tag === "NotFound" || tag === "Forbidden";
+};
+
+export const isNotFound = (cause: unknown): boolean => parseTaggedError(cause)?._tag === "NotFound";
+
+export const errorMessage = (cause: unknown): string => {
+  const error = parseTaggedError(cause);
+  if (error) {
     const tag = error._tag;
-    const message =
-      typeof error.message === "string" && error.message.length > 0 ? error.message : undefined;
+    const message = error.message && error.message.length > 0 ? error.message : undefined;
     switch (tag) {
       case "Unauthorized":
         return message ?? "Your session has expired. Please sign in again.";
@@ -39,6 +46,6 @@ export const errorMessage = (error: unknown): string => {
         return message ?? `Request failed (${tag}).`;
     }
   }
-  if (error instanceof Error) return error.message;
+  if (cause instanceof Error) return cause.message;
   return "Something went wrong.";
 };

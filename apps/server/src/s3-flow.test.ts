@@ -32,7 +32,7 @@ const putToPresigned = async (url: string, bytes: Uint8Array, contentType: strin
       "content-type": contentType,
       "content-length": String(bytes.byteLength),
     },
-    body: bytes.slice().buffer as ArrayBuffer,
+    body: Buffer.from(bytes),
   });
   if (!res.ok) throw new Error(`presigned PUT failed: ${res.status}`);
 };
@@ -43,8 +43,7 @@ const getFromPresigned = async (url: string): Promise<Uint8Array> => {
   return new Uint8Array(await res.arrayBuffer());
 };
 
-const s3Env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
-  ?.env;
+const s3Env = process.env;
 
 const realS3Config =
   s3Env?.KEVA_TEST_S3_ENDPOINT &&
@@ -287,7 +286,12 @@ describe.skipIf(!realS3Config)("S3 blob store against a real S3-compatible provi
       Layer.mergeAll(
         Layer.succeed(MetadataStore, makePostgresMetadataStore(sql)),
         ChangePublisherNoop,
-        S3BlobStoreLive(realS3Config!),
+        S3BlobStoreLive(
+          realS3Config ??
+            (() => {
+              throw new Error("Real S3 configuration is unavailable");
+            })(),
+        ),
       ),
     );
   });

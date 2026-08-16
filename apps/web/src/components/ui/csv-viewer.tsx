@@ -73,7 +73,16 @@ type CsvSearchResult = {
   columnTitle: string;
 };
 
-function toDisplayString(value: unknown): string {
+type ParsedCsvField = string | string[] | null | undefined;
+type ParsedCsvRow = Record<string, ParsedCsvField>;
+
+interface ParsedCsv {
+  headers: string[];
+  rows: string[][];
+  error: string | null;
+}
+
+function toDisplayString(value: ParsedCsvField): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
@@ -158,22 +167,13 @@ function findCsvSearchResults(headers: string[], rows: string[][], rawQuery: str
   });
 }
 
-function parseDelimitedText(text: string): {
-  headers: string[];
-  rows: string[][];
-  error: string | null;
-} {
-  const results = Papa.parse<Record<string, unknown>>(text, {
+function parseDelimitedText(text: string): ParsedCsv {
+  const results = Papa.parse<ParsedCsvRow>(text, {
     header: true,
     skipEmptyLines: "greedy",
   });
 
-  const objectRows = Array.isArray(results.data)
-    ? results.data.filter(
-        (row): row is Record<string, unknown> =>
-          !!row && typeof row === "object" && !Array.isArray(row),
-      )
-    : [];
+  const objectRows = results.data.filter((row) => row !== null && !Array.isArray(row));
   const metaFields = Array.isArray(results.meta.fields)
     ? results.meta.fields.map((field) => String(field))
     : [];
@@ -495,31 +495,22 @@ function CsvSearchPopover({
 }
 
 function readIsDarkTheme() {
-  return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  return "document" in globalThis && globalThis.document.documentElement.classList.contains("dark");
+}
+
+function subscribeToTheme(onStoreChange: () => void) {
+  if (!("document" in globalThis) || !("MutationObserver" in globalThis)) return () => undefined;
+
+  const observer = new globalThis.MutationObserver(onStoreChange);
+  observer.observe(globalThis.document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"],
+  });
+  return () => observer.disconnect();
 }
 
 function useIsDarkTheme() {
-  const [isDark, setIsDark] = React.useState(readIsDarkTheme);
-
-  React.useEffect(() => {
-    if (typeof document === "undefined") return;
-
-    const updateTheme = () => setIsDark(readIsDarkTheme());
-
-    updateTheme();
-
-    if (typeof MutationObserver === "undefined") return;
-
-    const observer = new MutationObserver(updateTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  return isDark;
+  return React.useSyncExternalStore(subscribeToTheme, readIsDarkTheme, () => false);
 }
 
 export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
@@ -621,6 +612,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
   const getCellContent = React.useCallback(
     ([col, row]: Item): GridCell => {
       const value = parsed.rows[row]?.[col] ?? "";
+      // SAFETY: Glide invokes getCellContent only after its dynamically imported module is mounted.
       const textKind = glide?.GridCellKind.Text as GridCellKind.Text;
 
       return {
@@ -695,7 +687,10 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
               </ToolbarTooltip>
               <Select
                 value={zoom.toString()}
-                onValueChange={(value) => setZoom(Number(value) as (typeof ZOOM_OPTIONS)[number])}
+                onValueChange={(value) => {
+                  const option = ZOOM_OPTIONS.find((candidate) => candidate.toString() === value);
+                  if (option !== undefined) setZoom(option);
+                }}
                 modal={false}
               >
                 <SelectTrigger size="sm" className="w-[84px] min-w-[84px]" aria-label="Zoom level">

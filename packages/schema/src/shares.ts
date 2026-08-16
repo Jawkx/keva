@@ -213,21 +213,23 @@ export const OwnerInitiateUploadResult = Schema.Struct({
 });
 export type OwnerInitiateUploadResult = typeof OwnerInitiateUploadResult.Type;
 
-export const toOwnerItem = (item: KevaItem): OwnerItem => ({
-  id: item.id,
-  name: item.name,
-  contentType: item.contentType,
-  declaredSize: item.declaredSize,
-  size: item.size,
-  etag: item.etag,
-  source: item.source,
-  status: item.status,
-  revision: item.revision,
-  createdAt: item.createdAt,
-  updatedAt: item.updatedAt,
-  properties: item.properties,
-  ...(item.presentation === undefined ? {} : { presentation: item.presentation }),
-});
+export const toOwnerItem = (item: KevaItem): OwnerItem => {
+  const owner = {
+    id: item.id,
+    name: item.name,
+    contentType: item.contentType,
+    declaredSize: item.declaredSize,
+    size: item.size,
+    etag: item.etag,
+    source: item.source,
+    status: item.status,
+    revision: item.revision,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    properties: item.properties,
+  } satisfies OwnerItem;
+  return item.presentation === undefined ? owner : { ...owner, presentation: item.presentation };
+};
 
 export const toSharedItem = (item: KevaItem, canDelete = false): SharedItem => ({
   ...toOwnerItem(item),

@@ -169,8 +169,8 @@ export class KevaTransportError extends Error {
 
 export type KevaClientError = KevaErrorType | KevaProtocolError | KevaTransportError;
 
-const decode = <A>(schema: Schema.Codec<A, unknown, never>, value: unknown): A =>
-  Schema.decodeUnknownSync(schema)(value);
+const decode = <A, I>(schema: Schema.Codec<A, I, never>, value: I): A =>
+  Schema.decodeSync(schema)(value);
 
 interface RequestConfig {
   readonly baseUrl: string;
@@ -210,54 +210,50 @@ const downloadBytesFromUrlEffect = (
     catch: (cause) => (cause instanceof KevaProtocolError ? cause : new KevaTransportError(cause)),
   });
 
-const decodeResponse = <A>(
-  schema: Schema.Codec<A, unknown, never>,
-  value: unknown,
-  message: string,
-): Effect.Effect<A, KevaProtocolError> =>
-  Schema.decodeUnknownEffect(schema)(value).pipe(
-    Effect.mapError(() => new KevaProtocolError(message)),
-  );
-
-const httpRequestEffect = <A>(
+const httpRequestEffect = <A, B = never>(
   config: RequestConfig,
   method: string,
   path: string,
   schema: Schema.Codec<A, unknown, never>,
-  body?: unknown,
+  body?: B,
 ): Effect.Effect<A, KevaClientError> =>
   Effect.gen(function* () {
-    const response = yield* fetchEffect(config.fetch, `${config.baseUrl}${path}`, {
+    const headers: Record<string, string> = {};
+    const request: RequestInit = {
       method,
       credentials: config.credentials,
-      headers: {
-        ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+      headers,
+    };
+    if (config.token) headers.authorization = `Bearer ${config.token}`;
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+      request.body = JSON.stringify(body);
+    }
+    const response = yield* fetchEffect(config.fetch, `${config.baseUrl}${path}`, request);
     const payload: unknown = yield* Effect.promise(() => response.json().catch(() => undefined));
     if (!response.ok) {
-      const apiError = yield* decodeResponse(
-        KevaError,
-        payload,
-        `Server returned ${response.status} with an invalid error body`,
+      const apiError = yield* Schema.decodeUnknownEffect(KevaError)(payload).pipe(
+        Effect.mapError(
+          () =>
+            new KevaProtocolError(`Server returned ${response.status} with an invalid error body`),
+        ),
       );
       return yield* Effect.fail(apiError);
     }
-    return yield* decodeResponse(
-      schema,
-      payload,
-      `Server returned ${response.status} with an invalid response body`,
+    return yield* Schema.decodeUnknownEffect(schema)(payload).pipe(
+      Effect.mapError(
+        () =>
+          new KevaProtocolError(`Server returned ${response.status} with an invalid response body`),
+      ),
     );
   });
 
-const httpRequest = <A>(
+const httpRequest = <A, B = never>(
   config: RequestConfig,
   method: string,
   path: string,
   schema: Schema.Codec<A, unknown, never>,
-  body?: unknown,
+  body?: B,
 ): Promise<A> =>
   Effect.runPromiseExit(httpRequestEffect(config, method, path, schema, body)).then((exit) => {
     if (Exit.isSuccess(exit)) return exit.value;
@@ -279,11 +275,11 @@ export class KevaClient {
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
-  #request<A>(
+  #request<A, B = never>(
     method: string,
     path: string,
     schema: Schema.Codec<A, unknown, never>,
-    body?: unknown,
+    body?: B,
   ): Promise<A> {
     return httpRequest(
       {
@@ -299,11 +295,11 @@ export class KevaClient {
     );
   }
 
-  #requestEffect<A>(
+  #requestEffect<A, B = never>(
     method: string,
     path: string,
     schema: Schema.Codec<A, unknown, never>,
-    body?: unknown,
+    body?: B,
   ): Effect.Effect<A, KevaClientError> {
     return httpRequestEffect(
       {
@@ -558,7 +554,9 @@ export class KevaClient {
     targets: readonly (string | BatchPatchItemType)[],
     patch: BatchPatchChanges,
   ): Promise<BatchPatchResultType> {
-    const items = targets.map((target) => (typeof target === "string" ? { id: target } : target));
+    const items = targets.map((target) =>
+      Schema.is(Schema.String)(target) ? { id: target } : target,
+    );
     return this.#request(
       "POST",
       "/items/patch",
@@ -849,20 +847,20 @@ export class ShareClient {
     };
   }
 
-  #request<A>(
+  #request<A, B = never>(
     method: string,
     path: string,
     schema: Schema.Codec<A, unknown, never>,
-    body?: unknown,
+    body?: B,
   ): Promise<A> {
     return httpRequest(this.#config, method, path, schema, body);
   }
 
-  #requestEffect<A>(
+  #requestEffect<A, B = never>(
     method: string,
     path: string,
     schema: Schema.Codec<A, unknown, never>,
-    body?: unknown,
+    body?: B,
   ): Effect.Effect<A, KevaClientError> {
     return httpRequestEffect(this.#config, method, path, schema, body);
   }
@@ -1028,20 +1026,20 @@ export class SharedViewClient implements ShareAccessClient {
     this.#prefix = `/shared-views/${encodeURIComponent(options.grantId)}`;
   }
 
-  #request<A>(
+  #request<A, B = never>(
     method: string,
     path: string,
     schema: Schema.Codec<A, unknown, never>,
-    body?: unknown,
+    body?: B,
   ): Promise<A> {
     return httpRequest(this.#config, method, `${this.#prefix}${path}`, schema, body);
   }
 
-  #requestEffect<A>(
+  #requestEffect<A, B = never>(
     method: string,
     path: string,
     schema: Schema.Codec<A, unknown, never>,
-    body?: unknown,
+    body?: B,
   ): Effect.Effect<A, KevaClientError> {
     return httpRequestEffect(this.#config, method, `${this.#prefix}${path}`, schema, body);
   }

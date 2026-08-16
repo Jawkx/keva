@@ -4,6 +4,7 @@ import {
   betterAuthSessionResolver,
   createBetterAuth,
   makeAuthHandler,
+  type BetterAuthConfig,
   makeConnectionStore,
   makeMcpActorResolver,
   makeMcpAuthorizationServer,
@@ -16,11 +17,13 @@ import {
   createVerificationEmailSender,
   type EmailVerificationConfig,
 } from "./email-verification.js";
+import { StorageUnavailable } from "@keva/schema";
 import { Polar } from "@polar-sh/sdk";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { makeBillingStore, type BillingConfig, type BillingStore } from "./billing.js";
 import { makeUserAvatarResolver } from "./avatar.js";
 import { realtimePublisherLayer, type RealtimeGateway } from "./realtime.js";
+import { failureOrElse } from "./effect-failure.js";
 
 export interface ServerOptionsConfig {
   readonly staticToken: string;
@@ -45,23 +48,61 @@ export interface ServerOptionsConfig {
   readonly s3: RuntimeConfig["s3"];
 }
 
-const refreshExpiredSubscription = (
+interface BetterAuthConfigBuilder {
+  database: BetterAuthConfig["database"];
+  secret: string;
+  baseURL: string;
+  trustedOrigins?: NonNullable<BetterAuthConfig["trustedOrigins"]>;
+  sendVerificationEmail?: NonNullable<BetterAuthConfig["sendVerificationEmail"]>;
+  googleOAuth?: NonNullable<BetterAuthConfig["googleOAuth"]>;
+  polar?: NonNullable<BetterAuthConfig["polar"]>;
+}
+
+interface RuntimeConfigBuilder {
+  staticToken: string;
+  tenantId: string;
+  database: DatabaseUnit;
+  sessionResolver?: NonNullable<RuntimeConfig["sessionResolver"]>;
+  sessionIdentityResolver?: NonNullable<RuntimeConfig["sessionIdentityResolver"]>;
+  billing?: BillingStore;
+  realtime: RealtimeGateway;
+  s3: RuntimeConfig["s3"];
+}
+
+interface AppServiceOptionsBuilder {
+  layer: AppServiceOptions["layer"];
+  changePublisher?: NonNullable<AppServiceOptions["changePublisher"]>;
+  authHandler?: NonNullable<AppServiceOptions["authHandler"]>;
+  billing?: NonNullable<AppServiceOptions["billing"]>;
+  mcp?: NonNullable<AppServiceOptions["mcp"]>;
+  userAvatars?: NonNullable<AppServiceOptions["userAvatars"]>;
+  realtime?: NonNullable<AppServiceOptions["realtime"]>;
+  dispose?: NonNullable<AppServiceOptions["dispose"]>;
+}
+
+const billingRefreshError = (message: string) => new StorageUnavailable({ message });
+
+const refreshExpiredSubscription = Effect.fn("Billing.refreshExpiredSubscription")(function* (
   billing: BillingStore,
   polar: Polar,
   userId: string,
   tenantId: string,
-) =>
-  Effect.gen(function* () {
-    const overview = yield* Effect.promise(() => billing.getOverview(tenantId));
-    const { currentPeriodEnd, subscriptionId } = overview.status;
-    if (!subscriptionId || !currentPeriodEnd || new Date(currentPeriodEnd) > new Date()) return;
-    const subscription = yield* Effect.promise(() =>
-      polar.subscriptions.get({ id: subscriptionId }),
-    );
-    yield* Effect.promise(() =>
-      billing.syncSubscription(userId, tenantId, subscription, new Date()),
-    );
+) {
+  const overview = yield* Effect.tryPromise({
+    try: () => billing.getOverview(tenantId),
+    catch: () => billingRefreshError("Billing status unavailable"),
   });
+  const { currentPeriodEnd, subscriptionId } = overview.status;
+  if (!subscriptionId || !currentPeriodEnd || new Date(currentPeriodEnd) > new Date()) return;
+  const subscription = yield* Effect.tryPromise({
+    try: () => polar.subscriptions.get({ id: subscriptionId }),
+    catch: () => billingRefreshError("Subscription status unavailable"),
+  });
+  yield* Effect.tryPromise({
+    try: () => billing.syncSubscription(userId, tenantId, subscription, new Date()),
+    catch: () => billingRefreshError("Could not refresh subscription"),
+  });
+});
 
 const databaseAuth = (config: ServerOptionsConfig, database: DatabaseUnit) => {
   if (!config.betterAuthSecret) return undefined;
@@ -73,41 +114,42 @@ const databaseAuth = (config: ServerOptionsConfig, database: DatabaseUnit) => {
     ? new Polar({ accessToken: config.polar.accessToken, server: config.polar.server })
     : undefined;
 
-  const auth = createBetterAuth({
+  const authConfig: BetterAuthConfigBuilder = {
     database: database.db,
     secret: config.betterAuthSecret,
     baseURL: config.betterAuthUrl ?? config.baseUrl,
-    ...(config.trustedOrigins ? { trustedOrigins: config.trustedOrigins } : {}),
-    ...(config.emailVerification
-      ? { sendVerificationEmail: createVerificationEmailSender(config.emailVerification) }
-      : {}),
-    ...(config.googleOAuth ? { googleOAuth: config.googleOAuth } : {}),
-    ...(config.polar && polarClient && billing
-      ? {
-          polar: {
-            client: polarClient,
-            webhookSecret: config.polar.webhookSecret,
-            products: Object.entries(config.polar.products).map(([slug, productId]) => ({
-              slug,
-              productId,
-            })),
-            onSubscription: async (subscription, eventAt) => {
-              const userId = subscription.customer.externalId;
-              if (!userId) return;
-              const tenantId = await resolvePersonalOrganization(database.db, userId, userId);
-              if (!tenantId) return;
-              await billing.syncSubscription(userId, tenantId, subscription, eventAt);
-            },
-          },
-        }
-      : {}),
-  });
+  };
+  if (config.trustedOrigins) authConfig.trustedOrigins = config.trustedOrigins;
+  if (config.emailVerification) {
+    authConfig.sendVerificationEmail = createVerificationEmailSender(config.emailVerification);
+  }
+  if (config.googleOAuth) authConfig.googleOAuth = config.googleOAuth;
+  if (config.polar && polarClient && billing) {
+    authConfig.polar = {
+      client: polarClient,
+      webhookSecret: config.polar.webhookSecret,
+      products: Object.entries(config.polar.products).map(([slug, productId]) => ({
+        slug,
+        productId,
+      })),
+      onSubscription: async (subscription, eventAt) => {
+        const userId = subscription.customer.externalId;
+        if (!userId) return;
+        const tenantId = await resolvePersonalOrganization(database.db, userId, userId);
+        if (!tenantId) return;
+        await billing.syncSubscription(userId, tenantId, subscription, eventAt);
+      },
+    };
+  }
+  const auth = createBetterAuth(authConfig);
 
-  return {
+  const result = {
     auth,
     handler: makeAuthHandler(auth, database.db, config.betterAuthUrl ?? config.baseUrl),
-    ...(billing && polarClient ? { billing, polar: polarClient } : {}),
+    billing,
+    polar: polarClient,
   };
+  return result;
 };
 
 export const createServerOptions = (config: ServerOptionsConfig): AppServiceOptions => {
@@ -125,48 +167,54 @@ export const createServerOptions = (config: ServerOptionsConfig): AppServiceOpti
           return session;
         }
       : undefined;
-  const layer = makeRuntimeLayer({
+  const runtimeConfig: RuntimeConfigBuilder = {
     staticToken: config.staticToken,
     tenantId: config.tenantId,
     database,
-    ...(sessionResolver ? { sessionResolver } : {}),
-    ...(sessionIdentityResolver ? { sessionIdentityResolver } : {}),
-    ...(auth?.billing ? { billing: auth.billing } : {}),
     realtime: config.realtime,
     s3: config.s3,
-  });
+  };
+  if (sessionResolver) runtimeConfig.sessionResolver = sessionResolver;
+  if (sessionIdentityResolver) {
+    runtimeConfig.sessionIdentityResolver = sessionIdentityResolver;
+  }
+  if (auth?.billing) runtimeConfig.billing = auth.billing;
+  const layer = makeRuntimeLayer(runtimeConfig);
 
-  return {
+  const options: AppServiceOptionsBuilder = {
     layer,
     changePublisher: realtimePublisherLayer(config.realtime),
     realtime: config.realtime,
     userAvatars: makeUserAvatarResolver(database.db),
-    ...(auth
-      ? {
-          authHandler: auth.handler,
-          ...(auth.billing && auth.polar
-            ? { billing: { store: auth.billing, polar: auth.polar } }
-            : {}),
-          mcp: {
-            mcpUrl: `${(config.betterAuthUrl ?? config.baseUrl).replace(/\/$/, "")}/mcp`,
-            authorizationServer: makeMcpAuthorizationServer(auth.auth),
-            resolveTenant: async (userId) => {
-              const tenantId = await makeUserTenantResolver(database.db)(userId);
-              if (tenantId && auth.billing) {
-                await auth.billing.ensureUnsubscribed(userId, tenantId);
-                if (auth.polar) {
-                  await Effect.runPromise(
-                    refreshExpiredSubscription(auth.billing, auth.polar, userId, tenantId),
-                  );
-                }
-              }
-              return tenantId;
-            },
-            resolveActorNames: makeMcpActorResolver(database.db),
-            connections: makeConnectionStore(database.db),
-          },
-        }
-      : {}),
     dispose: database.dispose,
   };
+  if (!auth) return options;
+  options.authHandler = auth.handler;
+  if (auth.billing && auth.polar) {
+    options.billing = { store: auth.billing, polar: auth.polar };
+  }
+  options.mcp = {
+    mcpUrl: `${(config.betterAuthUrl ?? config.baseUrl).replace(/\/$/, "")}/mcp`,
+    authorizationServer: makeMcpAuthorizationServer(auth.auth),
+    resolveTenant: async (userId) => {
+      const tenantId = await makeUserTenantResolver(database.db)(userId);
+      if (tenantId && auth.billing) {
+        await auth.billing.ensureUnsubscribed(userId, tenantId);
+        if (auth.polar) {
+          const refresh = await Effect.runPromiseExit(
+            refreshExpiredSubscription(auth.billing, auth.polar, userId, tenantId),
+          );
+          if (Exit.isFailure(refresh)) {
+            throw failureOrElse(refresh.cause, () =>
+              billingRefreshError("Could not refresh subscription"),
+            );
+          }
+        }
+      }
+      return tenantId;
+    },
+    resolveActorNames: makeMcpActorResolver(database.db),
+    connections: makeConnectionStore(database.db),
+  };
+  return options;
 };

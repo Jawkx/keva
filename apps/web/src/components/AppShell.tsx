@@ -172,7 +172,11 @@ function AppSidebar() {
   const expandOnEmptyClick =
     state === "collapsed"
       ? (event: MouseEvent) => {
-          if ((event.target as HTMLElement).closest('[data-sidebar="menu-button"]')) return;
+          if (
+            event.target instanceof Element &&
+            event.target.closest('[data-sidebar="menu-button"]')
+          )
+            return;
           setOpen(true);
         }
       : undefined;

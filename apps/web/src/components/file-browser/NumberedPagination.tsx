@@ -21,7 +21,8 @@ export const visiblePaginationItems = (
   const result: Array<number | "ellipsis"> = [];
   for (const value of sorted) {
     const previous = result.at(-1);
-    if (typeof previous === "number" && value - previous > 1) result.push("ellipsis");
+    if (previous !== undefined && previous !== "ellipsis" && value - previous > 1)
+      result.push("ellipsis");
     result.push(value);
   }
   return result;

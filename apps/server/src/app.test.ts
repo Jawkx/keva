@@ -1,4 +1,5 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
+import { OwnerInitiateUploadResult, type Properties } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
@@ -6,6 +7,7 @@ import { createApp, type AppServices } from "./app.js";
 import { ShareGrantStore } from "./shares.js";
 import { testSql } from "./test/db.js";
 import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
+import { decodeResponseJson } from "./test/http.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
@@ -54,18 +56,14 @@ const putToStorage = (
 const seedItem = async (
   app: ReturnType<typeof createApp>,
   name: string,
-  properties: Record<string, unknown>,
+  properties: Properties,
 ) => {
   const initiatedResponse = await app.request("/api/items", {
     method: "POST",
     headers: { ...auth, "content-type": "application/json" },
     body: JSON.stringify({ name, contentType: "text/plain", size: 1 }),
   });
-  const initiated = (await initiatedResponse.json()) as {
-    item: { id: string };
-    uploadUrl: string;
-    headers: Record<string, string>;
-  };
+  const initiated = await decodeResponseJson(OwnerInitiateUploadResult, initiatedResponse);
   await putToStorage(initiated, "x");
   await app.request(`/api/items/${initiated.item.id}/confirm`, { method: "POST", headers: auth });
   const patched = await app.request(`/api/items/${initiated.item.id}`, {

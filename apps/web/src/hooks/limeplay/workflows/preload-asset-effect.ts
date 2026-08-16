@@ -24,7 +24,7 @@ interface PreloadAssetContext<TItem extends TAsset> {
   readonly getIsCurrentPreload: () => boolean;
   readonly getPreviousError: () => MediaPreviousError | undefined;
   readonly getRetryCount: () => number;
-  readonly options?: UseAssetOptions<TItem>;
+  readonly options?: UseAssetOptions<TItem> | undefined;
   readonly player: shaka.Player;
   readonly preloadDefault: AssetPreloadContext<TItem>["preloadDefault"];
   readonly signal: AbortSignal;
@@ -45,29 +45,35 @@ export const preloadAssetEffect = <TItem extends TAsset>(
     const retryCount = context.getRetryCount();
     const previousError = context.getPreviousError();
 
-    if (context.options?.loader?.preload) {
+    const preload = context.options?.loader?.preload;
+    if (preload) {
+      const preloadContext: AssetPreloadContext<TItem> = {
+        asset: context.asset,
+        player: context.player,
+        preloadDefault: context.preloadDefault,
+        retryCount,
+        signal: context.signal,
+      };
+      if (previousError !== undefined) {
+        preloadContext.previousError = previousError;
+      }
       const manager = yield* Effect.tryPromise({
         catch: (cause) => mapPreloadError(cause),
-        try: () =>
-          context.options!.loader!.preload!({
-            asset: context.asset,
-            player: context.player,
-            preloadDefault: context.preloadDefault,
-            ...(previousError === undefined ? {} : { previousError }),
-            retryCount,
-            signal: context.signal,
-          }),
+        try: () => preload(preloadContext),
       });
 
       return manager;
     }
 
-    const resolvedSource = yield* resolveSourceEffect(context.options, {
+    const resolveContext: ResolveSourceContext<TItem> = {
       asset: context.asset,
-      ...(previousError === undefined ? {} : { previousError }),
       retryCount,
       signal: context.signal,
-    });
+    };
+    if (previousError !== undefined) {
+      resolveContext.previousError = previousError;
+    }
+    const resolvedSource = yield* resolveSourceEffect(context.options, resolveContext);
 
     yield* ensureCurrentPreload(context.getIsCurrentPreload, context.signal);
 

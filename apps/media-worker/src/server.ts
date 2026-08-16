@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AwsClient } from "aws4fetch";
-import { Data, Effect } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import postgres from "postgres";
 import { drainThumbnailJobs } from "./processor.js";
 
@@ -20,17 +20,19 @@ const required = (name: string) => {
     ? Effect.succeed(value)
     : Effect.fail(new DiagnosticError({ code: "ConfigurationMissing" }));
 };
-const errorCode = (error: unknown) => {
-  if (typeof error === "object" && error !== null && "code" in error)
-    return String(error.code).slice(0, 64);
-  if (error instanceof Error) {
-    const message = error.message.toLowerCase();
+const ErrorWithCode = Schema.Struct({ code: Schema.Unknown });
+
+const errorCode = (cause: unknown) => {
+  const coded = Schema.decodeUnknownOption(ErrorWithCode)(cause);
+  if (Option.isSome(coded)) return String(coded.value.code).slice(0, 64);
+  if (cause instanceof Error) {
+    const message = cause.message.toLowerCase();
     if (message.includes("password") || message.includes("authentication")) return "DatabaseAuth";
     if (message.includes("enotfound") || message.includes("getaddrinfo")) return "DatabaseDns";
     if (message.includes("certificate") || message.includes("ssl")) return "DatabaseTls";
     if (message.includes("timeout")) return "DatabaseTimeout";
     if (message.includes("connection") || message.includes("connect")) return "DatabaseConnection";
-    return error.name.slice(0, 64);
+    return cause.name.slice(0, 64);
   }
   return "UnknownError";
 };
@@ -95,7 +97,7 @@ const diagnostic = Effect.all(
     ok: database.ok && storage.ok,
   })),
 );
-const send = (response: ServerResponse, status: number, body: unknown) =>
+const send = <Body>(response: ServerResponse, status: number, body: Body) =>
   Effect.sync(() => {
     response.writeHead(status, { "content-type": "application/json" });
     response.end(JSON.stringify(body));
@@ -121,7 +123,7 @@ const handle = (request: IncomingMessage, response: ServerResponse) =>
   });
 
 const server = createServer((request, response) => {
-  Effect.runPromise(handle(request, response) as Effect.Effect<void, never, never>).catch(() => {
+  Effect.runPromise(handle(request, response)).catch(() => {
     if (!response.headersSent) response.writeHead(500);
     response.end();
   });

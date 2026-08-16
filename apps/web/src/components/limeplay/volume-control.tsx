@@ -1,7 +1,8 @@
 "use client";
 
 import { Slider as SliderPrimitive } from "@base-ui/react/slider";
-import React, { useImperativeHandle, useRef, useState } from "react";
+import { composeRefs } from "@radix-ui/react-compose-refs";
+import React, { useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { MediaReadyState, usePlaybackStore } from "@/hooks/limeplay/use-playback";
@@ -10,11 +11,15 @@ import { useVolumeStore } from "@/hooks/limeplay/use-volume";
 
 const VOLUME_RESET_BASE = 0.05;
 
+interface VolumeCssProperties extends React.CSSProperties {
+  "--lp-volume-value"?: string;
+}
+
 export const Root = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
 >((props, ref) => {
-  const internalRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
+  const internalRef = useRef<HTMLDivElement>(null);
   const { className, orientation = "horizontal", ...etc } = props;
   const volume = useVolumeStore((state) => state.level);
   const hasAudio = useVolumeStore((state) => state.hasAudio);
@@ -24,7 +29,6 @@ export const Root = React.forwardRef<
 
   const disabled = props.disabled || readyState < MediaReadyState.HAVE_METADATA || !hasAudio;
 
-  useImperativeHandle(ref, () => internalRef.current);
   const setVolume = useVolumeStore((state) => state.setVolume);
 
   const getVolumeFromEvent = (event: React.PointerEvent) => {
@@ -66,7 +70,7 @@ export const Root = React.forwardRef<
       max={1}
       min={0}
       orientation={orientation}
-      ref={internalRef}
+      ref={composeRefs(ref, internalRef)}
       step={0.01}
       value={[currentVolumeValue]}
       {...trackEvents}
@@ -103,6 +107,9 @@ export const Progress = React.forwardRef<
   const volume = useVolumeStore((state) => state.level);
   const muted = useVolumeStore((state) => state.muted);
   const currentValue = muted ? 0 : volume;
+  const progressStyle: VolumeCssProperties = {
+    "--lp-volume-value": `${(currentValue * 100).toString()}%`,
+  };
 
   return (
     <SliderPrimitive.Indicator
@@ -115,11 +122,7 @@ export const Progress = React.forwardRef<
         className,
       )}
       ref={ref}
-      style={
-        {
-          "--lp-volume-value": `${(currentValue * 100).toString()}%`,
-        } as React.CSSProperties
-      }
+      style={progressStyle}
       {...etc}
     />
   );

@@ -41,7 +41,7 @@ describe("authOperationEffect", () => {
 
   it("rejects invalid responses", async () => {
     const result = await Effect.runPromise(
-      authOperationEffect(async () => null as never).pipe(Effect.result),
+      authOperationEffect(async () => null).pipe(Effect.result),
     );
 
     expect(Result.isFailure(result)).toBe(true);

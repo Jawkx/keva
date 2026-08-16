@@ -95,8 +95,8 @@ export function McpSetupCard() {
                   variant="outline"
                   value={[clientId]}
                   onValueChange={(value) => {
-                    const next = value[0] as McpClientId | undefined;
-                    if (next) setClientId(next);
+                    const client = MCP_CLIENTS.find((candidate) => candidate.id === value[0]);
+                    if (client) setClientId(client.id);
                   }}
                   className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3"
                   aria-label="MCP client"

@@ -129,7 +129,7 @@ export const parseTokenParts = (token: string): { id: string; secret: string } |
 
 export const hashSecret = async (secret: string): Promise<string> => {
   const bytes = new TextEncoder().encode(secret);
-  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
@@ -335,7 +335,7 @@ export const sessionStrategy =
               tenantId: session.tenantId,
               scopes: [...(session.scopes ?? ["read", "write", "delete", "admin"])],
               via: "session" as const,
-              ...(session.user ? { actor: { user: session.user } } : {}),
+              actor: session.user ? { user: session.user } : undefined,
             }
           : null,
       ),
@@ -379,18 +379,18 @@ export const requireStoragePermissions = (
 // dropping OIDC scopes (openid/profile/…). `admin` is never granted over MCP —
 // token/connection management stays a session-only action. Views and shares
 // have narrow scopes that do not confer account administration.
-const MCP_SCOPE_MAP: Readonly<Record<string, Scope>> = {
-  "keva:read": "read",
-  "keva:write": "write",
-  "keva:delete": "delete",
-  "keva:views": "views",
-  "keva:shares": "shares",
-};
+const MCP_SCOPE_MAP = new Map<string, Scope>([
+  ["keva:read", "read"],
+  ["keva:write", "write"],
+  ["keva:delete", "delete"],
+  ["keva:views", "views"],
+  ["keva:shares", "shares"],
+]);
 
 export const mcpScopesToKevaScopes = (scopes: string): Scope[] => {
   const granted = scopes
     .split(/\s+/)
-    .map((scope) => MCP_SCOPE_MAP[scope])
+    .map((scope) => MCP_SCOPE_MAP.get(scope))
     .filter((scope): scope is Scope => scope !== undefined);
   return [...new Set(granted)];
 };

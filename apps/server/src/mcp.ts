@@ -51,6 +51,18 @@ const McpOwnerQueryResult = Schema.Struct({
 });
 
 type AppRuntime = ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
+type SetPropertiesInput = Parameters<McpEngine["setProperties"]>[0];
+
+interface ItemEventOptions {
+  limit?: number;
+  cursor?: string;
+}
+
+interface PropertyPatchInput {
+  set?: SetPropertiesInput["set"];
+  unset?: SetPropertiesInput["unset"];
+  expectedRevision?: SetPropertiesInput["expectedRevision"];
+}
 
 const McpItemContentResult = Schema.Struct({
   item: OwnerItem,
@@ -85,7 +97,7 @@ export const principalFromMcpToken = (
   },
 });
 
-const decode = <A>(schema: Schema.ConstraintDecoder<A>, value: unknown) =>
+const decode = <A, Input>(schema: Schema.ConstraintDecoder<A>, value: Input) =>
   Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError(() => new ValidationError({ message: "Tool input validation failed" })),
   );
@@ -159,10 +171,10 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
-          return yield* engine.events(itemId, {
-            ...(limit !== undefined ? { limit } : {}),
-            ...(cursor !== undefined ? { cursor } : {}),
-          });
+          const options: ItemEventOptions = {};
+          if (limit !== undefined) options.limit = limit;
+          if (cursor !== undefined) options.cursor = cursor;
+          return yield* engine.events(itemId, options);
         }),
         ItemEventsResult,
       ),
@@ -240,13 +252,13 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, input.id);
-          const patch = yield* decode(ItemPatch, {
-            ...(input.set !== undefined ? { set: input.set } : {}),
-            ...(input.unset !== undefined ? { unset: input.unset } : {}),
-            ...(input.expectedRevision !== undefined
-              ? { expectedRevision: input.expectedRevision }
-              : {}),
-          });
+          const patchInput: PropertyPatchInput = {};
+          if (input.set !== undefined) patchInput.set = input.set;
+          if (input.unset !== undefined) patchInput.unset = input.unset;
+          if (input.expectedRevision !== undefined) {
+            patchInput.expectedRevision = input.expectedRevision;
+          }
+          const patch = yield* decode(ItemPatch, patchInput);
           return toOwnerItem(yield* engine.patch(itemId, patch));
         }),
         OwnerItem,
@@ -277,16 +289,20 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
             itemIds,
             (id) =>
               engine.delete(id).pipe(
-                Effect.as({ id, error: undefined as string | undefined }),
-                Effect.catch((error) => Effect.succeed({ id, error: error.message })),
+                Effect.map(() => ({ status: "deleted" as const, id })),
+                Effect.catch((error) =>
+                  Effect.succeed({ status: "failed" as const, id, error: error.message }),
+                ),
               ),
             { concurrency: 8 },
           );
           return {
-            deleted: results.filter((result) => !result.error).map((result) => result.id),
+            deleted: results
+              .filter((result) => result.status === "deleted")
+              .map((result) => result.id),
             failed: results
-              .filter((result) => result.error)
-              .map((result) => ({ id: result.id, error: result.error! })),
+              .filter((result) => result.status === "failed")
+              .map((result) => ({ id: result.id, error: result.error })),
           };
         }),
         BatchDeleteResult,

@@ -10,16 +10,14 @@ export const authContinuationSearch = (search: string): string => {
 };
 
 export const planContinuation = (search: string): string | null => {
-  const plan = new URLSearchParams(search).get("plan");
-  return BILLING_PLANS.some((candidate) => candidate.slug === plan)
-    ? `/settings?plan=${encodeURIComponent(plan!)}`
-    : null;
+  const requestedPlan = new URLSearchParams(search).get("plan");
+  const plan = BILLING_PLANS.find((candidate) => candidate.slug === requestedPlan);
+  return plan ? `/settings?plan=${encodeURIComponent(plan.slug)}` : null;
 };
 
-export const loginContinuation = (search: string, from: unknown): string => {
+export const loginContinuation = (search: string, from: string | null | undefined): string => {
   const continuationSearch = authContinuationSearch(search);
-  const returnPath =
-    typeof from === "string" && from.startsWith("/") && !from.startsWith("//") ? from : "/";
+  const returnPath = from?.startsWith("/") && !from.startsWith("//") ? from : "/";
   return (
     oauthContinuation(continuationSearch) ?? planContinuation(continuationSearch) ?? returnPath
   );

@@ -32,11 +32,13 @@ export interface VolumeStore extends MediaEventSlice<VolumeEvents> {
 
 const BASE_RESET_VOLUME = 0.05;
 
-type MediaElementAudioMetadata = HTMLMediaElement & {
-  audioTracks?: { length: number };
-  mozHasAudio?: boolean;
-  webkitAudioDecodedByteCount?: number;
-};
+declare global {
+  interface HTMLMediaElement {
+    audioTracks?: { length: number };
+    mozHasAudio?: boolean;
+    webkitAudioDecodedByteCount?: number;
+  }
+}
 
 export function useVolumeStore<TSelected>(
   selector: (state: VolumeStore["volume"]) => TSelected,
@@ -71,9 +73,9 @@ export function volumeFeature(): MediaFeature<VolumeStore> {
           if (!media) return;
 
           let value: number;
-          if (typeof delta === "number") {
+          if (delta !== undefined) {
             value = volume + delta;
-          } else if (typeof progress === "number") {
+          } else if (progress !== undefined) {
             value = progress;
           } else {
             value = volume;
@@ -114,18 +116,16 @@ export function volumeFeature(): MediaFeature<VolumeStore> {
 }
 
 function getNativeHasAudio(media: HTMLMediaElement): boolean | undefined {
-  const metadata = media as MediaElementAudioMetadata;
-
-  if (metadata.audioTracks) {
-    return metadata.audioTracks.length > 0;
+  if (media.audioTracks) {
+    return media.audioTracks.length > 0;
   }
 
-  if (typeof metadata.mozHasAudio === "boolean") {
-    return metadata.mozHasAudio;
+  if (media.mozHasAudio !== undefined) {
+    return media.mozHasAudio;
   }
 
-  if (typeof metadata.webkitAudioDecodedByteCount === "number") {
-    return metadata.webkitAudioDecodedByteCount > 0;
+  if (media.webkitAudioDecodedByteCount !== undefined) {
+    return media.webkitAudioDecodedByteCount > 0;
   }
 
   return undefined;

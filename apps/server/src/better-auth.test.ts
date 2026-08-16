@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import { items } from "@keva/core/postgres";
 import {
@@ -11,7 +12,12 @@ import {
 import { makeDatabaseUnit } from "./database.js";
 import * as authSchema from "./auth-schema.js";
 import { requireTestDatabaseUrl } from "./test/db.js";
+import { decodeResponseJson } from "./test/http.js";
 import { eq } from "drizzle-orm";
+
+const McpMetadata = Schema.Struct({ scopes_supported: Schema.Array(Schema.String) });
+const SocialSignInResult = Schema.Struct({ url: Schema.String, redirect: Schema.Boolean });
+const AuthUserResult = Schema.Struct({ user: Schema.Struct({ id: Schema.String }) });
 
 const database = makeDatabaseUnit(requireTestDatabaseUrl());
 const auth = createBetterAuth({
@@ -65,7 +71,7 @@ describe("MCP OAuth registration", () => {
     const response = await server.authorizationServerMetadata(
       new Request("http://localhost:8787/.well-known/oauth-authorization-server"),
     );
-    const metadata = (await response.json()) as { scopes_supported: string[] };
+    const metadata = await decodeResponseJson(McpMetadata, response);
 
     expect(metadata.scopes_supported).toContain("keva:read");
     expect(metadata.scopes_supported).toContain("keva:delete");
@@ -82,7 +88,7 @@ describe("Google OAuth", () => {
       }),
     );
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { url: string; redirect: boolean };
+    const body = await decodeResponseJson(SocialSignInResult, response);
     const authorizationUrl = new URL(body.url);
     expect(body.redirect).toBe(true);
     expect(authorizationUrl.hostname).toBe("accounts.google.com");
@@ -102,7 +108,7 @@ describe("anonymous account linking", () => {
     expect(anonymousResponse.status).toBe(200);
     const anonymousCookie = anonymousResponse.headers.get("set-cookie")?.split(";")[0];
     expect(anonymousCookie).toBeTruthy();
-    const anonymousBody = (await anonymousResponse.json()) as { user: { id: string } };
+    const anonymousBody = await decodeResponseJson(AuthUserResult, anonymousResponse);
     const headers = new Headers({ cookie: anonymousCookie! });
 
     await expect(betterAuthIdentityResolver(auth)(headers)).resolves.toMatchObject({
@@ -141,7 +147,7 @@ describe("anonymous account linking", () => {
       }),
     );
     expect(signUp.status).toBe(200);
-    const signUpBody = (await signUp.json()) as { user: { id: string } };
+    const signUpBody = await decodeResponseJson(AuthUserResult, signUp);
     const [claimedItem] = await database.db
       .select({ uploadedByUserId: items.uploadedByUserId })
       .from(items)

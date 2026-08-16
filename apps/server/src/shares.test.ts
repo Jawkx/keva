@@ -1,6 +1,19 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
-import type { CreateShareGrantResult, QueryCondition, Scope, ViewRecord } from "@keva/schema";
-import { Effect, Layer } from "effect";
+import {
+  AccountShareRecord,
+  CreateShareGrantResult,
+  OwnerInitiateUploadResult,
+  ShareGrantRecord,
+  SharedInitiateUploadResult,
+  SharedItem,
+  SharedQueryResult,
+  ViewRecord,
+  type CreateShareGrant,
+  type Properties,
+  type QueryCondition,
+  type Scope,
+} from "@keva/schema";
+import { Effect, Layer, Schema } from "effect";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
 import {
@@ -11,6 +24,7 @@ import {
 import { ShareGrantStore } from "./shares.js";
 import { testSql } from "./test/db.js";
 import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
+import { decodeResponseJson } from "./test/http.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
@@ -125,15 +139,16 @@ const scopedAuth = {
 
 const putToStorage = (uploadUrl: string, init?: RequestInit) => fetch(uploadUrl, init);
 
-const seedItem = async (app: ReturnType<typeof makeApp>, name: string, properties: object) => {
+const seedItem = async (app: ReturnType<typeof makeApp>, name: string, properties: Properties) => {
   const bytes = new TextEncoder().encode(name);
-  const initiated = (await (
+  const initiated = await decodeResponseJson(
+    OwnerInitiateUploadResult,
     await app.request("/api/items", {
       method: "POST",
       headers: staticAuth,
       body: JSON.stringify({ name, contentType: "text/plain", size: bytes.byteLength }),
-    })
-  ).json()) as { item: { id: string }; uploadUrl: string; headers: Record<string, string> };
+    }),
+  );
   await putToStorage(initiated.uploadUrl, {
     method: "PUT",
     headers: initiated.headers,
@@ -162,21 +177,30 @@ const createView = async (
     headers: admin,
     body: JSON.stringify({ name, conditions, icon }),
   });
-  return { status: response.status, view: (await response.json()) as ViewRecord };
+  return { status: response.status, view: await decodeResponseJson(ViewRecord, response) };
 };
 
-const createShare = async (app: ReturnType<typeof makeApp>, body: object) => {
-  const response = await app.request("/api/shares", {
+const requestShare = (app: ReturnType<typeof makeApp>, body: CreateShareGrant) =>
+  app.request("/api/shares", {
     method: "POST",
     headers: admin,
     body: JSON.stringify(body),
   });
-  return { status: response.status, body: (await response.json()) as CreateShareGrantResult };
+
+const createShare = async (app: ReturnType<typeof makeApp>, body: CreateShareGrant) => {
+  const response = await requestShare(app, body);
+  return {
+    status: response.status,
+    body: await decodeResponseJson(CreateShareGrantResult, response),
+  };
 };
 
 const ALPHA: QueryCondition[] = [{ key: "project", op: "has_value", value: "alpha" }];
 
-const shareAlpha = async (app: ReturnType<typeof makeApp>, overrides: object = {}) => {
+const shareAlpha = async (
+  app: ReturnType<typeof makeApp>,
+  overrides: Partial<CreateShareGrant> = {},
+) => {
   const { view } = await createView(app, ALPHA);
   return createShare(app, {
     name: "Alpha share",
@@ -237,13 +261,13 @@ describe("server share subsystem", () => {
 
   it("rejects a grant referencing a missing view", async () => {
     const app = makeApp();
-    const { status, body } = await createShare(app, {
+    const response = await requestShare(app, {
       name: "Bad",
       viewId: "nope",
       scopes: ["read"],
     });
-    expect(status).toBe(404);
-    expect(body).toMatchObject({ _tag: "NotFound" });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ _tag: "NotFound" });
   });
 
   it("creates an inline backing view and its share as one command", async () => {
@@ -263,13 +287,13 @@ describe("server share subsystem", () => {
 
   it("does not retain an inline view when share validation fails", async () => {
     const app = makeApp();
-    const { status } = await createShare(app, {
+    const createResponse = await requestShare(app, {
       name: "Invalid inline share",
       scopes: ["read", "write"],
       writeStamp: { project: "beta" },
       view: { name: "Orphan candidate", conditions: ALPHA },
     });
-    expect(status).toBe(400);
+    expect(createResponse.status).toBe(400);
 
     const response = await app.request("/api/views", { headers: admin });
     expect(await response.json()).toEqual([]);
@@ -355,7 +379,7 @@ describe("server share subsystem", () => {
 
     const listed = await app.request("/api/shares", { headers: admin });
     expect(listed.status).toBe(200);
-    expect((await listed.json()) as unknown[]).toEqual([
+    expect(await decodeResponseJson(Schema.Array(ShareGrantRecord), listed)).toEqual([
       expect.not.objectContaining({ token: expect.anything() }),
     ]);
   });
@@ -401,7 +425,7 @@ describe("server share subsystem", () => {
       body: JSON.stringify({ where: [] }),
     });
     expect(queried.status).toBe(200);
-    const items = ((await queried.json()) as { items: Record<string, unknown>[] }).items;
+    const items = (await decodeResponseJson(SharedQueryResult, queried)).items;
     expect(items).toHaveLength(1);
     expect(items[0]!.name).toBe("in.txt");
     const serialized = JSON.stringify(items[0]);
@@ -427,7 +451,9 @@ describe("server share subsystem", () => {
         headers: { ...bearer(body.token), "content-type": "application/json" },
         body: JSON.stringify({ where: [] }),
       });
-      return ((await res.json()) as { items: { name: string }[] }).items.map((i) => i.name).sort();
+      return (await decodeResponseJson(SharedQueryResult, res)).items
+        .map((item) => item.name)
+        .sort();
     };
 
     expect(await namesVia()).toEqual(["in.txt"]);
@@ -465,7 +491,7 @@ describe("server share subsystem", () => {
       grantIds: [body.record.id],
     });
     const current = await app.request(`/api/views/${view.id}`, { headers: admin });
-    expect((await current.json()) as ViewRecord).toMatchObject({ conditions: ALPHA });
+    expect(await decodeResponseJson(ViewRecord, current)).toMatchObject({ conditions: ALPHA });
   });
 
   it("stamps share uploads and reports them back through the grant", async () => {
@@ -474,7 +500,8 @@ describe("server share subsystem", () => {
     const token = body.token;
     const bytes = new TextEncoder().encode("dropped");
 
-    const initiated = (await (
+    const initiated = await decodeResponseJson(
+      SharedInitiateUploadResult,
       await app.request("/api/items", {
         method: "POST",
         headers: { ...bearer(token), "content-type": "application/json" },
@@ -483,13 +510,9 @@ describe("server share subsystem", () => {
           contentType: "text/plain",
           size: bytes.byteLength,
         }),
-      })
-    ).json()) as {
-      item: { id: string; source?: string; tenantId?: string };
-      uploadUrl: string;
-      headers: Record<string, string>;
-    };
-    expect(initiated.item.tenantId).toBeUndefined();
+      }),
+    );
+    expect(initiated.item).not.toHaveProperty("tenantId");
 
     await putToStorage(initiated.uploadUrl, {
       method: "PUT",
@@ -501,7 +524,7 @@ describe("server share subsystem", () => {
       headers: bearer(token),
     });
     expect(confirmed.status).toBe(200);
-    const confirmedItem = (await confirmed.json()) as { source: string; properties: object };
+    const confirmedItem = await decodeResponseJson(SharedItem, confirmed);
     expect(confirmedItem.source).toBe(`share:${body.record.id}`);
     expect(confirmedItem.properties).toEqual({ project: "alpha" });
 
@@ -510,8 +533,8 @@ describe("server share subsystem", () => {
       headers: { ...bearer(token), "content-type": "application/json" },
       body: JSON.stringify({ where: [] }),
     });
-    const names = ((await queried.json()) as { items: { name: string }[] }).items.map(
-      (i) => i.name,
+    const names = (await decodeResponseJson(SharedQueryResult, queried)).items.map(
+      (item) => item.name,
     );
     expect(names).toContain("drop.txt");
   });
@@ -535,11 +558,7 @@ describe("server share subsystem", () => {
         size: bytes.byteLength,
       }),
     });
-    const initiated = (await initiatedResponse.json()) as {
-      item: { id: string };
-      uploadUrl: string;
-      headers: Record<string, string>;
-    };
+    const initiated = await decodeResponseJson(SharedInitiateUploadResult, initiatedResponse);
     await putToStorage(initiated.uploadUrl, {
       method: "PUT",
       headers: initiated.headers,
@@ -719,7 +738,7 @@ describe("server share subsystem", () => {
       }),
     });
     expect(invited.status).toBe(200);
-    const grant = (await invited.json()) as { id: string };
+    const grant = await decodeResponseJson(AccountShareRecord, invited);
 
     const legacyRevoke = await app.request(`/api/shares/${grant.id}`, {
       method: "DELETE",
@@ -797,11 +816,7 @@ describe("server share subsystem", () => {
       body: JSON.stringify({ name: "delivery.txt", contentType: "text/plain", size: 1 }),
     });
     expect(initiatedResponse.status).toBe(200);
-    const initiated = (await initiatedResponse.json()) as {
-      item: { id: string };
-      uploadUrl: string;
-      headers: Record<string, string>;
-    };
+    const initiated = await decodeResponseJson(SharedInitiateUploadResult, initiatedResponse);
     await putToStorage(initiated.uploadUrl, {
       method: "PUT",
       headers: initiated.headers,

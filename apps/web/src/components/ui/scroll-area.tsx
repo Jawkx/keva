@@ -70,11 +70,11 @@ function composeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCall
   return (node) => {
     refs.forEach((ref) => {
       if (!ref) return;
-      if (typeof ref === "function") {
-        ref(node);
+      if ("current" in ref) {
+        ref.current = node;
         return;
       }
-      ref.current = node;
+      ref(node);
     });
   };
 }

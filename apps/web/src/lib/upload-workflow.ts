@@ -21,10 +21,10 @@ interface UploadClient<S, A, E> {
   readonly confirm: (session: S) => Effect.Effect<A, E>;
 }
 
-const isRetryableUploadError = (error: unknown): boolean =>
-  error instanceof KevaTransportError ||
-  error instanceof StorageUnavailable ||
-  error instanceof Internal;
+const isRetryableUploadError = (cause: unknown): boolean =>
+  cause instanceof KevaTransportError ||
+  cause instanceof StorageUnavailable ||
+  cause instanceof Internal;
 
 const stagePolicy = <A, E>(
   effect: Effect.Effect<A, E>,
@@ -64,16 +64,18 @@ export const uploadFileEffect = <
       }
       if (!session) {
         stage = "initiate";
-        session = yield* stagePolicy(client.start, stage, 30_000, undefined);
+        const startedSession = yield* stagePolicy(client.start, stage, 30_000, undefined);
+        session = startedSession;
         stage = "put";
-        yield* Effect.sync(() => onProgress(session!, stage as UploadPhase));
+        yield* Effect.sync(() => onProgress(startedSession, "put"));
       }
+      const activeSession = session;
       if (stage === "put") {
-        yield* stagePolicy(client.put(session), stage, 5 * 60_000, shouldRetry);
+        yield* stagePolicy(client.put(activeSession), stage, 5 * 60_000, shouldRetry);
         stage = "confirm";
-        yield* Effect.sync(() => onProgress(session!, "confirm"));
+        yield* Effect.sync(() => onProgress(activeSession, "confirm"));
       }
-      return yield* stagePolicy(client.confirm(session), "confirm", 30_000, shouldRetry);
+      return yield* stagePolicy(client.confirm(activeSession), "confirm", 30_000, shouldRetry);
     }).pipe(
       Effect.mapError(
         (cause) =>

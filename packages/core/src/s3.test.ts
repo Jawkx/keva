@@ -15,6 +15,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const requireRequest = (input: RequestInfo | URL | undefined): Request => {
+  if (!(input instanceof Request)) throw new Error("Expected fetch to receive a Request");
+  return input;
+};
+
 describe("S3BlobStore", () => {
   it("presigns a path-style staging PUT with browser-settable upload headers", async () => {
     const signed = await Effect.runPromise(
@@ -32,7 +37,7 @@ describe("S3BlobStore", () => {
 
   it("requests identity encoding and reads metadata from a successful HEAD response", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const request = input as Request;
+      const request = requireRequest(input);
       return new Response(null, {
         status: 200,
         headers:
@@ -51,7 +56,7 @@ describe("S3BlobStore", () => {
       etag: "object-etag",
       contentType: "text/plain",
     });
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const request = requireRequest(fetchMock.mock.calls[0]?.[0]);
     expect(request.headers.get("accept-encoding")).toBe("identity");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
@@ -66,7 +71,7 @@ describe("S3BlobStore", () => {
     await expect(
       Effect.runPromise(store.copy("staging/source", "items/final", "etag")),
     ).resolves.toBeUndefined();
-    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const request = requireRequest(fetchMock.mock.calls[0]?.[0]);
     expect(request.headers.get("x-amz-copy-source-if-match")).toBe('"etag"');
   });
 
@@ -83,12 +88,9 @@ describe("S3BlobStore", () => {
   it.each([undefined, "", "invalid", "-1", "1.5"])(
     "rejects a successful HEAD with invalid content-length %s",
     async (contentLength) => {
-      vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response(null, {
-          status: 200,
-          ...(contentLength === undefined ? {} : { headers: { "content-length": contentLength } }),
-        }),
-      );
+      const response = new Response(null, { status: 200 });
+      if (contentLength !== undefined) response.headers.set("content-length", contentLength);
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
 
       await expect(
         Effect.runPromise(Effect.flip(store.head("objects/item"))),

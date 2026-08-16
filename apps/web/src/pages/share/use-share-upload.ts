@@ -34,8 +34,8 @@ export interface UploadState {
   readonly item?: SharedItem;
 }
 
-const isShareGoneError = (error: unknown): boolean =>
-  error instanceof Unauthorized || error instanceof NotFound || error instanceof Forbidden;
+const isShareGoneError = (cause: unknown): boolean =>
+  cause instanceof Unauthorized || cause instanceof NotFound || cause instanceof Forbidden;
 
 const ensureShareIdentityEffect = authOperationEffect(() => authClient.getSession()).pipe(
   Effect.flatMap((session) =>
@@ -116,9 +116,9 @@ export function useShareUpload(): ShareUpload {
       }),
     );
 
-  const failUploads = (entries: readonly UploadState[], error: unknown) => {
+  const failUploads = (entries: readonly UploadState[], cause: unknown) => {
     const ids = new Set(entries.map((entry) => entry.id));
-    const message = errorMessage(error);
+    const message = errorMessage(cause);
     setUploads((prev) =>
       prev.map((upload) =>
         ids.has(upload.id) ? { ...upload, status: "error", error: message } : upload,

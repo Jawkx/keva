@@ -1,4 +1,15 @@
 import { MetadataStore, S3BlobStoreLive, makePostgresMetadataStore } from "@keva/core";
+import {
+  BatchDeleteResult,
+  BatchPatchResult,
+  DownloadResult,
+  OwnerInitiateUploadResult,
+  OwnerItem,
+  OwnerQueryResult,
+  ThumbnailUploadResult,
+  TrashResult,
+  UsageResult,
+} from "@keva/schema";
 import { Effect, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
@@ -6,6 +17,7 @@ import { ApiTokenStore, StaticTokenAuthLive } from "./auth.js";
 import { ShareGrantStore } from "./shares.js";
 import { testSql } from "./test/db.js";
 import { s3MockConfig, startS3Mock, type S3Mock } from "./test/s3-mock.js";
+import { decodeResponseJson } from "./test/http.js";
 import { makeInMemoryShareGrantStore } from "./test/share-store.js";
 import { makeInMemoryViewStore } from "./test/view-store.js";
 import { ViewStore } from "./views.js";
@@ -58,11 +70,7 @@ describe("server integration — HTTP roundtrip", () => {
       }),
     });
     expect(initiatedResponse.status).toBe(200);
-    const initiated = (await initiatedResponse.json()) as {
-      item: { id: string };
-      uploadUrl: string;
-      headers: Record<string, string>;
-    };
+    const initiated = await decodeResponseJson(OwnerInitiateUploadResult, initiatedResponse);
 
     const uploaded = await putToStorage(initiated.uploadUrl, {
       method: "PUT",
@@ -101,7 +109,7 @@ describe("server integration — HTTP roundtrip", () => {
       }),
     });
     expect(queried.status).toBe(200);
-    const queryBody = (await queried.json()) as { items: { id: string }[]; totalCount: number };
+    const queryBody = await decodeResponseJson(OwnerQueryResult, queried);
     expect(queryBody.items.map((o) => o.id)).toContain(initiated.item.id);
     expect(queryBody.totalCount).toBe(1);
 
@@ -110,7 +118,7 @@ describe("server integration — HTTP roundtrip", () => {
       headers: auth,
     });
     expect(contentResponse.status).toBe(200);
-    const { url } = (await contentResponse.json()) as { url: string };
+    const { url } = await decodeResponseJson(DownloadResult, contentResponse);
     // Downloads are presigned GETs served directly by storage (the mock).
     const downloaded = await fetch(url);
     expect(downloaded.status).toBe(200);
@@ -141,11 +149,7 @@ describe("server integration — HTTP roundtrip", () => {
         size: bytes.byteLength,
       }),
     });
-    const initiated = (await initiatedResponse.json()) as {
-      item: { id: string };
-      uploadUrl: string;
-      headers: Record<string, string>;
-    };
+    const initiated = await decodeResponseJson(OwnerInitiateUploadResult, initiatedResponse);
     await putToStorage(initiated.uploadUrl, {
       method: "PUT",
       headers: initiated.headers,
@@ -170,11 +174,7 @@ describe("server integration — HTTP roundtrip", () => {
         size: video.byteLength,
       }),
     });
-    const initiated = (await initiatedResponse.json()) as {
-      item: { id: string };
-      uploadUrl: string;
-      headers: Record<string, string>;
-    };
+    const initiated = await decodeResponseJson(OwnerInitiateUploadResult, initiatedResponse);
     await putToStorage(initiated.uploadUrl, {
       method: "PUT",
       headers: initiated.headers,
@@ -204,10 +204,7 @@ describe("server integration — HTTP roundtrip", () => {
       body: JSON.stringify({ contentType: "image/webp", size: thumbnail.byteLength }),
     });
     expect(uploadResponse.status).toBe(200);
-    const upload = (await uploadResponse.json()) as {
-      url: string;
-      headers: Record<string, string>;
-    };
+    const upload = await decodeResponseJson(ThumbnailUploadResult, uploadResponse);
     expect(
       await putToStorage(upload.url, {
         method: "PUT",
@@ -220,7 +217,7 @@ describe("server integration — HTTP roundtrip", () => {
       headers: auth,
     });
     expect(downloadResponse.status).toBe(200);
-    const download = (await downloadResponse.json()) as { url: string };
+    const download = await decodeResponseJson(DownloadResult, downloadResponse);
     expect(new Uint8Array(await (await fetch(download.url)).arrayBuffer())).toEqual(thumbnail);
 
     expect(
@@ -237,9 +234,10 @@ describe("server integration — HTTP roundtrip", () => {
   it("lists, restores, and permanently purges trashed ready items", async () => {
     const app = makeApp();
     const id = await makeReadyItem(app, "trash-roundtrip.txt");
-    const usageBefore = (await (await app.request("/api/usage", { headers: auth })).json()) as {
-      accountedItems: number;
-    };
+    const usageBefore = await decodeResponseJson(
+      UsageResult,
+      await app.request("/api/usage", { headers: auth }),
+    );
 
     expect(
       (await app.request(`/api/items/${id}`, { method: "DELETE", headers: auth })).status,
@@ -247,19 +245,21 @@ describe("server integration — HTTP roundtrip", () => {
     expect((await app.request(`/api/items/${id}`, { headers: auth })).status).toBe(404);
     expect(
       (
-        (await (
+        await decodeResponseJson(
+          OwnerQueryResult,
           await app.request("/api/query", {
             method: "POST",
             headers: { ...auth, "content-type": "application/json" },
             body: JSON.stringify({ where: [] }),
-          })
-        ).json()) as { items: { id: string }[] }
+          }),
+        )
       ).items.some((item) => item.id === id),
     ).toBe(false);
 
-    const trash = (await (await app.request("/api/trash", { headers: auth })).json()) as {
-      items: { id: string; deletedAt: string }[];
-    };
+    const trash = await decodeResponseJson(
+      TrashResult,
+      await app.request("/api/trash", { headers: auth }),
+    );
     expect(trash.items.find((item) => item.id === id)?.deletedAt).toMatch(/Z$/);
 
     const trashedItemResponse = await app.request(`/api/trash/${id}`, { headers: auth });
@@ -268,12 +268,13 @@ describe("server integration — HTTP roundtrip", () => {
 
     const trashedContentResponse = await app.request(`/api/trash/${id}/content`, { headers: auth });
     expect(trashedContentResponse.status).toBe(200);
-    const trashedContent = (await trashedContentResponse.json()) as { url: string };
+    const trashedContent = await decodeResponseJson(DownloadResult, trashedContentResponse);
     expect(await (await fetch(trashedContent.url)).text()).toBe("trash-roundtrip.txt");
 
-    const usageTrashed = (await (await app.request("/api/usage", { headers: auth })).json()) as {
-      accountedItems: number;
-    };
+    const usageTrashed = await decodeResponseJson(
+      UsageResult,
+      await app.request("/api/usage", { headers: auth }),
+    );
     expect(usageTrashed.accountedItems).toBe(usageBefore.accountedItems);
 
     const restored = await app.request(`/api/trash/${id}/restore`, {
@@ -281,7 +282,7 @@ describe("server integration — HTTP roundtrip", () => {
       headers: auth,
     });
     expect(restored.status).toBe(200);
-    expect((await restored.json()) as { id: string }).toMatchObject({ id });
+    expect(await decodeResponseJson(OwnerItem, restored)).toMatchObject({ id });
     expect((await app.request(`/api/items/${id}/content`, { headers: auth })).status).toBe(200);
 
     await app.request(`/api/items/${id}`, { method: "DELETE", headers: auth });
@@ -290,14 +291,13 @@ describe("server integration — HTTP roundtrip", () => {
     ).toBe(200);
     expect(
       (
-        (await (await app.request("/api/trash", { headers: auth })).json()) as {
-          items: { id: string }[];
-        }
+        await decodeResponseJson(TrashResult, await app.request("/api/trash", { headers: auth }))
       ).items.some((item) => item.id === id),
     ).toBe(false);
-    const usagePurged = (await (await app.request("/api/usage", { headers: auth })).json()) as {
-      accountedItems: number;
-    };
+    const usagePurged = await decodeResponseJson(
+      UsageResult,
+      await app.request("/api/usage", { headers: auth }),
+    );
     expect(usagePurged.accountedItems).toBe(usageBefore.accountedItems - 1);
   });
 
@@ -339,11 +339,8 @@ describe("server integration — HTTP roundtrip", () => {
       body: JSON.stringify({ ids: [a, b, unknown] }),
     });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      deleted: string[];
-      failed: { id: string }[];
-    };
-    expect(body.deleted.sort()).toEqual([a, b, unknown].sort());
+    const body = await decodeResponseJson(BatchDeleteResult, response);
+    expect([...body.deleted].sort()).toEqual([a, b, unknown].sort());
     expect(body.failed).toEqual([]);
 
     for (const id of [a, b]) {
@@ -360,12 +357,14 @@ describe("server integration — HTTP roundtrip", () => {
     const a = await makeReadyItem(app, "bulk-a.txt");
     const b = await makeReadyItem(app, "bulk-b.txt");
     const unknown = "00000000-0000-4000-8000-000000000099";
-    const currentA = (await (await app.request(`/api/items/${a}`, { headers: auth })).json()) as {
-      revision: number;
-    };
-    const currentB = (await (await app.request(`/api/items/${b}`, { headers: auth })).json()) as {
-      revision: number;
-    };
+    const currentA = await decodeResponseJson(
+      OwnerItem,
+      await app.request(`/api/items/${a}`, { headers: auth }),
+    );
+    const currentB = await decodeResponseJson(
+      OwnerItem,
+      await app.request(`/api/items/${b}`, { headers: auth }),
+    );
 
     const response = await app.request("/api/items/patch", {
       method: "POST",
@@ -381,12 +380,9 @@ describe("server integration — HTTP roundtrip", () => {
     });
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      updated: { id: string; revision: number }[];
-      failed: { id: string; error: { _tag: string } }[];
-    };
+    const body = await decodeResponseJson(BatchPatchResult, response);
     expect(body.updated).toEqual([{ id: a, revision: currentA.revision + 1 }]);
-    expect(body.failed).toEqual([
+    expect(body.failed).toMatchObject([
       { id: b, error: { _tag: "Conflict", message: "Item revision changed" } },
       { id: unknown, error: { _tag: "NotFound", message: "Item not found" } },
     ]);

@@ -69,9 +69,11 @@ const propertyChangeRows = (event: ItemEvent): string[] => {
 export function FileActivity({ itemId }: { readonly itemId: string }) {
   const eventsQuery = useInfiniteQuery({
     queryKey: itemEventsQueryKey(itemId),
-    queryFn: ({ pageParam }) =>
-      keva.events(itemId, { limit: 50, ...(pageParam ? { cursor: pageParam } : {}) }),
-    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => {
+      if (pageParam) return keva.events(itemId, { limit: 50, cursor: pageParam });
+      return keva.events(itemId, { limit: 50 });
+    },
+    initialPageParam: "",
     getNextPageParam: (last) => last.nextCursor,
   });
 

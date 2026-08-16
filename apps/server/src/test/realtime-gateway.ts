@@ -10,7 +10,7 @@ export class TestRealtimeGateway implements RealtimeGateway {
   ) {}
 
   readonly publisher = {
-    publish: (tenantId: string, value: unknown) =>
+    publish: (tenantId: string, value: ReturnType<typeof validateRealtimeEvent>) =>
       Effect.sync(() => this.onPublish?.(tenantId, validateRealtimeEvent(value))),
   };
 

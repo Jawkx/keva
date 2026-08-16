@@ -1,3 +1,5 @@
+import { isNotFound } from "./errors";
+
 export type ThumbnailTarget = {
   readonly url: string;
   readonly expiresAt: string;
@@ -21,16 +23,9 @@ export const loadOptionalThumbnail = async (
 ): Promise<ThumbnailTarget | null> => {
   try {
     return await load();
-  } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "_tag" in error &&
-      error._tag === "NotFound"
-    ) {
-      return null;
-    }
-    throw error;
+  } catch (cause) {
+    if (isNotFound(cause)) return null;
+    throw cause;
   }
 };
 

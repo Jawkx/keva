@@ -29,9 +29,7 @@ declare global {
     player: null | shaka.Player;
   }
   interface Window {
-    shaka: {
-      Player: typeof shaka.Player;
-    };
+    shaka: typeof shaka;
   }
 }
 
@@ -68,17 +66,8 @@ export interface UsePlayerOptions<TAsset> {
 
 export const RECOMMENDED_PLAYER_BUFFERING_THROTTLE_MS = 250;
 
-export function isLoadInterrupted(error: unknown): boolean {
-  if (
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    (error as { code: number }).code === shaka.util.Error.Code.LOAD_INTERRUPTED
-  ) {
-    return true;
-  }
-
-  return false;
+export function isLoadInterrupted(cause: unknown): boolean {
+  return cause instanceof shaka.util.Error && cause.code === shaka.util.Error.Code.LOAD_INTERRUPTED;
 }
 
 export function playerFeature(): MediaFeature<PlayerStore> {
@@ -258,7 +247,7 @@ function PlayerSetup() {
       setPlayer(localPlayer);
       playerInstance.current = localPlayer;
       mediaElement.player = localPlayer;
-      window.shaka = shaka as unknown as Window["shaka"];
+      window.shaka = shaka;
       events.emit("playerready");
     }
 
@@ -325,16 +314,15 @@ function PlayerSetup() {
     on(player, "loading", loadingHandler);
 
     const errorHandler = (event: Event) => {
-      const detail = (event as CustomEvent).detail as shaka.util.Error;
+      // SAFETY: Shaka's "error" listener contract dispatches CustomEvent<shaka.util.Error>.
+      const detail = (event as CustomEvent<shaka.util.Error>).detail;
       if (isLoadInterrupted(detail)) return;
       const media = store.getState().media.mediaElement;
       const currentTime = media?.currentTime ?? 0;
+      const error = toWorkflowError(detail);
 
-      store.getState().playback.setError(detail);
-      events.emit("playbackerror", {
-        currentTime,
-        error: detail as unknown as Error,
-      });
+      store.getState().playback.setError(error);
+      events.emit("playbackerror", { currentTime, error });
     };
 
     player.addEventListener("error", errorHandler);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import {
   isShareToken,
   KevaClient,
@@ -8,6 +8,12 @@ import {
   SharedViewClient,
   shareClient,
 } from "./index.js";
+
+interface ThumbnailRequestCall {
+  url: string;
+  method: string;
+  body?: string;
+}
 
 describe("KevaClient", () => {
   const item = {
@@ -311,11 +317,10 @@ describe("KevaClient", () => {
       fetch: async (input, init) => {
         const url = String(input);
         const method = init?.method ?? "GET";
-        calls.push({
-          url,
-          method,
-          ...(typeof init?.body === "string" ? { body: init.body } : {}),
-        });
+        const call: ThumbnailRequestCall = { url, method };
+        const body = init?.body;
+        if (Schema.is(Schema.String)(body)) call.body = body;
+        calls.push(call);
         if (method === "POST") {
           return Response.json({
             url: "https://blob.invalid/thumbnail",
@@ -557,7 +562,8 @@ describe("KevaClient", () => {
       },
     });
 
-    expect(() => client.patch(item.id, { set: { rating: 5 as never }, unset: [] })).toThrow();
+    const malformedPatch = JSON.parse('{"set":{"rating":5},"unset":[]}');
+    expect(() => client.patch(item.id, malformedPatch)).toThrow();
     expect(called).toBe(false);
   });
 
@@ -652,7 +658,7 @@ describe("ShareClient", () => {
       shareToken: "keva_sh_abc_def",
       fetch: async (input, init) => {
         const url = String(input);
-        authHeaders.push((init?.headers as Record<string, string>)?.authorization);
+        authHeaders.push(new Headers(init?.headers).get("authorization"));
         if (url.endsWith("/query")) {
           queryBody = JSON.parse(String(init?.body));
           return Response.json({ items: [sharedItem], totalCount: 3 });

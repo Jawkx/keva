@@ -36,11 +36,11 @@ export function PlayerErrorScreen({
 
     if (source === undefined) return;
 
-    loadSource(source, {
-      ...(initialIndex === undefined ? {} : { initialIndex }),
-      ...(loading === undefined ? {} : { loading }),
-      ...(sourceKey === undefined ? {} : { sourceKey }),
-    });
+    const options: Parameters<typeof loadSource>[1] = {};
+    if (initialIndex !== undefined) options.initialIndex = initialIndex;
+    if (loading !== undefined) options.loading = loading;
+    if (sourceKey !== undefined) options.sourceKey = sourceKey;
+    loadSource(source, options);
   }, [currentItem, initialIndex, loadAsset, loading, loadSource, source, sourceKey]);
 
   if (status !== "error") return null;

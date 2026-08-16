@@ -13,6 +13,13 @@ import type { DatabaseUnit } from "./database.js";
 import type { BillingStore } from "./billing.js";
 import type { RealtimeGateway } from "./realtime.js";
 
+interface AuthLayerConfig {
+  staticToken: string;
+  tenantId: string;
+  sessionResolver?: SessionResolver;
+  sessionIdentityResolver?: SessionIdentityResolver;
+}
+
 export interface RuntimeConfig {
   readonly staticToken: string;
   readonly tenantId: string;
@@ -40,16 +47,14 @@ export const makeRuntimeLayer = (config: RuntimeConfig) => {
     Layer.succeed(ShareGrantStore, makePostgresShareGrantStore(sql)),
     Layer.succeed(ViewStore, makePostgresViewStore(sql)),
   );
-  const authAndStores = Layer.provideMerge(
-    TokenAndStaticAuthFromStoreLive({
-      staticToken: config.staticToken,
-      tenantId: config.tenantId,
-      ...(config.sessionResolver ? { sessionResolver: config.sessionResolver } : {}),
-      ...(config.sessionIdentityResolver
-        ? { sessionIdentityResolver: config.sessionIdentityResolver }
-        : {}),
-    }),
-    stores,
-  );
+  const authConfig: AuthLayerConfig = {
+    staticToken: config.staticToken,
+    tenantId: config.tenantId,
+  };
+  if (config.sessionResolver) authConfig.sessionResolver = config.sessionResolver;
+  if (config.sessionIdentityResolver) {
+    authConfig.sessionIdentityResolver = config.sessionIdentityResolver;
+  }
+  const authAndStores = Layer.provideMerge(TokenAndStaticAuthFromStoreLive(authConfig), stores);
   return Layer.mergeAll(metadata, blobs, authAndStores);
 };

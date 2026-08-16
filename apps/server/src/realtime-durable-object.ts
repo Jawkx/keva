@@ -13,9 +13,11 @@ export interface DurableObjectStub {
   readonly fetch: (request: Request) => Promise<Response>;
 }
 
+export type DurableObjectId = string;
+
 export interface DurableObjectNamespace {
-  readonly idFromName: (name: string) => unknown;
-  readonly get: (id: unknown) => DurableObjectStub;
+  readonly idFromName: (name: string) => DurableObjectId;
+  readonly get: (id: DurableObjectId) => DurableObjectStub;
 }
 
 export interface RealtimeExecutionContext {

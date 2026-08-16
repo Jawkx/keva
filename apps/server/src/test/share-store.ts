@@ -42,6 +42,28 @@ const sharePerson = (user: TestUser) => ({
   avatar: { version: 1 as const, seed: user.id },
 });
 
+type SharePrincipal = Extract<Principal, { readonly via: "share" }>;
+type ShareContext = NonNullable<SharePrincipal["share"]>;
+
+interface ShareContextBuilder {
+  grantId: ShareContext["grantId"];
+  identityId?: ShareContext["identityId"];
+  conditions: ShareContext["conditions"];
+  writeStamp?: ShareContext["writeStamp"];
+  allowOwnDelete: ShareContext["allowOwnDelete"];
+  limits: ShareContext["limits"];
+}
+
+interface ViewRecordBuilder {
+  id: string;
+  tenantId: string;
+  name: string;
+  icon: string | null;
+  conditions: ViewRecord["conditions"];
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface StoredAccountGrant {
   readonly owner: TestUser;
   readonly recipient: TestUser;
@@ -120,21 +142,22 @@ export const makeInMemoryShareGrantStore = (
         if (!entry || entry.secret !== secret) return null;
         const g = entry.grant;
         if (g.expiresAt && new Date(g.expiresAt) <= new Date()) return null;
+        const share: ShareContextBuilder = {
+          grantId: g.id,
+          conditions: conditionsFor(g.viewId),
+          allowOwnDelete: g.allowOwnDelete,
+          limits: {
+            maxItemBytes: g.maxItemBytes,
+            maxTotalBytes: g.maxTotalBytes,
+            maxItems: g.maxItems,
+          },
+        };
+        if (g.writeStamp) share.writeStamp = g.writeStamp;
         return {
           tenantId: g.tenantId,
           scopes: [...g.scopes],
           via: "share",
-          share: {
-            grantId: g.id,
-            conditions: conditionsFor(g.viewId),
-            ...(g.writeStamp ? { writeStamp: g.writeStamp } : {}),
-            allowOwnDelete: g.allowOwnDelete,
-            limits: {
-              maxItemBytes: g.maxItemBytes,
-              maxTotalBytes: g.maxTotalBytes,
-              maxItems: g.maxItems,
-            },
-          },
+          share,
         } satisfies Principal;
       }),
     create: (tenantId, input) =>
@@ -393,6 +416,18 @@ export const makeInMemoryShareGrantStore = (
         ) {
           return null;
         }
+        const share: ShareContextBuilder = {
+          grantId: grant.id,
+          identityId: recipient.id,
+          conditions: conditionsFor(grant.viewId),
+          allowOwnDelete: grant.allowOwnDelete,
+          limits: {
+            maxItemBytes: grant.maxItemBytes,
+            maxTotalBytes: grant.maxTotalBytes,
+            maxItems: grant.maxItems,
+          },
+        };
+        if (grant.writeStamp) share.writeStamp = grant.writeStamp;
         return {
           principal: {
             tenantId: grant.tenantId,
@@ -402,18 +437,7 @@ export const makeInMemoryShareGrantStore = (
               user: recipient,
               share: { grantId: grant.id, name: grant.name },
             },
-            share: {
-              grantId: grant.id,
-              identityId: recipient.id,
-              conditions: conditionsFor(grant.viewId),
-              ...(grant.writeStamp ? { writeStamp: grant.writeStamp } : {}),
-              allowOwnDelete: grant.allowOwnDelete,
-              limits: {
-                maxItemBytes: grant.maxItemBytes,
-                maxTotalBytes: grant.maxTotalBytes,
-                maxItems: grant.maxItems,
-              },
-            },
+            share,
           },
           received: toReceived(grant, account),
           grant: toAccountRecord(grant, account),
@@ -433,11 +457,9 @@ export const makeInMemoryShareGrantStore = (
                 grant.viewId === id &&
                 (!grant.expiresAt || new Date(grant.expiresAt) > new Date()),
             );
-          const requiredScopes: Scope[] = [
-            "views",
-            ...(activeGrants.length ? (["shares"] as const) : []),
-            ...new Set(activeGrants.flatMap((grant) => grant.scopes)),
-          ];
+          const requiredScopes: Scope[] = ["views"];
+          if (activeGrants.length > 0) requiredScopes.push("shares");
+          requiredScopes.push(...new Set(activeGrants.flatMap((grant) => grant.scopes)));
           if (
             !(
               (principal.via === "session" && principal.scopes.includes("admin")) ||
@@ -457,13 +479,13 @@ export const makeInMemoryShareGrantStore = (
             )
             .map((grant) => grant.id);
           if (grantIds.length > 0) return { status: "incompatible" as const, grantIds };
-          const next: ViewRecord = {
+          const next: ViewRecordBuilder = {
             ...view,
-            ...(input.name === undefined ? {} : { name: input.name }),
-            ...(input.icon === undefined ? {} : { icon: input.icon }),
-            ...(input.conditions === undefined ? {} : { conditions: [...input.conditions] }),
             updatedAt: new Date().toISOString(),
           };
+          if (input.name !== undefined) next.name = input.name;
+          if (input.icon !== undefined) next.icon = input.icon;
+          if (input.conditions !== undefined) next.conditions = [...input.conditions];
           views.set(id, next);
           return { status: "updated" as const, view: next };
         });
