@@ -1,6 +1,19 @@
-# keva
+# Keva
+
+> Archived portfolio project. Keva is no longer maintained. This repository preserves the source code and screenshots, not a supported hosted service.
 
 Metadata-rich, S3-backed object storage for people, applications, and agents.
+
+## Portfolio archive
+
+Keva combined a file library with custom metadata, saved views, sharing, an HTTP API, and an OAuth-authorized MCP server. I stopped maintaining the project and kept it here as a record of the work.
+
+- [Project page and screenshots](https://jawdoes.dev/projects/keva/)
+- [Screenshot gallery](./docs/portfolio/README.md)
+
+![Keva file library](./docs/portfolio/grid-dark.png)
+
+The screenshots use a local demo account and sample files. They do not contain customer data. Deployment workflows are disabled. The setup instructions below describe the archived implementation and require your own infrastructure and credentials.
 
 ## Hosting
 
