@@ -1,8 +1,8 @@
-export class DurableObject {
-  protected readonly ctx: unknown;
-  protected readonly env: unknown;
+export class DurableObject<Context = never, Environment = never> {
+  protected readonly ctx: Context;
+  protected readonly env: Environment;
 
-  constructor(ctx: unknown, env: unknown) {
+  constructor(ctx: Context, env: Environment) {
     this.ctx = ctx;
     this.env = env;
   }

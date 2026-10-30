@@ -333,7 +333,13 @@ export function ShareCreateDialog({
 
               <Field className="w-48">
                 <FieldLabel>Expires</FieldLabel>
-                <Select value={expiry} onValueChange={(v) => setExpiry(v as typeof expiry)}>
+                <Select
+                  value={expiry}
+                  onValueChange={(value) => {
+                    const preset = EXPIRY_PRESETS.find((candidate) => candidate.id === value);
+                    if (preset) setExpiry(preset.id);
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

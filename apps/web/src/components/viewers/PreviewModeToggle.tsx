@@ -18,8 +18,8 @@ export function PreviewModeToggle({ format, mode, onModeChange }: PreviewModeTog
         size="sm"
         value={[mode]}
         onValueChange={(value) => {
-          const next = value[0] as PreviewMode | undefined;
-          if (next) onModeChange(next);
+          const next = value[0];
+          if (next === "rendered" || next === "source") onModeChange(next);
         }}
         className="bg-background/90 backdrop-blur-sm"
         aria-label={`${format} view`}

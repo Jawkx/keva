@@ -26,7 +26,10 @@ export const ShareGrantRecord = Schema.Struct({
 });
 export type ShareGrantRecord = typeof ShareGrantRecord.Type;
 
-const PositiveInt = Schema.Number.pipe(Schema.int(), Schema.greaterThan(0));
+const PositiveInt = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isGreaterThan(0)),
+);
 
 // Owner request to mint a share grant on an existing view (`viewId`). One
 // cross-field invariant is checkable here — a write grant must carry a
@@ -38,7 +41,7 @@ export const CreateShareGrant = Schema.Struct({
   name: Schema.NonEmptyString,
   viewId: Schema.optional(Schema.String),
   view: Schema.optional(CreateView),
-  scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
+  scopes: Schema.Array(ShareScope).pipe(Schema.check(Schema.isMinLength(1))),
   writeStamp: Schema.optional(Properties),
   allowOwnDelete: Schema.optional(Schema.Boolean),
   maxItemBytes: Schema.optional(PositiveInt),
@@ -46,15 +49,24 @@ export const CreateShareGrant = Schema.Struct({
   maxItems: Schema.optional(PositiveInt),
   expiresAt: Schema.optional(IsoInstant),
 }).pipe(
-  Schema.filter((grant) => (grant.viewId === undefined) !== (grant.view === undefined), {
-    message: () => "A share requires exactly one view reference",
-  }),
-  Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
-    message: () => "Write grants require a writeStamp",
-  }),
-  Schema.filter((grant) => !grant.allowOwnDelete || grant.scopes.includes("write"), {
-    message: () => "Deleting own uploads requires write access",
-  }),
+  Schema.check(
+    Schema.makeFilter((grant) => (grant.viewId === undefined) !== (grant.view === undefined), {
+      message: "A share requires exactly one view reference",
+    }),
+  ),
+  Schema.check(
+    Schema.makeFilter(
+      (grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined,
+      {
+        message: "Write grants require a writeStamp",
+      },
+    ),
+  ),
+  Schema.check(
+    Schema.makeFilter((grant) => !grant.allowOwnDelete || grant.scopes.includes("write"), {
+      message: "Deleting own uploads requires write access",
+    }),
+  ),
 );
 export type CreateShareGrant = typeof CreateShareGrant.Type;
 
@@ -65,13 +77,13 @@ export const CreateShareGrantResult = Schema.Struct({
 });
 export type CreateShareGrantResult = typeof CreateShareGrantResult.Type;
 
-export const AccountShareStatus = Schema.Literal("pending", "accepted");
+export const AccountShareStatus = Schema.Literals(["pending", "accepted"]);
 export type AccountShareStatus = typeof AccountShareStatus.Type;
 
 export const CreateAccountShare = Schema.Struct({
-  recipientEmail: Schema.NonEmptyString.pipe(Schema.maxLength(320)),
+  recipientEmail: Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(320))),
   viewId: Schema.NonEmptyString,
-  scopes: Schema.Array(ShareScope).pipe(Schema.minItems(1)),
+  scopes: Schema.Array(ShareScope).pipe(Schema.check(Schema.isMinLength(1))),
   writeStamp: Schema.optional(Properties),
   allowOwnDelete: Schema.optional(Schema.Boolean),
   maxItemBytes: Schema.optional(PositiveInt),
@@ -79,12 +91,19 @@ export const CreateAccountShare = Schema.Struct({
   maxItems: Schema.optional(PositiveInt),
   expiresAt: Schema.optional(IsoInstant),
 }).pipe(
-  Schema.filter((grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined, {
-    message: () => "Write grants require a writeStamp",
-  }),
-  Schema.filter((grant) => !grant.allowOwnDelete || grant.scopes.includes("write"), {
-    message: () => "Deleting own uploads requires write access",
-  }),
+  Schema.check(
+    Schema.makeFilter(
+      (grant) => !grant.scopes.includes("write") || grant.writeStamp !== undefined,
+      {
+        message: "Write grants require a writeStamp",
+      },
+    ),
+  ),
+  Schema.check(
+    Schema.makeFilter((grant) => !grant.allowOwnDelete || grant.scopes.includes("write"), {
+      message: "Deleting own uploads requires write access",
+    }),
+  ),
 );
 export type CreateAccountShare = typeof CreateAccountShare.Type;
 
@@ -167,7 +186,10 @@ const RedactedItemFields = {
   etag: Schema.NullOr(Schema.String),
   source: Schema.NonEmptyString,
   status: ItemStatus,
-  revision: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
+  revision: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(1)),
+  ),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   properties: Properties,
@@ -187,25 +209,27 @@ export const OwnerInitiateUploadResult = Schema.Struct({
   item: OwnerItem,
   uploadUrl: Schema.String,
   expiresAt: Schema.String,
-  headers: Schema.Record({ key: Schema.String, value: Schema.String }),
+  headers: Schema.Record(Schema.String, Schema.String),
 });
 export type OwnerInitiateUploadResult = typeof OwnerInitiateUploadResult.Type;
 
-export const toOwnerItem = (item: KevaItem): OwnerItem => ({
-  id: item.id,
-  name: item.name,
-  contentType: item.contentType,
-  declaredSize: item.declaredSize,
-  size: item.size,
-  etag: item.etag,
-  source: item.source,
-  status: item.status,
-  revision: item.revision,
-  createdAt: item.createdAt,
-  updatedAt: item.updatedAt,
-  properties: item.properties,
-  ...(item.presentation === undefined ? {} : { presentation: item.presentation }),
-});
+export const toOwnerItem = (item: KevaItem): OwnerItem => {
+  const owner = {
+    id: item.id,
+    name: item.name,
+    contentType: item.contentType,
+    declaredSize: item.declaredSize,
+    size: item.size,
+    etag: item.etag,
+    source: item.source,
+    status: item.status,
+    revision: item.revision,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    properties: item.properties,
+  } satisfies OwnerItem;
+  return item.presentation === undefined ? owner : { ...owner, presentation: item.presentation };
+};
 
 export const toSharedItem = (item: KevaItem, canDelete = false): SharedItem => ({
   ...toOwnerItem(item),
@@ -216,7 +240,10 @@ export const SharedQueryResult = Schema.Struct({
   items: Schema.Array(SharedItem),
   nextCursor: Schema.optional(Schema.String),
   totalCount: Schema.optional(
-    Schema.Number.pipe(Schema.int(), Schema.between(0, Number.MAX_SAFE_INTEGER)),
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+    ),
   ),
 });
 export type SharedQueryResult = typeof SharedQueryResult.Type;
@@ -225,7 +252,10 @@ export const OwnerQueryResult = Schema.Struct({
   items: Schema.Array(OwnerItem),
   nextCursor: Schema.optional(Schema.String),
   totalCount: Schema.optional(
-    Schema.Number.pipe(Schema.int(), Schema.between(0, Number.MAX_SAFE_INTEGER)),
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+    ),
   ),
 });
 export type OwnerQueryResult = typeof OwnerQueryResult.Type;
@@ -234,6 +264,6 @@ export const SharedInitiateUploadResult = Schema.Struct({
   item: SharedItem,
   uploadUrl: Schema.String,
   expiresAt: Schema.String,
-  headers: Schema.Record({ key: Schema.String, value: Schema.String }),
+  headers: Schema.Record(Schema.String, Schema.String),
 });
 export type SharedInitiateUploadResult = typeof SharedInitiateUploadResult.Type;

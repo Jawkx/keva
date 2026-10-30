@@ -5,12 +5,12 @@ import { errorMessage, isUnauthorized } from "./errors";
 export function useApiError() {
   const navigate = useNavigate();
   return useCallback(
-    (error: unknown): string => {
-      if (isUnauthorized(error)) {
+    (cause: unknown): string => {
+      if (isUnauthorized(cause)) {
         navigate("/login", { replace: true });
         return "Your session has expired. Please sign in again.";
       }
-      return errorMessage(error);
+      return errorMessage(cause);
     },
     [navigate],
   );

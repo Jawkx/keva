@@ -1,11 +1,11 @@
 import clamp from "lodash/clamp";
 import pull from "lodash/pull";
-import reject from "lodash/reject";
 import shuffle from "lodash/shuffle";
 import React from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import type { MediaEventSlice, MediaFeature } from "@/components/limeplay/media-provider";
+import type { TAsset } from "@/hooks/limeplay/use-asset";
 
 import { useMediaStore } from "@/hooks/limeplay/use-media";
 import {
@@ -14,7 +14,7 @@ import {
   useMediaFeatureStore,
 } from "@/components/limeplay/media-provider";
 
-export interface PlaylistChangeEvent<T = Record<string, unknown>> {
+export interface PlaylistChangeEvent<T extends TAsset = TAsset> {
   currentIndex: number;
   currentItem: null | PlaylistItem<T>;
   previousIndex: number;
@@ -22,12 +22,12 @@ export interface PlaylistChangeEvent<T = Record<string, unknown>> {
   reason: "load" | "next" | "previous" | "remove" | "skip";
 }
 
-export interface PlaylistItem<T = Record<string, unknown>> {
+export interface PlaylistItem<T extends TAsset = TAsset> {
   id: string;
   properties: T;
 }
 
-export interface PlaylistItemInput<T = Record<string, unknown>> {
+export interface PlaylistItemInput<T extends TAsset = TAsset> {
   id: string;
   properties?: T;
 }
@@ -42,21 +42,21 @@ export interface PlaylistEvents {
 
 export interface PlaylistStore extends MediaEventSlice<PlaylistEvents> {
   [PLAYLIST_FEATURE_KEY]: {
-    append: <T>(items: PlaylistItemInput<T>[]) => void;
+    append: (items: PlaylistItemInput[]) => void;
     clear: () => void;
     currentIndex: number;
     currentItem: null | PlaylistItem;
     cycleRepeatMode: () => void;
-    getItem: <T>(id: string) => null | PlaylistItem<T>;
+    getItem: (id: string) => null | PlaylistItem;
     getNextIndex: () => number;
     getPreviousIndex: () => number;
     history: PlaylistItem[];
-    insert: <T>(items: PlaylistItemInput<T>[], atIndex: number) => void;
-    load: <T>(items: PlaylistItemInput<T>[], startIndex?: number) => void;
+    insert: (items: PlaylistItemInput[], atIndex: number) => void;
+    load: (items: PlaylistItemInput[], startIndex?: number) => void;
     newSession: () => string;
     next: () => boolean;
-    playNext: <T>(items: PlaylistItemInput<T>[]) => void;
-    prepend: <T>(items: PlaylistItemInput<T>[]) => void;
+    playNext: (items: PlaylistItemInput[]) => void;
+    prepend: (items: PlaylistItemInput[]) => void;
     queue: PlaylistItem[];
     remove: (id: string) => void;
     removeAt: (index: number) => void;
@@ -73,7 +73,7 @@ export interface PlaylistStore extends MediaEventSlice<PlaylistEvents> {
   };
 }
 
-export interface UsePlaylistReturn<T> {
+export interface UsePlaylistReturn<T extends TAsset> {
   append: (items: PlaylistItemInput<T>[]) => void;
   clear: () => void;
   currentIndex: number;
@@ -107,7 +107,7 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
     createSlice: (set, get, _store, events) => ({
       [PLAYLIST_FEATURE_KEY]: {
         append: (items) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const normalized = normalizeItems(items);
           const newQueue = [...playlist.queue, ...normalized];
 
@@ -121,7 +121,7 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
           }
 
           set(({ playlist }) => {
-            playlist.queue = newQueue as PlaylistItem[];
+            playlist.queue = newQueue;
             playlist.shuffleOrder = newShuffleOrder;
           });
         },
@@ -137,23 +137,22 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
         currentIndex: -1,
         currentItem: null,
         cycleRepeatMode: () => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const modes = getRepeatModes(playlist.queue.length);
           const currentMode = normalizeRepeatMode(playlist.repeatMode, playlist.queue.length);
           const modeIndex = modes.indexOf(currentMode);
-          const nextMode = modes[(modeIndex + 1) % modes.length];
+          const nextMode = modes[(modeIndex + 1) % modes.length] ?? "off";
 
           set(({ playlist }) => {
             playlist.repeatMode = nextMode;
           });
         },
-        getItem: <T>(id: string) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
-          const item = playlist.queue.find((entry) => entry.id === id);
-          return (item as PlaylistItem<T> | undefined) ?? null;
+        getItem: (id) => {
+          const item = get().playlist.queue.find((entry) => entry.id === id);
+          return item ?? null;
         },
         getNextIndex: () => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
 
           if (playlist.queue.length === 0) return -1;
 
@@ -177,7 +176,7 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
           return -1;
         },
         getPreviousIndex: () => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
 
           if (playlist.queue.length === 0) return -1;
 
@@ -203,7 +202,7 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
         },
         history: [],
         insert: (items, atIndex) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const normalized = normalizeItems(items);
           const idx = clamp(atIndex, 0, playlist.queue.length);
           const newQueue = [
@@ -232,12 +231,12 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
 
           set(({ playlist }) => {
             playlist.currentIndex = newCurrentIndex;
-            playlist.queue = newQueue as PlaylistItem[];
+            playlist.queue = newQueue;
             playlist.shuffleOrder = newShuffleOrder;
           });
         },
         load: (items, startIndex = 0) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const normalized = normalizeItems(items);
           const normalizedStartIndex = clamp(startIndex, 0, Math.max(normalized.length - 1, 0));
           const shuffleOrder = playlist.shuffle
@@ -248,13 +247,14 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
             playlist.currentIndex = -1;
             playlist.currentItem = null;
             playlist.history = [];
-            playlist.queue = normalized as PlaylistItem[];
+            playlist.queue = normalized;
             playlist.sessionId = generateSessionId();
             playlist.shuffleOrder = shuffleOrder;
           });
 
           if (normalized.length > 0) {
-            const startItem = normalized[normalizedStartIndex] as PlaylistItem;
+            const startItem = normalized[normalizedStartIndex];
+            if (!startItem) return;
 
             set(({ playlist }) => {
               playlist.currentIndex = normalizedStartIndex;
@@ -272,7 +272,7 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
           return sessionId;
         },
         next: () => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const nextIndex = playlist.getNextIndex();
           if (nextIndex === -1 || nextIndex >= playlist.queue.length) return false;
 
@@ -298,7 +298,8 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
             });
           }
 
-          const nextItem = playlist.queue[nextIndex] as PlaylistItem;
+          const nextItem = playlist.queue[nextIndex];
+          if (!nextItem) return false;
 
           set(({ playlist: p }) => {
             p.currentIndex = nextIndex;
@@ -316,11 +317,11 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
           return true;
         },
         playNext: (items) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           playlist.insert(items, playlist.currentIndex + 1);
         },
         prepend: (items) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const normalized = normalizeItems(items);
           const newQueue = [...normalized, ...playlist.queue];
           const newCurrentIndex =
@@ -342,17 +343,17 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
 
           set(({ playlist: p }) => {
             p.currentIndex = newCurrentIndex;
-            p.queue = newQueue as PlaylistItem[];
+            p.queue = newQueue;
             p.shuffleOrder = newShuffleOrder;
           });
         },
         queue: [],
         remove: (id) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const removeIndex = playlist.queue.findIndex((item) => item.id === id);
           if (removeIndex === -1) return;
 
-          const newQueue = reject(playlist.queue, { id }) as PlaylistItem[];
+          const newQueue = playlist.queue.filter((item) => item.id !== id);
           let newCurrentIndex = playlist.currentIndex;
           let newCurrentItem = playlist.currentItem;
 
@@ -395,14 +396,14 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
           });
         },
         removeAt: (index) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const item = playlist.queue[index];
           if (index >= 0 && item) {
             playlist.remove(item.id);
           }
         },
         reorder: (fromIndex, toIndex) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           if (
             fromIndex < 0 ||
             fromIndex >= playlist.queue.length ||
@@ -448,13 +449,13 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
         repeatMode: "off",
         sessionId: generateSessionId(),
         setRepeatMode: (mode) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           set(({ playlist: p }) => {
             p.repeatMode = normalizeRepeatMode(mode, playlist.queue.length);
           });
         },
         setShuffle: (enabled) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           if (playlist.shuffle === enabled) return;
 
           set(({ playlist: p }) => {
@@ -468,7 +469,7 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
         shuffle: false,
         shuffleOrder: [],
         skipTo: (index) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           if (index < 0 || index >= playlist.queue.length) return false;
 
           if (playlist.currentItem) {
@@ -477,7 +478,9 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
             });
           }
 
-          const item = playlist.queue[index] as PlaylistItem;
+          const item = playlist.queue[index];
+          if (!item) return false;
+
           set(({ playlist: p }) => {
             p.currentIndex = index;
             p.currentItem = item;
@@ -494,13 +497,13 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
           return true;
         },
         skipToId: (id) => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const index = playlist.queue.findIndex((item) => item.id === id);
           if (index === -1) return false;
           return playlist.skipTo(index);
         },
         toggleShuffle: () => {
-          const playlist = get().playlist as PlaylistStore["playlist"];
+          const playlist = get().playlist;
           const newShuffle = !playlist.shuffle;
           set(({ playlist: p }) => {
             p.shuffle = newShuffle;
@@ -517,7 +520,7 @@ export function playlistFeature(): MediaFeature<PlaylistStore> {
   };
 }
 
-export function usePlaylist<T>(): UsePlaylistReturn<T> {
+export function usePlaylist<T extends TAsset>(): UsePlaylistReturn<T> {
   const api = useMediaFeatureApi<PlaylistStore>(PLAYLIST_FEATURE_KEY);
   const events = useMediaEvents<PlaylistEvents>();
   const currentIndex = usePlaylistStore((state) => state.currentIndex);
@@ -525,20 +528,21 @@ export function usePlaylist<T>(): UsePlaylistReturn<T> {
   const shuffle = usePlaylistStore((state) => state.shuffle);
   const shuffleOrder = usePlaylistStore((state) => state.shuffleOrder);
   const repeatMode = usePlaylistStore((state) => state.repeatMode);
+  const typedQueue = React.useMemo(() => adaptPlaylistItems<T>(queue), [queue]);
 
   const state = usePlaylistStore(
     useShallow((playlist) => ({
-      append: playlist.append as UsePlaylistReturn<T>["append"],
+      append: playlist.append,
       clear: playlist.clear,
       currentIndex: playlist.currentIndex,
       cycleRepeatMode: playlist.cycleRepeatMode,
-      getItem: playlist.getItem as UsePlaylistReturn<T>["getItem"],
-      insert: playlist.insert as UsePlaylistReturn<T>["insert"],
-      load: playlist.load as UsePlaylistReturn<T>["load"],
+      getItem: playlist.getItem,
+      insert: playlist.insert,
+      load: playlist.load,
       newSession: playlist.newSession,
       next: playlist.next,
-      playNext: playlist.playNext as UsePlaylistReturn<T>["playNext"],
-      prepend: playlist.prepend as UsePlaylistReturn<T>["prepend"],
+      playNext: playlist.playNext,
+      prepend: playlist.prepend,
       remove: playlist.remove,
       removeAt: playlist.removeAt,
       reorder: playlist.reorder,
@@ -551,31 +555,29 @@ export function usePlaylist<T>(): UsePlaylistReturn<T> {
   );
 
   const currentItem = React.useMemo((): null | PlaylistItem<T> => {
-    if (currentIndex >= 0 && currentIndex < queue.length) {
-      return queue[currentIndex] as PlaylistItem<T>;
+    if (currentIndex >= 0 && currentIndex < typedQueue.length) {
+      return typedQueue[currentIndex] ?? null;
     }
     return null;
-  }, [currentIndex, queue]);
+  }, [currentIndex, typedQueue]);
 
   const nextItem = React.useMemo((): null | PlaylistItem<T> => {
     const nextIndex = api.getState().playlist.getNextIndex();
-    if (nextIndex >= 0 && nextIndex < queue.length) {
-      return queue[nextIndex] as PlaylistItem<T>;
+    if (nextIndex >= 0 && nextIndex < typedQueue.length) {
+      return typedQueue[nextIndex] ?? null;
     }
     return null;
-  }, [api, queue, currentIndex, shuffle, shuffleOrder, repeatMode]);
+  }, [api, typedQueue, currentIndex, shuffle, shuffleOrder, repeatMode]);
 
   const previousItem = React.useMemo((): null | PlaylistItem<T> => {
     const prevIndex = api.getState().playlist.getPreviousIndex();
-    if (prevIndex >= 0 && prevIndex < queue.length) {
-      return queue[prevIndex] as PlaylistItem<T>;
+    if (prevIndex >= 0 && prevIndex < typedQueue.length) {
+      return typedQueue[prevIndex] ?? null;
     }
     return null;
-  }, [api, queue, currentIndex, shuffle, shuffleOrder, repeatMode]);
+  }, [api, typedQueue, currentIndex, shuffle, shuffleOrder, repeatMode]);
 
   const orderedItems = React.useMemo((): PlaylistItem<T>[] => {
-    const typedQueue = queue as unknown as PlaylistItem<T>[];
-
     if (!shuffle || shuffleOrder.length === 0) {
       return typedQueue;
     }
@@ -583,7 +585,7 @@ export function usePlaylist<T>(): UsePlaylistReturn<T> {
     return shuffleOrder
       .map((index) => typedQueue[index])
       .filter((item): item is PlaylistItem<T> => item !== undefined);
-  }, [queue, shuffle, shuffleOrder]);
+  }, [typedQueue, shuffle, shuffleOrder]);
 
   const hasNext =
     (repeatMode === "all" && queue.length > 0) || api.getState().playlist.getNextIndex() !== -1;
@@ -595,7 +597,7 @@ export function usePlaylist<T>(): UsePlaylistReturn<T> {
     const prevIndex = api.getState().playlist.getPreviousIndex();
     if (prevIndex === -1 || prevIndex >= queue.length) return false;
 
-    const playlist = api.getState().playlist as PlaylistStore["playlist"];
+    const playlist = api.getState().playlist;
 
     if (playlist.history.length > 0) {
       api.setState(({ playlist: p }) => {
@@ -603,7 +605,9 @@ export function usePlaylist<T>(): UsePlaylistReturn<T> {
       });
     }
 
-    const targetItem = queue[prevIndex] as PlaylistItem;
+    const targetItem = queue[prevIndex];
+    if (!targetItem) return false;
+
     api.setState(({ playlist: p }) => {
       p.currentIndex = prevIndex;
       p.currentItem = targetItem;
@@ -625,7 +629,7 @@ export function usePlaylist<T>(): UsePlaylistReturn<T> {
     currentIndex: state.currentIndex,
     currentItem,
     cycleRepeatMode: state.cycleRepeatMode,
-    getItem: state.getItem,
+    getItem: (id) => typedQueue.find((item) => item.id === id) ?? null,
     hasNext,
     hasPrevious,
     insert: state.insert,
@@ -697,10 +701,15 @@ function getRepeatModes(queueLength: number): RepeatMode[] {
   return ["off", "all", "one"];
 }
 
-function normalizeItems<T>(inputs: PlaylistItemInput<T>[]): PlaylistItem<T>[] {
+function adaptPlaylistItems<T extends TAsset>(items: PlaylistItem[]): PlaylistItem<T>[] {
+  // SAFETY: A playlist is loaded and consumed through the same asset owner type for its active media kit.
+  return items as PlaylistItem<T>[];
+}
+
+function normalizeItems(inputs: PlaylistItemInput[]): PlaylistItem[] {
   return inputs.map((input) => ({
     id: input.id,
-    properties: input.properties ?? ({} as T),
+    properties: input.properties ?? {},
   }));
 }
 
@@ -724,7 +733,7 @@ function PlaylistSetup() {
   }, [mediaElement, repeatMode]);
 
   React.useEffect(() => {
-    const playlist = api.getState().playlist as PlaylistStore["playlist"];
+    const playlist = api.getState().playlist;
 
     if (playlist.queue.length <= 1 && repeatMode === "all") {
       api.setState(({ playlist }) => {

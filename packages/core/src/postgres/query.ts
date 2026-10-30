@@ -5,31 +5,46 @@ import {
   type QueryCondition,
   type QueryOrder,
 } from "@keva/schema";
+import { Schema } from "effect";
 import type { Sql } from "postgres";
 import { jsonbParam } from "./mappers.js";
 
 export type Fragment = ReturnType<Sql["unsafe"]>;
 export type CursorPredicate = (cursor: Cursor) => Fragment;
 
-export const systemColumn = (
-  sql: Sql,
-  key: string,
-): {
-  fragment: Fragment;
-  type: "string" | "number" | "nullable-string" | "timestamp";
-} | null => {
+interface SystemColumn {
+  readonly fragment: Fragment;
+  readonly type: "string" | "number" | "nullable-string" | "timestamp";
+}
+
+interface QueryOrderPlan {
+  readonly by: Fragment;
+  readonly afterCursor: CursorPredicate;
+  readonly cursorFor: (item: KevaItem) => Cursor;
+}
+
+const isString = Schema.is(Schema.String);
+const isNumber = Schema.is(Schema.Number);
+const isStrings = Schema.is(Schema.Array(Schema.String));
+
+export const systemColumn = (sql: Sql, key: string): SystemColumn | null => {
   const field = FIELD_BY_KEY.get(key);
   return field ? { fragment: sql.unsafe(field.column), type: field.queryType } : null;
 };
 
 export const comparison = (sql: Sql, operator: string): Fragment => {
-  const allowed: Record<string, string> = {
-    gt: ">",
-    gte: ">=",
-    lt: "<",
-    lte: "<=",
-  };
-  return sql.unsafe(allowed[operator] ?? "=");
+  switch (operator) {
+    case "gt":
+      return sql.unsafe(">");
+    case "gte":
+      return sql.unsafe(">=");
+    case "lt":
+      return sql.unsafe("<");
+    case "lte":
+      return sql.unsafe("<=");
+    default:
+      return sql.unsafe("=");
+  }
 };
 
 // OR-join a list of fragments into `(a or b or …)`. An empty list matches
@@ -46,30 +61,32 @@ export const compileCondition = (sql: Sql, condition: QueryCondition): Fragment 
     if (condition.op === "exists") return sql`${column.fragment} is not null`;
     if (condition.op === "missing") return sql`${column.fragment} is null`;
     if (condition.op === "eq") {
-      return value === null
-        ? sql`${column.fragment} is null`
-        : sql`${column.fragment} = ${value as string | number}`;
+      if (value === null) return sql`${column.fragment} is null`;
+      return isString(value) || isNumber(value) ? sql`${column.fragment} = ${value}` : sql`false`;
     }
     if (condition.op === "neq") {
-      return value === null
-        ? sql`${column.fragment} is not null`
-        : sql`(${column.fragment} is null or ${column.fragment} <> ${value as string | number})`;
+      if (value === null) return sql`${column.fragment} is not null`;
+      return isString(value) || isNumber(value)
+        ? sql`(${column.fragment} is null or ${column.fragment} <> ${value})`
+        : sql`false`;
     }
     if (condition.op === "in") {
-      return sql`${column.fragment} in ${sql(value as readonly string[])}`;
+      return isStrings(value) ? sql`${column.fragment} in ${sql(value)}` : sql`false`;
     }
     if (condition.op === "contains_text") {
-      return sql`position(${value as string} in ${column.fragment}) > 0`;
+      return isString(value) ? sql`position(${value} in ${column.fragment}) > 0` : sql`false`;
     }
     if (condition.op === "contains_any") {
-      return anyOf(
-        sql,
-        (value as readonly string[]).map(
-          (member) => sql`position(${member} in ${column.fragment}) > 0`,
-        ),
-      );
+      return isStrings(value)
+        ? anyOf(
+            sql,
+            value.map((member) => sql`position(${member} in ${column.fragment}) > 0`),
+          )
+        : sql`false`;
     }
-    return sql`${column.fragment} ${comparison(sql, condition.op)} ${value as string | number}`;
+    return isString(value) || isNumber(value)
+      ? sql`${column.fragment} ${comparison(sql, condition.op)} ${value}`
+      : sql`false`;
   }
 
   const key = condition.key;
@@ -87,18 +104,20 @@ export const compileCondition = (sql: Sql, condition: QueryCondition): Fragment 
       where position(${text} in member) > 0
     ))
   )`;
-  if (condition.op === "has_value") return hasValue(value as string);
+  if (condition.op === "has_value") return isString(value) ? hasValue(value) : sql`false`;
   if (condition.op === "has_any") {
-    return anyOf(sql, (value as readonly string[]).map(hasValue));
+    return isStrings(value) ? anyOf(sql, value.map(hasValue)) : sql`false`;
   }
   if (condition.op === "has_all") {
-    return (value as readonly string[])
-      .map(hasValue)
-      .reduce((left, right) => sql`${left} and ${right}`);
+    return isStrings(value) && value.length > 0
+      ? value.map(hasValue).reduce((left, right) => sql`${left} and ${right}`)
+      : sql`false`;
   }
-  if (condition.op === "contains_text") return containsText(value as string);
+  if (condition.op === "contains_text") {
+    return isString(value) ? containsText(value) : sql`false`;
+  }
   if (condition.op === "contains_any") {
-    return anyOf(sql, (value as readonly string[]).map(containsText));
+    return isStrings(value) ? anyOf(sql, value.map(containsText)) : sql`false`;
   }
   return sql`false`;
 };
@@ -106,14 +125,7 @@ export const compileCondition = (sql: Sql, condition: QueryCondition): Fragment 
 export const escapeLikePattern = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
-export const queryOrder = (
-  sql: Sql,
-  order: QueryOrder,
-): {
-  readonly by: Fragment;
-  readonly afterCursor: CursorPredicate;
-  readonly cursorFor: (item: KevaItem) => Cursor;
-} => {
+export const queryOrder = (sql: Sql, order: QueryOrder): QueryOrderPlan => {
   if (order === "created_at_desc") {
     return {
       by: sql`created_at desc, id desc`,

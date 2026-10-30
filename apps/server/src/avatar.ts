@@ -15,9 +15,11 @@ export const parseAvatarRecipe = (
   }
 };
 
-export const serializeAvatarRecipe = (value: unknown): string =>
+export const serializeAvatarRecipe = <Input>(value: Input): string =>
   JSON.stringify(
-    Schema.decodeUnknownSync(AvatarRecipe)(typeof value === "string" ? JSON.parse(value) : value),
+    Schema.decodeUnknownSync(AvatarRecipe)(
+      Schema.is(Schema.String)(value) ? JSON.parse(value) : value,
+    ),
   );
 
 export const avatarForUser = (userId: string, value: string | null | undefined): AvatarRecipeType =>

@@ -18,11 +18,12 @@ import {
   type Principal,
   type PropertyValue,
   type Query,
+  type RealtimeEvent,
   type RealtimeEventReason,
   type Scope,
   type ThumbnailUploadInput,
 } from "@keva/schema";
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import { ChangePublisher } from "./change-publisher.js";
 import { BlobStore, MetadataStore } from "./services.js";
 import { supportsGeneratedThumbnail, THUMBNAIL_RECIPE_VERSION } from "./thumbnail.js";
@@ -30,28 +31,32 @@ import { supportsGeneratedThumbnail, THUMBNAIL_RECIPE_VERSION } from "./thumbnai
 export type { LifecycleBatchResult, LifecycleJobOptions } from "./lifecycle.js";
 export { reapPending, sweepDeleting, sweepStaging } from "./lifecycle.js";
 
+type Writable<Value> = { -readonly [Key in keyof Value]: Value[Key] };
+
 const now = (): string => new Date().toISOString();
 
 const publishChange = (tenantId: string, reason: RealtimeEventReason, itemId?: string) =>
   Effect.gen(function* () {
     const publisher = yield* ChangePublisher;
-    yield* publisher.publish(tenantId, {
+    const baseEvent = {
       id: crypto.randomUUID(),
       type: "items.changed",
       reason,
-      ...(itemId === undefined ? {} : { itemId }),
       occurredAt: now(),
-    });
+    } satisfies RealtimeEvent;
+    const event = itemId === undefined ? baseEvent : { ...baseEvent, itemId };
+    yield* publisher.publish(tenantId, event);
   }).pipe(
-    Effect.catchAllCause(() =>
-      Effect.logWarning(
-        JSON.stringify({
-          event: "items.changed.publish.failed",
-          type: "items.changed",
-          tenantId,
-          ...(itemId === undefined ? {} : { itemId }),
-        }),
-      ),
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      () =>
+        Effect.logWarning(
+          JSON.stringify(
+            itemId === undefined
+              ? { event: "items.changed.publish.failed", type: "items.changed", tenantId }
+              : { event: "items.changed.publish.failed", type: "items.changed", tenantId, itemId },
+          ),
+        ),
     ),
   );
 
@@ -65,9 +70,12 @@ const readyOrNotFound = (item: KevaItem | null) =>
     ? Effect.succeed(item)
     : Effect.fail(new NotFound({ message: "Item not found" }));
 
+const isTrashedReady = (item: KevaItem | null): item is KevaItem & { readonly deletedAt: string } =>
+  item?.status === "ready" && item.deletedAt !== undefined;
+
 const trashedReadyOrNotFound = (item: KevaItem | null) =>
-  item?.status === "ready" && item.deletedAt !== undefined
-    ? Effect.succeed(item as KevaItem & { readonly deletedAt: string })
+  isTrashedReady(item)
+    ? Effect.succeed(item)
     : Effect.fail(new NotFound({ message: "Item not found in trash" }));
 
 const videoOrNotFound = (item: KevaItem, message = "Item not found") =>
@@ -175,13 +183,14 @@ const patchItem = (principal: Principal, id: string, patch: ItemPatch, publish =
         message: `Cannot patch '${routed.error.key}': ${routed.error.reason}`,
       });
     }
+    const routedPatch =
+      patch.presentation === undefined
+        ? routed.routed
+        : { ...routed.routed, presentation: patch.presentation };
     const patched = yield* metadata.patchWithEvent(
       principal.tenantId,
       id,
-      {
-        ...routed.routed,
-        ...(patch.presentation === undefined ? {} : { presentation: patch.presentation }),
-      },
+      routedPatch,
       now(),
       patch.expectedRevision,
       (previous, updated) => {
@@ -198,22 +207,17 @@ const patchItem = (principal: Principal, id: string, patch: ItemPatch, publish =
         for (const key of removed) previousValues[key] = previous.properties[key]!;
         const nameChanged = previous.name !== updated.name;
         const propertiesChanged = Object.keys(changedSet).length > 0 || removed.length > 0;
-        return nameChanged || propertiesChanged
-          ? eventFor(principal, updated, "updated", {
-              ...(nameChanged ? { name: { from: previous.name, to: updated.name } } : {}),
-              ...(propertiesChanged
-                ? {
-                    properties: {
-                      ...(Object.keys(changedSet).length > 0 ? { set: changedSet } : {}),
-                      ...(Object.keys(previousValues).length > 0
-                        ? { previous: previousValues }
-                        : {}),
-                      ...(removed.length > 0 ? { unset: removed } : {}),
-                    },
-                  }
-                : {}),
-            })
-          : null;
+        if (!nameChanged && !propertiesChanged) return null;
+        const payload: Writable<ItemEventPayload> = {};
+        if (nameChanged) payload.name = { from: previous.name, to: updated.name };
+        if (propertiesChanged) {
+          const changes: Writable<NonNullable<ItemEventPayload["properties"]>> = {};
+          if (Object.keys(changedSet).length > 0) changes.set = changedSet;
+          if (Object.keys(previousValues).length > 0) changes.previous = previousValues;
+          if (removed.length > 0) changes.unset = removed;
+          payload.properties = changes;
+        }
+        return eventFor(principal, updated, "updated", payload);
       },
     );
     if (!patched) return yield* new NotFound({ message: "Item not found" });
@@ -268,7 +272,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       const id = crypto.randomUUID();
       const attemptId = crypto.randomUUID();
       const timestamp = now();
-      const item: KevaItem = {
+      const pendingItem = {
         id,
         tenantId: principal.tenantId,
         name: input.name,
@@ -277,7 +281,6 @@ export const makeKevaEngine = (principal: Principal) => ({
         size: null,
         etag: null,
         source,
-        ...(share?.identityId ? { uploadedByUserId: share.identityId } : {}),
         status: "pending",
         storageKey: `items/${principal.tenantId}/${id}`,
         stagingKey: `staging/${principal.tenantId}/${attemptId}`,
@@ -285,14 +288,17 @@ export const makeKevaEngine = (principal: Principal) => ({
         createdAt: timestamp,
         updatedAt: timestamp,
         properties: canonicalizeProperties(properties),
-      };
+      } satisfies KevaItem;
+      const item = share?.identityId
+        ? { ...pendingItem, uploadedByUserId: share.identityId }
+        : pendingItem;
       const upload = yield* blobs.presignUpload(item.stagingKey, input.size, input.contentType);
       const requestHash = JSON.stringify({
         name: input.name,
         contentType: input.contentType,
         size: input.size,
         source,
-        uploadedByUserId: item.uploadedByUserId ?? null,
+        uploadedByUserId: share?.identityId ?? null,
         properties: canonicalizeProperties(properties),
       });
       const created = yield* metadata.createUpload(
@@ -412,7 +418,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* publishChange(principal.tenantId, "uploaded", confirmed.id);
       yield* metadata.updateUploadAttempt(attempt.id, { state: "confirmed" });
       yield* blobs.delete(item.stagingKey).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.logWarning(
             JSON.stringify({
               event: "lifecycle.staging_cleanup.failed",
@@ -506,7 +512,7 @@ export const makeKevaEngine = (principal: Principal) => ({
               id,
               revision: item.revision,
             })),
-            Effect.catchAll((error) => Effect.succeed({ status: "failed" as const, id, error })),
+            Effect.catch((error) => Effect.succeed({ status: "failed" as const, id, error })),
           ),
         { concurrency: 8 },
       );
@@ -530,10 +536,10 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* forbidShare(principal, "read item history");
       yield* requireScope(principal, "read");
       const metadata = yield* MetadataStore;
-      return yield* metadata.listEvents(principal.tenantId, id, {
-        limit: options?.limit ?? 50,
-        ...(options?.cursor !== undefined ? { cursor: options.cursor } : {}),
-      });
+      const limit = options?.limit ?? 50;
+      const eventOptions =
+        options?.cursor === undefined ? { limit } : { limit, cursor: options.cursor };
+      return yield* metadata.listEvents(principal.tenantId, id, eventOptions);
     }),
 
   query: (query: Query) =>
@@ -663,7 +669,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* Effect.forEach(attempts, (attempt) =>
         blobs
           .delete(attempt.stagingKey)
-          .pipe(Effect.zipRight(metadata.removeUploadAttempt(attempt.id))),
+          .pipe(Effect.andThen(metadata.removeUploadAttempt(attempt.id))),
       );
       yield* metadata.remove(principal.tenantId, id, "deleting");
     }),
@@ -723,7 +729,7 @@ export const makeKevaEngine = (principal: Principal) => ({
       yield* Effect.forEach(attempts, (attempt) =>
         blobs
           .delete(attempt.stagingKey)
-          .pipe(Effect.zipRight(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" }))),
+          .pipe(Effect.andThen(metadata.updateUploadAttempt(attempt.id, { state: "abandoned" }))),
       );
       yield* metadata.remove(principal.tenantId, id, "deleting");
     }),

@@ -172,7 +172,11 @@ function AppSidebar() {
   const expandOnEmptyClick =
     state === "collapsed"
       ? (event: MouseEvent) => {
-          if ((event.target as HTMLElement).closest('[data-sidebar="menu-button"]')) return;
+          if (
+            event.target instanceof Element &&
+            event.target.closest('[data-sidebar="menu-button"]')
+          )
+            return;
           setOpen(true);
         }
       : undefined;
@@ -371,7 +375,7 @@ function HeaderAccount() {
   const onSignOut = () => {
     setSigningOut(true);
     const signOut = authOperationEffect(() => authClient.signOut()).pipe(
-      Effect.catchAll((failure) => Effect.sync(() => toast.error(errorMessage(failure)))),
+      Effect.catch((failure) => Effect.sync(() => toast.error(errorMessage(failure)))),
       Effect.ensuring(
         Effect.sync(() => {
           queryClient.clear();

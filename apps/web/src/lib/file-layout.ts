@@ -20,8 +20,8 @@ export const readFileLayout = (storage?: Pick<Storage, "getItem">): FileLayout =
 };
 
 const snapshot = () => {
-  if (typeof window === "undefined") return memoryLayout;
-  return readFileLayout(window.localStorage);
+  if (!("window" in globalThis)) return memoryLayout;
+  return readFileLayout(globalThis.window.localStorage);
 };
 
 const subscribe = (listener: () => void) => {
@@ -38,13 +38,13 @@ const subscribe = (listener: () => void) => {
 
 export const setFileLayout = (layout: FileLayout) => {
   memoryLayout = layout;
-  if (typeof window !== "undefined") {
+  if ("window" in globalThis) {
     try {
-      window.localStorage.setItem(FILE_LAYOUT_STORAGE_KEY, layout);
+      globalThis.window.localStorage.setItem(FILE_LAYOUT_STORAGE_KEY, layout);
     } catch {}
   }
   listeners.forEach((listener) => listener());
 };
 
 export const useFileLayout = () =>
-  useSyncExternalStore(subscribe, snapshot, () => "list" as FileLayout);
+  useSyncExternalStore(subscribe, snapshot, (): FileLayout => "list");

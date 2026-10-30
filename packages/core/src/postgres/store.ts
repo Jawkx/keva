@@ -7,6 +7,7 @@ import {
   validateProperties,
   type PropertyKind,
   type PropertyScalar,
+  type PropertyValue,
 } from "@keva/schema";
 import { Effect, Layer } from "effect";
 import postgres, { type Sql } from "postgres";
@@ -48,20 +49,60 @@ export interface PostgresConfig {
   readonly connectTimeoutSeconds?: number;
 }
 
+type Writable<Value> = { -readonly [Key in keyof Value]: Value[Key] };
+
+type TransitionValues = Pick<Writable<ItemRow>, "updated_at"> &
+  Partial<
+    Pick<
+      Writable<ItemRow>,
+      "status" | "size" | "etag" | "content_type" | "upload_reservation_state"
+    >
+  >;
+
+type UploadAttemptValues = Partial<
+  Pick<Writable<UploadAttemptRow>, "state" | "observed_etag" | "next_retry_at" | "retry_count">
+>;
+
+interface PatchValues extends Record<string, PropertyValue | number | undefined> {
+  revision: number;
+  updated_at?: string;
+}
+
+const mapTrashedRow = (row: ItemRow) => {
+  const item = mapRow(row);
+  if (item.deletedAt === undefined) throw new Error("Expected a trashed item row");
+  return { ...item, deletedAt: item.deletedAt };
+};
+
 const patchTouchesUpdatedAt = (patch: ItemPatchInput): boolean =>
   Object.keys(patch.fields).length > 0 ||
   Object.keys(patch.set).length > 0 ||
   patch.unset.length > 0;
+
+const patchValuesFor = (revision: number, patch: ItemPatchInput, updatedAt: string) => {
+  const fieldValues = Object.fromEntries(
+    Object.entries(patch.fields).flatMap(([key, value]) => {
+      const field = FIELD_BY_KEY.get(key);
+      return field ? [[field.column, value]] : [];
+    }),
+  );
+  const values: PatchValues = { revision: revision + 1, ...fieldValues };
+  if (patchTouchesUpdatedAt(patch)) values.updated_at = updatedAt;
+  return values;
+};
 
 export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
   insert: (item) =>
     Effect.gen(function* () {
       const reserved = yield* attempt(() =>
         sql.begin(async (transaction) => {
-          const tx = transaction as unknown as Sql;
-          const reservation = await reserveTenantQuota(tx, item.tenantId, item.declaredSize);
+          const reservation = await reserveTenantQuota(
+            transaction,
+            item.tenantId,
+            item.declaredSize,
+          );
           if (reservation.status !== "ok") return reservation.status;
-          await insertItemRow(tx, item, reservation.periodStart);
+          await insertItemRow(transaction, item, reservation.periodStart);
           return "ok" as const;
         }),
       );
@@ -80,10 +121,9 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     Effect.gen(function* () {
       const outcome = yield* attempt(() =>
         sql.begin(async (transaction) => {
-          const tx = transaction as unknown as Sql;
           if (uploadAttempt.retryKey) {
-            await tx`select pg_advisory_xact_lock(hashtextextended(${`${item.tenantId}:retry:${uploadAttempt.retryKey}`}, 0))`;
-            const existing = await tx<UploadAttemptRow[]>`
+            await transaction`select pg_advisory_xact_lock(hashtextextended(${`${item.tenantId}:retry:${uploadAttempt.retryKey}`}, 0))`;
+            const existing = await transaction<UploadAttemptRow[]>`
               select * from upload_attempts
               where tenant_id = ${item.tenantId} and retry_key = ${uploadAttempt.retryKey}
               for update
@@ -91,7 +131,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             if (existing[0]) {
               if (existing[0].request_hash !== uploadAttempt.requestHash)
                 return { status: "conflict" as const };
-              const items = await tx<ItemRow[]>`
+              const items = await transaction<ItemRow[]>`
                 select * from items where tenant_id = ${item.tenantId} and id = ${existing[0].item_id} limit 1
               `;
               if (items[0])
@@ -104,8 +144,8 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           }
           if (shareReservation) {
             const source = `share:${shareReservation.grantId}`;
-            await tx`select pg_advisory_xact_lock(hashtextextended(${`${item.tenantId}:${shareReservation.grantId}`}, 0))`;
-            const usage = await tx<{ count: string; bytes: string }[]>`
+            await transaction`select pg_advisory_xact_lock(hashtextextended(${`${item.tenantId}:${shareReservation.grantId}`}, 0))`;
+            const usage = await transaction<{ count: string; bytes: string }[]>`
               select count(*)::bigint as count, coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
               from items where tenant_id = ${item.tenantId} and source = ${source}
                 and status in ('pending', 'confirming', 'ready')
@@ -118,10 +158,14 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             )
               return { status: "share" as const };
           }
-          const reservation = await reserveTenantQuota(tx, item.tenantId, item.declaredSize);
+          const reservation = await reserveTenantQuota(
+            transaction,
+            item.tenantId,
+            item.declaredSize,
+          );
           if (reservation.status !== "ok") return { status: reservation.status };
-          await insertItemRow(tx, item, reservation.periodStart);
-          await tx`
+          await insertItemRow(transaction, item, reservation.periodStart);
+          await transaction`
             insert into upload_attempts (id, tenant_id, item_id, retry_key, request_hash, staging_key, storage_key,
               upload_url, upload_headers,
               expected_size, expires_at, state, observed_etag, cleanup_after, next_retry_at, retry_count)
@@ -157,10 +201,9 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       const source = `share:${reservation.grantId}`;
       const outcome = yield* attempt(() =>
         sql.begin(async (transaction) => {
-          const tx = transaction as unknown as Sql;
           if (reservation.item.source !== source) throw new Error("share source mismatch");
-          await tx`select pg_advisory_xact_lock(hashtextextended(${`${reservation.item.tenantId}:${reservation.grantId}`}, 0))`;
-          const usage = await tx<{ count: string; bytes: string }[]>`
+          await transaction`select pg_advisory_xact_lock(hashtextextended(${`${reservation.item.tenantId}:${reservation.grantId}`}, 0))`;
+          const usage = await transaction<{ count: string; bytes: string }[]>`
             select count(*)::bigint as count,
                    coalesce(sum(coalesce(size, declared_size)), 0)::bigint as bytes
             from items
@@ -177,12 +220,12 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
             return "share" as const;
           }
           const tenantReservation = await reserveTenantQuota(
-            tx,
+            transaction,
             reservation.item.tenantId,
             reservation.item.declaredSize,
           );
           if (tenantReservation.status !== "ok") return tenantReservation.status;
-          await insertItemRow(tx, reservation.item, tenantReservation.periodStart);
+          await insertItemRow(transaction, reservation.item, tenantReservation.periodStart);
           return "ok" as const;
         }),
       );
@@ -208,7 +251,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   transition: (tenantId, id, from, patch, olderThan) =>
     attempt(async () => {
-      const values: Record<string, unknown> = {
+      const values: TransitionValues = {
         updated_at: patch.updatedAt,
       };
       if (patch.status !== undefined) values.status = patch.status;
@@ -250,7 +293,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         `;
         const row = rows[0];
         if (!row) return null;
-        const values: Record<string, unknown> = { updated_at: patch.updatedAt };
+        const values: TransitionValues = { updated_at: patch.updatedAt };
         if (patch.status !== undefined) values.status = patch.status;
         if (patch.size !== undefined) values.size = patch.size;
         if (patch.etag !== undefined) values.etag = patch.etag;
@@ -275,9 +318,9 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         `;
         if (!updated[0]) return null;
         const item = mapRow(updated[0]);
-        await insertEvent(transaction as unknown as Sql, event(item));
+        await insertEvent(transaction, event(item));
         if (patch.status === "ready" && supportsGeneratedThumbnail(item.contentType)) {
-          await enqueueThumbnailJob(transaction as unknown as Sql, {
+          await enqueueThumbnailJob(transaction, {
             tenantId: item.tenantId,
             itemId: item.id,
             sourceEtag: item.etag ?? null,
@@ -299,17 +342,12 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           const row = rows[0];
           if (!row) return { status: "missing" };
           if (expectedRevision !== undefined && row.revision !== expectedRevision)
-            return { status: "conflict" } as PatchResult;
+            return { status: "conflict" };
           const properties = { ...row.properties, ...patch.set };
           for (const key of patch.unset) delete properties[key];
           if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
           const presentation = patch.presentation ?? row.presentation;
-          const values: Record<string, unknown> = { revision: row.revision + 1 };
-          if (patchTouchesUpdatedAt(patch)) values.updated_at = updatedAt;
-          for (const [key, value] of Object.entries(patch.fields)) {
-            const field = FIELD_BY_KEY.get(key);
-            if (field) values[field.column] = value;
-          }
+          const values = patchValuesFor(row.revision, patch, updatedAt);
           const updated = await transaction<ItemRow[]>`
           update items
           set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb,
@@ -341,17 +379,12 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           const row = rows[0];
           if (!row) return { status: "missing" };
           if (expectedRevision !== undefined && row.revision !== expectedRevision)
-            return { status: "conflict" } as PatchResult;
+            return { status: "conflict" };
           const properties = { ...row.properties, ...patch.set };
           for (const key of patch.unset) delete properties[key];
           if (validateProperties(properties) !== null) return { status: "limit-exceeded" };
           const presentation = patch.presentation ?? row.presentation;
-          const values: Record<string, unknown> = { revision: row.revision + 1 };
-          if (patchTouchesUpdatedAt(patch)) values.updated_at = updatedAt;
-          for (const [key, value] of Object.entries(patch.fields)) {
-            const field = FIELD_BY_KEY.get(key);
-            if (field) values[field.column] = value;
-          }
+          const values = patchValuesFor(row.revision, patch, updatedAt);
           const updated = await transaction<ItemRow[]>`
             update items set ${transaction(values)}, properties = ${jsonbParam(properties)}::text::jsonb,
               presentation = ${jsonbParam(presentation)}::text::jsonb
@@ -361,7 +394,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           const previous = mapRow(row);
           const next = mapRow(updated[0]);
           const nextEvent = event(previous, next);
-          if (nextEvent) await insertEvent(transaction as unknown as Sql, nextEvent);
+          if (nextEvent) await insertEvent(transaction, nextEvent);
           return { status: "updated", previous, updated: next };
         }),
       );
@@ -386,7 +419,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         `;
         if (!updated[0]) return null;
         const item = mapRow(updated[0]);
-        await insertEvent(transaction as unknown as Sql, event(item));
+        await insertEvent(transaction, event(item));
         return item;
       }),
     ),
@@ -419,9 +452,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         where tenant_id = ${tenantId} and status = 'ready' and deleted_at is not null
         order by deleted_at desc, id desc
       `;
-      return rows.map(mapRow) as ReadonlyArray<
-        ReturnType<typeof mapRow> & { readonly deletedAt: string }
-      >;
+      return rows.map(mapTrashedRow);
     }),
   remove: (tenantId, id, expectedStatus) =>
     attempt(async () => {
@@ -506,14 +537,9 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
       const items = rows.slice(0, query.limit).map(mapRow);
       const lastItem = rows.length > query.limit ? items.at(-1) : undefined;
       const nextCursor = lastItem ? orderSql.cursorFor(lastItem) : undefined;
-      return {
-        items,
-        ...(nextCursor
-          ? {
-              nextCursor: encodeCursor([nextCursor[0], nextCursor[1], order]),
-            }
-          : {}),
-      };
+      return nextCursor
+        ? { items, nextCursor: encodeCursor([nextCursor[0], nextCursor[1], order]) }
+        : { items };
     }),
   usage: (tenantId) =>
     attempt(async () => {
@@ -714,10 +740,9 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
           lower(coalesce(value, key)), lower(key)
         limit ${limit}
       `;
-      return rows.map((row) => ({
-        key: row.key,
-        ...(row.value === null ? {} : { value: row.value }),
-      }));
+      return rows.map((row) =>
+        row.value === null ? { key: row.key } : { key: row.key, value: row.value },
+      );
     }),
   listByStatus: (status, limit, olderThan) =>
     attempt(async () => {
@@ -752,7 +777,7 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
     }),
   updateUploadAttempt: (id, patch) =>
     attempt(async () => {
-      const values: Record<string, unknown> = {};
+      const values: UploadAttemptValues = {};
       if (patch.state !== undefined) values.state = patch.state;
       if (patch.observedEtag !== undefined) values.observed_etag = patch.observedEtag;
       if (patch.nextRetryAt !== undefined) values.next_retry_at = patch.nextRetryAt;
@@ -794,17 +819,13 @@ export const makePostgresMetadataStore = (sql: Sql): MetadataStoreService => ({
         `,
       );
       const events = rows.slice(0, options.limit).map(mapEventRow);
-      return {
-        events,
-        ...(rows.length > options.limit && events.at(-1)
-          ? { nextCursor: encodeEventCursor(events.at(-1)!) }
-          : {}),
-      };
+      const lastEvent = rows.length > options.limit ? events.at(-1) : undefined;
+      return lastEvent ? { events, nextCursor: encodeEventCursor(lastEvent) } : { events };
     }),
 });
 
 export const PostgresMetadataStoreLive = (config: PostgresConfig): Layer.Layer<MetadataStore> =>
-  Layer.scoped(
+  Layer.effect(
     MetadataStore,
     Effect.acquireRelease(
       Effect.sync(() =>

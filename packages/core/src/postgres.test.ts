@@ -1,5 +1,5 @@
-import type { Principal } from "@keva/schema";
-import { Effect, Layer } from "effect";
+import { Properties, type Principal } from "@keva/schema";
+import { Effect, Layer, Schema } from "effect";
 import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChangePublisher, ChangePublisherNoop } from "./change-publisher.js";
@@ -192,11 +192,11 @@ describe("Postgres metadata store", () => {
       await transaction.unsafe(validation);
       await transaction.unsafe(normalization);
       await transaction.unsafe(backfill);
-      const rows = await transaction<{ properties: Record<string, unknown> }[]>`
+      const rows = await transaction<{ properties: unknown }[]>`
         select properties from items where tenant_id = ${tenant} and id = ${itemId}
       `;
       await transaction`alter table items enable trigger items_sync_item_property_terms`;
-      return rows[0]!.properties;
+      return Schema.decodeUnknownSync(Properties)(rows[0]!.properties);
     });
 
     for (const unsupported of [
@@ -417,7 +417,7 @@ describe("Postgres metadata store", () => {
             `;
             return null;
           } catch (error) {
-            return (error as { code?: string }).code ?? null;
+            return error instanceof sql.PostgresError ? error.code : null;
           }
         });
 
@@ -786,7 +786,7 @@ describe("Postgres metadata store", () => {
         yield* stage(initiated.item.stagingKey, bytes, "text/plain");
 
         const [confirmExit, reaped] = yield* Effect.all(
-          [Effect.either(engine.confirm(initiated.item.id)), reapPending({ pendingTtlMs: 1 })],
+          [Effect.result(engine.confirm(initiated.item.id)), reapPending({ pendingTtlMs: 1 })],
           { concurrency: "unbounded" },
         );
 
@@ -796,11 +796,11 @@ describe("Postgres metadata store", () => {
       }),
     );
 
-    if (outcome.confirmExit._tag === "Right") {
+    if (outcome.confirmExit._tag === "Success") {
       expect(outcome.status).toBe("ready");
       expect(outcome.reaped).toEqual({ completed: 0, failed: 0 });
     } else {
-      expect(outcome.confirmExit.left._tag).toBe("Conflict");
+      expect(outcome.confirmExit.failure._tag).toBe("Conflict");
       expect(outcome.status).toBe("deleting");
       expect(outcome.reaped).toEqual({ completed: 1, failed: 0 });
     }

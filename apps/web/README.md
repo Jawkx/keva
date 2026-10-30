@@ -25,23 +25,17 @@ The SPA needs the API, Postgres, and an S3-compatible bucket. The API returns
 presigned S3 URLs for blob uploads and downloads, so the bucket must allow the
 web app's development origin through its CORS configuration.
 
-### Terminal 1 — API (port 8787)
+### Terminal 1 — Worker API (port 8787)
+
+Copy `apps/server/.env.example` to `apps/server/.env`, configure its local
+Hyperdrive, media database, and S3 values, then run:
 
 ```sh
-KEVA_STATIC_TOKEN=dev-token \
-BETTER_AUTH_SECRET=dev-secret-change-me \
-BETTER_AUTH_URL=http://localhost:5173 \
-DATABASE_URL=postgres://localhost:5432/keva \
-S3_ENDPOINT=http://127.0.0.1:9000 \
-S3_REGION=us-east-1 \
-S3_ACCESS_KEY_ID=minioadmin \
-S3_SECRET_ACCESS_KEY=minioadmin \
-S3_BUCKET=keva \
-S3_FORCE_PATH_STYLE=true \
 pnpm --filter @keva/server dev
 ```
 
-Adjust the database and S3 values for your local services.
+This starts the Cloudflare Worker with Wrangler. The project has no alternate
+Node server entrypoint.
 
 ### Terminal 2 — web (port 5173)
 

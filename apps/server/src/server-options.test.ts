@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { databaseUnitMetrics, resetDatabaseUnitMetrics } from "./database.js";
 import { createServerOptions } from "./server-options.js";
-import { MemoryRealtimeGateway } from "./realtime-memory.js";
+import { TestRealtimeGateway } from "./test/realtime-gateway.js";
 
 const persistentOptions = () =>
   createServerOptions({
@@ -10,7 +10,7 @@ const persistentOptions = () =>
     tenantId: "test",
     baseUrl: "http://keva.test",
     databaseUrl: "postgres://keva.test/keva",
-    realtime: new MemoryRealtimeGateway(),
+    realtime: new TestRealtimeGateway(),
     s3: {
       endpoint: "https://storage.keva.test",
       region: "auto",

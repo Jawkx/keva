@@ -16,7 +16,10 @@ export const KevaItem = Schema.Struct({
   status: ItemStatus,
   storageKey: Schema.NonEmptyString,
   stagingKey: Schema.NonEmptyString,
-  revision: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1)),
+  revision: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(1)),
+  ),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   deletedAt: Schema.optional(Schema.String),

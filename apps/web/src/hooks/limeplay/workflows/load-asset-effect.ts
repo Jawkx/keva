@@ -31,12 +31,12 @@ interface LoadAssetContext<TItem extends TAsset> {
   readonly getPreviousError: () => MediaPreviousError | undefined;
   readonly loadDefault: AssetLoadContext<TItem>["loadDefault"];
   readonly media: HTMLMediaElement;
-  readonly options?: UseAssetOptions<TItem>;
-  readonly play?: () => Promise<void>;
+  readonly options?: UseAssetOptions<TItem> | undefined;
+  readonly play?: (() => Promise<void>) | undefined;
   readonly player: shaka.Player;
-  readonly preloadManager?: shaka.media.PreloadManager;
+  readonly preloadManager?: shaka.media.PreloadManager | undefined;
   readonly signal: AbortSignal;
-  readonly startTime?: number;
+  readonly startTime?: number | undefined;
 }
 
 export type LoadAssetWorkflowError =
@@ -58,32 +58,43 @@ export const loadAssetEffect = <TItem extends TAsset>(
     const retryCount = context.getRetryCount();
     const previousError = context.getPreviousError();
 
-    if (context.options?.loader?.load) {
-      yield* Effect.tryPromise({
-        catch: (cause) => mapLoadError(cause),
-        try: () =>
-          context.options!.loader!.load!({
-            asset: context.asset,
-            loadDefault: context.loadDefault,
-            media: context.media,
-            player: context.player,
-            ...(context.preloadManager === undefined
-              ? {}
-              : { preloadManager: context.preloadManager }),
-            ...(previousError === undefined ? {} : { previousError }),
-            retryCount,
-            signal: context.signal,
-            ...(context.startTime === undefined ? {} : { startTime: context.startTime }),
-          }),
-      });
-    } else {
-      const resolvedSource = yield* resolveSourceEffect(context.options, {
+    const load = context.options?.loader?.load;
+    if (load) {
+      const loadContext: AssetLoadContext<TItem> = {
         asset: context.asset,
-        ...(previousError === undefined ? {} : { previousError }),
+        loadDefault: context.loadDefault,
+        media: context.media,
+        player: context.player,
         retryCount,
         signal: context.signal,
-        ...(context.startTime === undefined ? {} : { startTime: context.startTime }),
+      };
+      if (context.preloadManager !== undefined) {
+        loadContext.preloadManager = context.preloadManager;
+      }
+      if (previousError !== undefined) {
+        loadContext.previousError = previousError;
+      }
+      if (context.startTime !== undefined) {
+        loadContext.startTime = context.startTime;
+      }
+
+      yield* Effect.tryPromise({
+        catch: (cause) => mapLoadError(cause),
+        try: () => load(loadContext),
       });
+    } else {
+      const resolveContext: ResolveSourceContext<TItem> = {
+        asset: context.asset,
+        retryCount,
+        signal: context.signal,
+      };
+      if (previousError !== undefined) {
+        resolveContext.previousError = previousError;
+      }
+      if (context.startTime !== undefined) {
+        resolveContext.startTime = context.startTime;
+      }
+      const resolvedSource = yield* resolveSourceEffect(context.options, resolveContext);
 
       yield* abortIfCancelled(context.signal);
       yield* ensureGeneration(context.generation, context.getGeneration);

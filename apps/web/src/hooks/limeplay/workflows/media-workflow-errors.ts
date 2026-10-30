@@ -64,11 +64,11 @@ export type MediaWorkflowError =
 
 export type MediaPreviousError = Error | MediaWorkflowError | null;
 
-export function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
+export function isAbortError(cause: unknown): boolean {
+  return cause instanceof DOMException && cause.name === "AbortError";
 }
 
-export function isWorkflowCancellation(error: unknown): boolean {
+export function isWorkflowCancellation(error: MediaWorkflowError): boolean {
   return (
     error instanceof MediaWorkflowAborted ||
     error instanceof MediaWorkflowSuperseded ||
@@ -76,21 +76,19 @@ export function isWorkflowCancellation(error: unknown): boolean {
   );
 }
 
-export function getWorkflowCause(error: unknown): unknown {
-  return typeof error === "object" && error !== null && "cause" in error ? error.cause : error;
+export function getWorkflowCause(error: MediaWorkflowError): Error {
+  return "cause" in error ? toWorkflowError(error.cause) : toWorkflowError(error);
 }
 
-export function toWorkflowError(error: unknown): Error {
-  if (error instanceof Error) {
-    return error;
+export function toWorkflowError(cause: unknown): Error {
+  if (cause instanceof Error) {
+    return cause;
   }
 
-  if (typeof error === "object" && error !== null) {
-    return Object.assign(
-      new Error(String((error as { message?: string }).message ?? error)),
-      error,
-    );
+  if (cause instanceof Object) {
+    const message = "message" in cause ? cause.message : cause;
+    return Object.assign(new Error(String(message)), cause);
   }
 
-  return new Error(String(error));
+  return new Error(String(cause));
 }

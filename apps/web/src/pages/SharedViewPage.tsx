@@ -155,11 +155,11 @@ function SharedViewSession({ grantId }: { grantId: string }) {
   const navigate = useNavigate();
   const [queryClient] = useState(() => {
     let client: QueryClient;
-    const onError = (error: unknown) => {
-      if (isUnauthorized(error)) {
+    const onError = (cause: unknown) => {
+      if (isUnauthorized(cause)) {
         client.clear();
         void navigate("/login", { replace: true });
-      } else if (isShareGone(error)) {
+      } else if (isShareGone(cause)) {
         void navigate("/", { replace: true });
       }
     };

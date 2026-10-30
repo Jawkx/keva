@@ -32,10 +32,12 @@ export const makeInMemoryViewStore = (
       const view = views.get(id);
       if (!view || view.tenantId !== tenantId) return null;
       const next: ViewRecord = {
-        ...view,
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.icon !== undefined ? { icon: input.icon } : {}),
-        ...(input.conditions !== undefined ? { conditions: [...input.conditions] } : {}),
+        id: view.id,
+        tenantId: view.tenantId,
+        name: input.name ?? view.name,
+        icon: input.icon === undefined ? view.icon : input.icon,
+        conditions: input.conditions === undefined ? view.conditions : [...input.conditions],
+        createdAt: view.createdAt,
         updatedAt: new Date().toISOString(),
       };
       views.set(id, next);

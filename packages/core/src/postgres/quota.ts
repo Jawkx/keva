@@ -1,5 +1,5 @@
 import { canonicalizeProperties, type KevaItem } from "@keva/schema";
-import type { Sql } from "postgres";
+import type { TransactionSql } from "postgres";
 import { DEFAULT_STORAGE_QUOTA_BYTES } from "../services.js";
 import { asIso, jsonbParam } from "./mappers.js";
 
@@ -11,7 +11,7 @@ export type ReservationOutcome =
   | { readonly status: "storage" | "items" | "uploads" | "subscription" };
 
 export const reserveTenantQuota = async (
-  transaction: Sql,
+  transaction: TransactionSql,
   tenantId: string,
   declaredSize: number,
 ): Promise<ReservationOutcome> => {
@@ -101,7 +101,7 @@ export const reserveTenantQuota = async (
 };
 
 export const insertItemRow = async (
-  transaction: Sql,
+  transaction: TransactionSql,
   item: KevaItem,
   periodStart: string | null,
 ): Promise<void> => {

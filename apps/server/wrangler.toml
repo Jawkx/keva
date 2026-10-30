@@ -17,6 +17,21 @@ class_name = "RealtimeHub"
 name = "MEDIA"
 class_name = "MediaContainer"
 
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "6458d8de93be4e7090f5bfc0872798a8"
+localConnectionString = "postgres://postgres:postgres@127.0.0.1:5432/keva"
+
+[vars]
+KEVA_BASE_URL = "http://localhost:5173"
+KEVA_TENANT_ID = "local"
+KEVA_ENVIRONMENT = "development"
+THUMBNAIL_JOBS_ENABLED = "true"
+MEDIA_DATABASE_URL = "postgres://postgres:postgres@host.docker.internal:5432/keva"
+# Bypass Wrangler's local Container sidecar, which times out with Tailscale's src_valid_mark=1.
+# Production and staging continue to use the MediaContainer binding. See cloudflare/workerd#6860.
+MEDIA_WORKER_URL = "http://127.0.0.1:8080"
+
 [[migrations]]
 tag = "v1_realtime_hub"
 new_sqlite_classes = ["RealtimeHub"]

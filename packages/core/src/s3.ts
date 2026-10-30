@@ -57,7 +57,10 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
       },
       catch: storageError,
     }).pipe(
-      Effect.timeoutFail({ duration: requestTimeoutMs, onTimeout: storageError }),
+      Effect.timeoutOrElse({
+        duration: requestTimeoutMs,
+        orElse: () => Effect.fail(storageError()),
+      }),
       Effect.flatMap((response) =>
         accepts(response) ? Effect.succeed(response) : Effect.fail(storageError()),
       ),
@@ -114,13 +117,17 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
           });
         }),
       ),
-    copy: (sourceKey, destinationKey, sourceEtag) =>
-      request(destinationKey, {
+    copy: (sourceKey, destinationKey, sourceEtag) => {
+      const copySource = `/${trimSlashes(config.bucket)}/${encodeKey(sourceKey)}`;
+      const headers = sourceEtag
+        ? {
+            "x-amz-copy-source": copySource,
+            "x-amz-copy-source-if-match": `"${sourceEtag}"`,
+          }
+        : { "x-amz-copy-source": copySource };
+      return request(destinationKey, {
         method: "PUT",
-        headers: {
-          "x-amz-copy-source": `/${trimSlashes(config.bucket)}/${encodeKey(sourceKey)}`,
-          ...(sourceEtag ? { "x-amz-copy-source-if-match": `"${sourceEtag}"` } : {}),
-        },
+        headers,
       }).pipe(
         Effect.flatMap((response) =>
           Effect.tryPromise({ try: () => response.text(), catch: storageError }),
@@ -130,7 +137,8 @@ export const makeS3BlobStore = (config: S3BlobStoreConfig): BlobStoreService => 
             ? Effect.void
             : Effect.fail(storageError()),
         ),
-      ),
+      );
+    },
     delete: (key) =>
       request(key, { method: "DELETE" }, (response) => response.ok || response.status === 404).pipe(
         Effect.asVoid,

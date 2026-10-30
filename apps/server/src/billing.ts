@@ -2,6 +2,7 @@ import {
   BILLING_PLANS,
   TRIAL_LIMITS,
   RateLimitExceeded,
+  StorageUnavailable,
   type BillingOverview,
   type BillingPlanDefinition,
   type BillingPlanSlug,
@@ -39,12 +40,16 @@ interface BillingRow {
   readonly grace_ends_at: Date | string | null;
 }
 
-const iso = (value: Date | string | null): string | null =>
-  value === null
+function iso(value: Date | string): string;
+function iso(value: null): null;
+function iso(value: Date | string | null): string | null;
+function iso(value: Date | string | null): string | null {
+  return value === null
     ? null
     : value instanceof Date
       ? value.toISOString()
       : new Date(value).toISOString();
+}
 
 const statusFromRow = (row?: BillingRow): BillingStatus => ({
   status: row?.status ?? "unsubscribed",
@@ -76,10 +81,15 @@ const metadataMatches = (subscription: Subscription, plan: BillingPlanDefinition
   );
 };
 
+interface PendingPlan {
+  readonly plan: BillingPlanSlug | null;
+  readonly appliesAt: string | null;
+}
+
 const pendingPlanFromSubscription = (
   config: BillingConfig,
   subscription: Subscription,
-): { readonly plan: BillingPlanSlug | null; readonly appliesAt: string | null } => {
+): PendingPlan => {
   const pending = subscription.pendingUpdate;
   if (!pending?.productId) return { plan: null, appliesAt: null };
   const plan = planForProduct(config, pending.productId);
@@ -96,7 +106,9 @@ export interface BillingStore {
     subscription: Subscription,
     eventAt: Date,
   ) => Promise<void>;
-  readonly consumeApiRequest: (tenantId: string) => Effect.Effect<void, RateLimitExceeded>;
+  readonly consumeApiRequest: (
+    tenantId: string,
+  ) => Effect.Effect<void, RateLimitExceeded | StorageUnavailable>;
   readonly currentSubscription: (
     tenantId: string,
   ) => Promise<{ readonly id: string; readonly plan: BillingPlanSlug } | null>;
@@ -109,13 +121,14 @@ export interface BillingStore {
 }
 
 export interface BillingMeterService {
-  readonly consumeApiRequest: (tenantId: string) => Effect.Effect<void, RateLimitExceeded>;
+  readonly consumeApiRequest: (
+    tenantId: string,
+  ) => Effect.Effect<void, RateLimitExceeded | StorageUnavailable>;
 }
 
-export class BillingMeter extends Context.Tag("@keva/server/BillingMeter")<
-  BillingMeter,
-  BillingMeterService
->() {}
+export class BillingMeter extends Context.Service<BillingMeter, BillingMeterService>()(
+  "@keva/server/BillingMeter",
+) {}
 
 export const BillingMeterLive = (store?: BillingStore): Layer.Layer<BillingMeter> =>
   Layer.succeed(BillingMeter, {
@@ -245,8 +258,8 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
   },
   consumeApiRequest: (tenantId) =>
     Effect.tryPromise({
-      try: async () => {
-        const result = await sql.begin(async (transaction) => {
+      try: () =>
+        sql.begin(async (transaction) => {
           const billing = await transaction<
             {
               status: string;
@@ -281,8 +294,8 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
           if (!row.current_period_start || !row.current_period_end) {
             return { allowed: false as const, resetsAt: new Date().toISOString() };
           }
-          const startsAt = iso(row.current_period_start)!;
-          const endsAt = iso(row.current_period_end)!;
+          const startsAt = iso(row.current_period_start);
+          const endsAt = iso(row.current_period_end);
           await transaction`
             insert into tenant_period_usage (
               tenant_id, period_start, period_end, uploads_used, uploads_reserved, api_requests_used
@@ -299,17 +312,20 @@ export const makeBillingStore = (sql: Sql, config: BillingConfig): BillingStore 
           return updated.length === 1
             ? { allowed: true as const }
             : { allowed: false as const, resetsAt: endsAt };
-        });
-        if (!result.allowed) throw result;
-      },
-      catch: (error) => {
-        const resetsAt =
-          typeof error === "object" && error !== null && "resetsAt" in error
-            ? String(error.resetsAt)
-            : new Date().toISOString();
-        return new RateLimitExceeded({ message: "Monthly API request limit reached", resetsAt });
-      },
-    }),
+        }),
+      catch: () => new StorageUnavailable({ message: "Billing usage unavailable" }),
+    }).pipe(
+      Effect.flatMap((result) =>
+        result.allowed
+          ? Effect.void
+          : Effect.fail(
+              new RateLimitExceeded({
+                message: "Monthly API request limit reached",
+                resetsAt: result.resetsAt,
+              }),
+            ),
+      ),
+    ),
   currentSubscription: async (tenantId) => {
     const rows = await sql<
       { polar_subscription_id: string | null; plan_slug: BillingPlanSlug | null }[]

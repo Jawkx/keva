@@ -34,18 +34,18 @@ export declare const mediaEventMap: unique symbol;
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MediaEvents<TEvents extends {} = {}> {
-  emit: <TName extends Extract<keyof TEvents, string>>(
+  emit<TName extends Extract<keyof TEvents, string>>(
     name: TName,
     ...args: EventArgs<TEvents[TName]>
-  ) => void;
-  on: <TName extends Extract<keyof TEvents, string>>(
+  ): void;
+  on<TName extends Extract<keyof TEvents, string>>(
     name: TName,
     listener: EventListener<TEvents[TName]>,
-  ) => () => void;
-  once: <TName extends Extract<keyof TEvents, string>>(
+  ): () => void;
+  once<TName extends Extract<keyof TEvents, string>>(
     name: TName,
     listener: EventListener<TEvents[TName]>,
-  ) => () => void;
+  ): () => void;
 }
 
 /**
@@ -87,15 +87,14 @@ export interface MediaEventSlice<
  * ```
  */
 export interface MediaFeature<
-  TSlice extends MediaShape,
-  TStore extends MediaShape & MediaStore = AnyMediaStore,
+  TSlice extends object,
+  TStore extends MediaStore & TSlice = MediaStore & TSlice,
 > {
   createSlice: (
     set: ImmerStoreApi<TStore>["setState"],
     get: StoreApi<TStore>["getState"],
     store: ImmerStoreApi<TStore>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    events: MediaEvents<any>,
+    events: MediaEvents<EventsFromStore<TStore>>,
   ) => TSlice;
   key: keyof TSlice & string;
   Setup?: React.ComponentType;
@@ -115,12 +114,10 @@ export type MediaStoreFromFeatures<TFeatures extends readonly MediaFeature<any, 
 
 // ── Event bridge internal types ───────────────────────────────────────
 
-type AnyEventListener = (payload?: unknown) => void;
-
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 type AnyEvents = {};
 
-type AnyMediaStore = MediaShape & MediaStore;
+type AnyMediaStore = MediaStore & object;
 
 type EventArgs<TPayload> = 0 extends 1 & TPayload
   ? [payload?: TPayload]
@@ -128,7 +125,7 @@ type EventArgs<TPayload> = 0 extends 1 & TPayload
     ? []
     : [payload: TPayload];
 
-type EventListener<TPayload> = [TPayload] extends [void] ? () => void : (payload: TPayload) => void;
+type EventListener<TPayload> = (...args: EventArgs<TPayload>) => void;
 
 type EventsFromStore<TStore> = TStore extends MediaEventSlice<infer TEvents> ? TEvents : AnyEvents;
 
@@ -137,8 +134,6 @@ interface MediaRuntimeContextValue {
   featureKeys: Set<string>;
   store: ImmerStoreApi<AnyMediaStore>;
 }
-
-type MediaShape = Record<string, any>;
 
 type Simplify<T> = { [Key in keyof T]: T[Key] } & {};
 
@@ -152,59 +147,65 @@ type UnionToIntersection<TUnion> = (
 
 // ── Event bridge class ───────────────────────────────────────────────
 
+class MediaEventChannel<TPayload> {
+  private listeners = new Set<EventListener<TPayload>>();
+
+  emit(eventName: string, ...args: EventArgs<TPayload>) {
+    for (const listener of this.listeners) {
+      try {
+        listener(...args);
+      } catch (cause) {
+        console.error(`[MediaEvents] Error in "${eventName}" listener:`, cause);
+      }
+    }
+  }
+
+  on(listener: EventListener<TPayload>) {
+    this.listeners.add(listener);
+
+    let removed = false;
+    return () => {
+      if (removed) return;
+      removed = true;
+      this.listeners.delete(listener);
+    };
+  }
+}
+
 class MediaEventEmitter<TEvents extends AnyEvents> implements MediaEvents<TEvents> {
-  private listeners = new Map<string, Set<AnyEventListener>>();
+  private channels: Partial<{
+    [TName in Extract<keyof TEvents, string>]: MediaEventChannel<TEvents[TName]>;
+  }> = {};
 
   emit = <TName extends Extract<keyof TEvents, string>>(
     name: TName,
     ...args: EventArgs<TEvents[TName]>
   ) => {
-    const listeners = this.listeners.get(name);
-    if (!listeners) return;
-
-    for (const listener of listeners) {
-      try {
-        listener(args[0]);
-      } catch (err) {
-        console.error(`[MediaEvents] Error in "${name}" listener:`, err);
-      }
-    }
+    this.channels[name]?.emit(name, ...args);
   };
 
   on = <TName extends Extract<keyof TEvents, string>>(
     name: TName,
     listener: EventListener<TEvents[TName]>,
   ) => {
-    let listeners = this.listeners.get(name);
+    let channel = this.channels[name];
 
-    if (!listeners) {
-      listeners = new Set();
-      this.listeners.set(name, listeners);
+    if (!channel) {
+      channel = new MediaEventChannel<TEvents[TName]>();
+      this.channels[name] = channel;
     }
 
-    listeners.add(listener as AnyEventListener);
-
-    let removed = false;
-    return () => {
-      if (removed) return;
-      removed = true;
-
-      listeners.delete(listener as AnyEventListener);
-
-      if (listeners.size === 0 && this.listeners.get(name) === listeners) {
-        this.listeners.delete(name);
-      }
-    };
+    return channel.on(listener);
   };
 
   once = <TName extends Extract<keyof TEvents, string>>(
     name: TName,
     listener: EventListener<TEvents[TName]>,
   ) => {
-    const off = this.on(name, ((...args: unknown[]) => {
+    const off = this.on(name, (...args) => {
       off();
-      (listener as AnyEventListener)(...args);
-    }) as EventListener<TEvents[TName]>);
+      listener(...args);
+    });
 
     return off;
   };
@@ -246,25 +247,24 @@ export function createMediaKit<
     const events = new MediaEventEmitter<RuntimeEvents>();
 
     const store = createStore<RuntimeStore>()(
-      immer((set, get, store) =>
-        Object.assign(
-          {},
-          ...features.map((feature) =>
-            feature.createSlice(
-              set as ImmerStoreApi<RuntimeStore>["setState"],
-              get as StoreApi<RuntimeStore>["getState"],
-              store as ImmerStoreApi<RuntimeStore>,
-              events as unknown as MediaEvents<EventsFromStore<RuntimeStore>>,
-            ),
-          ),
-        ),
-      ),
+      immer((set, get, store) => {
+        const slices = features.map((feature) => {
+          // SAFETY: RuntimeStore contains every feature slice and dependency declared by this kit's feature tuple.
+          return feature.createSlice(
+            set as ImmerStoreApi<RuntimeStore>["setState"],
+            get as StoreApi<RuntimeStore>["getState"],
+            store as ImmerStoreApi<RuntimeStore>,
+            events as MediaEvents<EventsFromStore<RuntimeStore>>,
+          );
+        });
+
+        // SAFETY: Each registered feature contributes its declared slice, whose intersection is RuntimeStore.
+        return Object.assign({}, ...slices) as RuntimeStore;
+      }),
     );
 
-    return {
-      events: events as MediaEvents<RuntimeEvents>,
-      store: store as unknown as ImmerStoreApi<RuntimeStore>,
-    };
+    // SAFETY: Zustand's immer middleware installs the mutating setState overload represented by ImmerStoreApi.
+    return { events, store: store as ImmerStoreApi<RuntimeStore> };
   }
 
   const featureKeys = new Set<string>(features.map((feature) => feature.key));
@@ -272,20 +272,20 @@ export function createMediaKit<
   function MediaProvider({ children, debug }: React.PropsWithChildren<MediaProviderProps>) {
     const [runtime] = React.useState(() => {
       const created = createMediaStore();
-      if (typeof debug === "boolean") setMediaDebug(created.store, debug);
+      if (debug !== undefined) setMediaDebug(created.store, debug);
       return created;
     });
-    const contextValue = React.useMemo(
-      () => ({
-        events: runtime.events as unknown as MediaEvents<AnyEvents>,
+    const contextValue = React.useMemo((): MediaRuntimeContextValue => {
+      // SAFETY: React context erases this kit's generic parameters; runtime retains the same store and emitter instances.
+      return {
+        events: runtime.events as MediaEvents<AnyEvents>,
         featureKeys,
         store: runtime.store as ImmerStoreApi<AnyMediaStore>,
-      }),
-      [runtime],
-    );
+      };
+    }, [runtime]);
 
     React.useLayoutEffect(() => {
-      if (typeof debug !== "boolean") return;
+      if (debug === undefined) return;
 
       setMediaDebug(runtime.store, debug);
     }, [debug, runtime.store]);
@@ -309,19 +309,19 @@ export function createMediaKit<
   function useTypedMediaStore<TSelected>(selector: (state: RuntimeStore) => TSelected): TSelected {
     const { store } = useMediaRuntime();
 
-    return useStore(store as unknown as StoreApi<RuntimeStore>, selector);
+    return useStore(adaptMediaStore<RuntimeStore>(store), selector);
   }
 
   function useTypedMediaApi(): ImmerStoreApi<RuntimeStore> {
     const { store } = useMediaRuntime();
 
-    return store as unknown as ImmerStoreApi<RuntimeStore>;
+    return adaptMediaStore<RuntimeStore>(store);
   }
 
   function useTypedMediaEvents(): MediaEvents<RuntimeEvents> {
     const { events } = useMediaRuntime();
 
-    return events as unknown as MediaEvents<RuntimeEvents>;
+    return adaptMediaEvents<RuntimeEvents>(events);
   }
 
   return {
@@ -351,7 +351,7 @@ export function createMediaKit<
 export function useMediaApi<TStore extends AnyMediaStore = AnyMediaStore>() {
   const { store } = useMediaRuntime();
 
-  return store as unknown as ImmerStoreApi<TStore>;
+  return adaptMediaStore<TStore>(store);
 }
 
 /**
@@ -370,7 +370,7 @@ export function useMediaApi<TStore extends AnyMediaStore = AnyMediaStore>() {
 export function useMediaEvents<TEvents extends AnyEvents = AnyEvents>(): MediaEvents<TEvents> {
   const { events } = useMediaRuntime();
 
-  return events as unknown as MediaEvents<TEvents>;
+  return adaptMediaEvents<TEvents>(events);
 }
 
 /**
@@ -385,14 +385,14 @@ export function useMediaEvents<TEvents extends AnyEvents = AnyEvents>(): MediaEv
  * store.setState(({ volume }) => { volume.muted = true })
  * ```
  */
-export function useMediaFeatureApi<TSlice extends MediaShape>(
+export function useMediaFeatureApi<TSlice extends object>(
   featureKey: string,
 ): ImmerStoreApi<MediaStore & TSlice> {
   const { featureKeys, store } = useMediaRuntime();
 
   assertFeature(featureKey, featureKeys);
 
-  return store as unknown as ImmerStoreApi<MediaStore & TSlice>;
+  return adaptMediaStore<MediaStore & TSlice>(store);
 }
 
 /**
@@ -409,7 +409,7 @@ export function useMediaFeatureApi<TSlice extends MediaShape>(
  * )
  * ```
  */
-export function useMediaFeatureStore<TSlice extends MediaShape, TSelected>(
+export function useMediaFeatureStore<TSlice extends object, TSelected>(
   featureKey: string,
   selector: (state: MediaStore & TSlice) => TSelected,
 ): TSelected {
@@ -417,7 +417,7 @@ export function useMediaFeatureStore<TSlice extends MediaShape, TSelected>(
 
   assertFeature(featureKey, featureKeys);
 
-  return useStore(store as StoreApi<MediaStore & TSlice>, selector);
+  return useStore(adaptMediaStore<MediaStore & TSlice>(store), selector);
 }
 
 function assertFeature(featureKey: string, featureKeys: Set<string>) {
@@ -428,17 +428,23 @@ function assertFeature(featureKey: string, featureKeys: Set<string>) {
   }
 }
 
+function adaptMediaEvents<TEvents extends AnyEvents>(
+  events: MediaEvents<AnyEvents>,
+): MediaEvents<TEvents> {
+  // SAFETY: Event maps are owned by the active kit; hooks request subsets declared by its registered features.
+  return events as MediaEvents<TEvents>;
+}
+
+function adaptMediaStore<TStore extends AnyMediaStore>(
+  store: ImmerStoreApi<AnyMediaStore>,
+): ImmerStoreApi<TStore> {
+  // SAFETY: Store types are intersections of slices registered in the active kit and checked before feature access.
+  return store as ImmerStoreApi<TStore>;
+}
+
 function setMediaDebug(store: ImmerStoreApi<AnyMediaStore>, debug: boolean) {
-  const state = store.getState();
-
-  if (!("media" in state) || typeof state.media !== "object") {
-    return;
-  }
-
-  store.setState((state) => {
-    if ("media" in state && typeof state.media === "object") {
-      (state.media as MediaStore["media"]).debug = debug;
-    }
+  store.setState(({ media }) => {
+    media.debug = debug;
   });
 }
 

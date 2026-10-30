@@ -2,8 +2,8 @@ import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { isUnauthorized } from "./errors";
 import { router } from "../router";
 
-const onError = (error: unknown) => {
-  if (!isUnauthorized(error)) return;
+const onError = (cause: unknown) => {
+  if (!isUnauthorized(cause)) return;
   queryClient.clear();
   void router.navigate("/login", { replace: true });
 };

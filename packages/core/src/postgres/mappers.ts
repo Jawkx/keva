@@ -33,26 +33,31 @@ export interface ItemRow {
 export const asIso = (value: Date | string): string =>
   value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 
-export const mapRow = (row: ItemRow): KevaItem => ({
-  id: row.id,
-  tenantId: row.tenant_id,
-  name: row.name,
-  contentType: row.content_type,
-  declaredSize: Number(row.declared_size),
-  size: row.size === null ? null : Number(row.size),
-  etag: row.etag,
-  source: row.source,
-  ...(row.uploaded_by_user_id === null ? {} : { uploadedByUserId: row.uploaded_by_user_id }),
-  status: row.status,
-  storageKey: row.storage_key,
-  stagingKey: row.staging_key,
-  revision: row.revision,
-  createdAt: asIso(row.created_at),
-  updatedAt: asIso(row.updated_at),
-  ...(row.deleted_at === null ? {} : { deletedAt: asIso(row.deleted_at) }),
-  properties: canonicalizeProperties(row.properties),
-  presentation: row.presentation,
-});
+type WritableKevaItem = { -readonly [Key in keyof KevaItem]: KevaItem[Key] };
+
+export const mapRow = (row: ItemRow): KevaItem => {
+  const item: WritableKevaItem = {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    contentType: row.content_type,
+    declaredSize: Number(row.declared_size),
+    size: row.size === null ? null : Number(row.size),
+    etag: row.etag,
+    source: row.source,
+    status: row.status,
+    storageKey: row.storage_key,
+    stagingKey: row.staging_key,
+    revision: row.revision,
+    createdAt: asIso(row.created_at),
+    updatedAt: asIso(row.updated_at),
+    properties: canonicalizeProperties(row.properties),
+    presentation: row.presentation,
+  };
+  if (row.uploaded_by_user_id !== null) item.uploadedByUserId = row.uploaded_by_user_id;
+  if (row.deleted_at !== null) item.deletedAt = asIso(row.deleted_at);
+  return item;
+};
 
 export interface UploadAttemptRow {
   readonly id: string;
@@ -120,5 +125,15 @@ export const mapEventRow = (row: ItemEventRow): ItemEvent => ({
   createdAt: asIso(row.created_at),
 });
 
-export const jsonbParam = (value: unknown): string | null =>
+type JsonbParamValue =
+  | Actor
+  | ItemEventPayload
+  | KevaItem["properties"]
+  | NonNullable<KevaItem["presentation"]>
+  | UploadAttempt["uploadHeaders"]
+  | readonly string[]
+  | null
+  | undefined;
+
+export const jsonbParam = (value: JsonbParamValue): string | null =>
   value === undefined || value === null ? null : JSON.stringify(value);

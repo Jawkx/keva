@@ -14,7 +14,7 @@ export type TokenRecord = typeof TokenRecord.Type;
 
 export const MintToken = Schema.Struct({
   name: Schema.NonEmptyString,
-  scopes: Schema.Array(Scope).pipe(Schema.minItems(1)),
+  scopes: Schema.Array(Scope).pipe(Schema.check(Schema.isMinLength(1))),
   expiresAt: Schema.optional(IsoInstant),
 });
 export type MintToken = typeof MintToken.Type;

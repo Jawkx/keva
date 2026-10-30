@@ -68,14 +68,19 @@ export type {
   RuntimeServices,
 } from "./app-types.js";
 
+interface ItemEventOptions {
+  limit?: number;
+  cursor?: string;
+}
+
 interface ResolvedServices {
-  readonly runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
-  readonly authHandler?: (request: Request) => Response | Promise<Response>;
-  readonly billing?: AppServiceOptions["billing"];
-  readonly mcp?: AppServiceOptions["mcp"];
-  readonly userAvatars?: AppServiceOptions["userAvatars"];
-  readonly realtime?: AppServiceOptions["realtime"];
-  readonly dispose?: () => Promise<void>;
+  runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
+  authHandler?: (request: Request) => Response | Promise<Response>;
+  billing?: AppServiceOptions["billing"];
+  mcp?: AppServiceOptions["mcp"];
+  userAvatars?: AppServiceOptions["userAvatars"];
+  realtime?: AppServiceOptions["realtime"];
+  dispose?: () => Promise<void>;
 }
 
 const isRequestScoped = (
@@ -83,51 +88,55 @@ const isRequestScoped = (
 ): options is { readonly getRequestServices: (context: Context) => AppServiceOptions } =>
   "getRequestServices" in options;
 
-const makeServices = (options: AppServiceOptions): ResolvedServices => ({
-  runtime: ManagedRuntime.make(
-    Layer.mergeAll(
-      options.layer,
-      BillingMeterLive(options.billing?.store),
-      options.changePublisher ?? ChangePublisherNoop,
+const makeServices = (options: AppServiceOptions): ResolvedServices => {
+  const services: ResolvedServices = {
+    runtime: ManagedRuntime.make(
+      Layer.mergeAll(
+        options.layer,
+        BillingMeterLive(options.billing?.store),
+        options.changePublisher ?? ChangePublisherNoop,
+      ),
     ),
-  ),
-  ...(options.authHandler ? { authHandler: options.authHandler } : {}),
-  ...(options.billing ? { billing: options.billing } : {}),
-  ...(options.mcp ? { mcp: options.mcp } : {}),
-  ...(options.userAvatars ? { userAvatars: options.userAvatars } : {}),
-  ...(options.realtime ? { realtime: options.realtime } : {}),
-  ...(options.dispose ? { dispose: options.dispose } : {}),
-});
-
-const disposeServices = async (services: ResolvedServices): Promise<void> => {
-  const failures: unknown[] = [];
-  try {
-    await services.runtime.dispose();
-  } catch (error) {
-    failures.push(error);
-  }
-  try {
-    await services.dispose?.();
-  } catch (error) {
-    failures.push(error);
-  }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) {
-    throw new AggregateError(failures, "Failed to dispose server services");
-  }
+  };
+  if (options.authHandler) services.authHandler = options.authHandler;
+  if (options.billing) services.billing = options.billing;
+  if (options.mcp) services.mcp = options.mcp;
+  if (options.userAvatars) services.userAvatars = options.userAvatars;
+  if (options.realtime) services.realtime = options.realtime;
+  if (options.dispose) services.dispose = options.dispose;
+  return services;
 };
 
-export const createApp = (options: CreateAppOptions): KevaApp => {
-  const app = new Hono() as KevaApp;
-  const getRequestServices = isRequestScoped(options) ? options.getRequestServices : undefined;
-  const fixedServices = getRequestServices ? undefined : makeServices(options as AppServiceOptions);
-  let disposePromise: Promise<void> | undefined;
-  Object.defineProperty(app, "dispose", {
-    value: () =>
-      (disposePromise ??= fixedServices ? disposeServices(fixedServices) : Promise.resolve()),
+const disposeServices = (services: ResolvedServices) =>
+  Effect.gen(function* () {
+    const exits = yield* Effect.all([
+      Effect.exit(Effect.tryPromise(() => services.runtime.dispose())),
+      Effect.exit(Effect.tryPromise(() => services.dispose?.() ?? Promise.resolve())),
+    ]);
+    const failures = exits.filter(Exit.isFailure).map((exit) => Cause.squash(exit.cause));
+    if (failures.length === 1) return yield* Effect.fail(failures[0]);
+    if (failures.length > 1) {
+      return yield* Effect.fail(new AggregateError(failures, "Failed to dispose server services"));
+    }
   });
-  const resolveServices = (context: Context): ResolvedServices =>
-    fixedServices ?? makeServices(getRequestServices!(context));
+
+export const createApp = (options: CreateAppOptions): KevaApp => {
+  let fixedServices: ResolvedServices | undefined;
+  let resolveServices: (context: Context) => ResolvedServices;
+  if (isRequestScoped(options)) {
+    resolveServices = (context) => makeServices(options.getRequestServices(context));
+  } else {
+    const services = makeServices(options);
+    fixedServices = services;
+    resolveServices = () => services;
+  }
+  let disposePromise: Promise<void> | undefined;
+  const app = Object.assign(new Hono(), {
+    dispose: () =>
+      (disposePromise ??= fixedServices
+        ? Effect.runPromise(disposeServices(fixedServices))
+        : Promise.resolve()),
+  });
 
   const withServices = async (
     context: Context,
@@ -137,7 +146,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
     try {
       return await handler(services);
     } finally {
-      if (!fixedServices) await disposeServices(services);
+      if (!fixedServices) await Effect.runPromise(disposeServices(services));
     }
   };
 
@@ -173,7 +182,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
       }
       reportDefect(context, exit.cause);
       const error = failureFrom(exit.cause);
-      if (Option.isSome(Cause.failureOption(exit.cause))) reportServiceFailure(context, error);
+      if (Option.isSome(Cause.findErrorOption(exit.cause))) reportServiceFailure(context, error);
       const status = error._tag === "Unauthorized" ? 401 : error._tag === "Forbidden" ? 403 : 503;
       return context.json(error, status);
     }),
@@ -191,15 +200,17 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
       );
       if (Exit.isSuccess(ready)) return context.json({ ok: true, service: "keva" });
       reportDefect(context, ready.cause);
-      if (Option.isSome(Cause.failureOption(ready.cause))) {
+      if (Option.isSome(Cause.findErrorOption(ready.cause))) {
         reportServiceFailure(context, failureFrom(ready.cause));
       }
       return context.json({ ok: false, service: "keva" }, 503);
     }),
   );
 
-  const runRoute = (context: Context, effect: Effect.Effect<unknown, KevaError, RuntimeServices>) =>
-    withServices(context, ({ runtime }) => execute(context, effect, runtime));
+  const runRoute = <A extends {}>(
+    context: Context,
+    effect: Effect.Effect<A, KevaError, RuntimeServices>,
+  ) => withServices(context, ({ runtime }) => execute(context, effect, runtime));
 
   app.get("/api/billing", (context) =>
     withServices(context, ({ runtime, billing }) => {
@@ -457,14 +468,17 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
             limitRaw === undefined
               ? undefined
               : yield* decode(
-                  Schema.NumberFromString.pipe(Schema.int(), Schema.between(1, 200)),
+                  Schema.NumberFromString.check(
+                    Schema.isInt(),
+                    Schema.isBetween({ minimum: 1, maximum: 200 }),
+                  ),
                   limitRaw,
                 );
           const cursor = context.req.query("cursor");
-          const result = yield* makeKevaEngine(principal).events(id, {
-            ...(limit !== undefined ? { limit } : {}),
-            ...(cursor !== undefined ? { cursor } : {}),
-          });
+          const eventOptions: ItemEventOptions = {};
+          if (limit !== undefined) eventOptions.limit = limit;
+          if (cursor !== undefined) eventOptions.cursor = cursor;
+          const result = yield* makeKevaEngine(principal).events(id, eventOptions);
           if (!userAvatars) return result;
           const userIds = result.events.flatMap((event) =>
             event.actor?.user ? [event.actor.user.id] : [],
@@ -479,7 +493,7 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
               const user = event.actor?.user;
               if (!user) return event;
               const avatar: AvatarRecipe = avatars.get(user.id) ?? { version: 1, seed: user.id };
-              return { ...event, actor: { ...event.actor!, user: { ...user, avatar } } };
+              return { ...event, actor: { ...event.actor, user: { ...user, avatar } } };
             }),
           };
         }),
@@ -566,16 +580,20 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           ids,
           (id) =>
             engine.restore(id).pipe(
-              Effect.as({ id, error: undefined as string | undefined }),
-              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+              Effect.map(() => ({ status: "restored" as const, id })),
+              Effect.catch((error) =>
+                Effect.succeed({ status: "failed" as const, id, error: error.message }),
+              ),
             ),
           { concurrency: 8 },
         );
         return {
-          restored: results.filter((result) => !result.error).map((result) => result.id),
+          restored: results
+            .filter((result) => result.status === "restored")
+            .map((result) => result.id),
           failed: results
-            .filter((result) => result.error)
-            .map((result) => ({ id: result.id, error: result.error! })),
+            .filter((result) => result.status === "failed")
+            .map((result) => ({ id: result.id, error: result.error })),
         };
       }),
     ),
@@ -592,16 +610,20 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           ids,
           (id) =>
             engine.purge(id).pipe(
-              Effect.as({ id, error: undefined as string | undefined }),
-              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+              Effect.map(() => ({ status: "deleted" as const, id })),
+              Effect.catch((error) =>
+                Effect.succeed({ status: "failed" as const, id, error: error.message }),
+              ),
             ),
           { concurrency: 8 },
         );
         return {
-          deleted: results.filter((result) => !result.error).map((result) => result.id),
+          deleted: results
+            .filter((result) => result.status === "deleted")
+            .map((result) => result.id),
           failed: results
-            .filter((result) => result.error)
-            .map((result) => ({ id: result.id, error: result.error! })),
+            .filter((result) => result.status === "failed")
+            .map((result) => ({ id: result.id, error: result.error })),
         };
       }),
     ),
@@ -657,14 +679,18 @@ export const createApp = (options: CreateAppOptions): KevaApp => {
           ids,
           (id) =>
             engine.delete(id).pipe(
-              Effect.as({ id, error: undefined as string | undefined }),
-              Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+              Effect.map(() => ({ status: "deleted" as const, id })),
+              Effect.catch((error) =>
+                Effect.succeed({ status: "failed" as const, id, error: error.message }),
+              ),
             ),
           { concurrency: 8 },
         );
         return {
-          deleted: results.filter((r) => !r.error).map((r) => r.id),
-          failed: results.filter((r) => r.error).map((r) => ({ id: r.id, error: r.error! })),
+          deleted: results.filter((r) => r.status === "deleted").map((r) => r.id),
+          failed: results
+            .filter((r) => r.status === "failed")
+            .map((r) => ({ id: r.id, error: r.error })),
         };
       }),
     ),

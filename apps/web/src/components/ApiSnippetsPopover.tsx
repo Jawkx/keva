@@ -7,9 +7,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 const PUBLIC_API_URL = "https://api.usekeva.com/v1";
 
+interface QuerySnippetInput {
+  readonly where: readonly QueryCondition[];
+  readonly search?: string;
+  readonly limit: number;
+}
+
 const buildSnippets = (baseUrl: string, search: string, where: readonly QueryCondition[]) => {
   const trimmed = search.trim();
-  const query = { where, ...(trimmed ? { search: trimmed } : {}), limit: 100 };
+  let query: QuerySnippetInput = { where, limit: 100 };
+  if (trimmed) query = { ...query, search: trimmed };
   const curl = `curl -X POST ${baseUrl}/query \\
   -H "Authorization: Bearer $KEVA_TOKEN" \\
   -H "Content-Type: application/json" \\

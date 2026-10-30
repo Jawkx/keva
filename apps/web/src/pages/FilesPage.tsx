@@ -308,14 +308,16 @@ function FilesPageContent({
 
   const itemsQuery = useQuery({
     queryKey: itemsQueryKey(activeSearch, activeWhere, order, pageIndex * PAGE_SIZE),
-    queryFn: () =>
-      keva.query({
+    queryFn: () => {
+      const search = activeSearch.trim();
+      const query = {
         where: activeWhere,
-        ...(activeSearch.trim() ? { search: activeSearch.trim() } : {}),
         order,
         limit: PAGE_SIZE,
         offset: pageIndex * PAGE_SIZE,
-      }),
+      };
+      return search ? keva.query({ ...query, search }) : keva.query(query);
+    },
     placeholderData: (previous) => previous,
     refetchInterval: ACTIVE_METADATA_REFETCH_INTERVAL,
   });

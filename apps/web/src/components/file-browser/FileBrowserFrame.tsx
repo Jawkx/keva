@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Schema } from "effect";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -19,10 +20,11 @@ export function FileBrowserFrame({
   const isWide = useMediaQuery("(min-width: 1024px)");
   const savedLayout = (() => {
     try {
-      const value = JSON.parse(
+      const value: unknown = JSON.parse(
         localStorage.getItem("keva:file-browser-layout:v1") ?? "null",
-      ) as unknown;
-      return value && typeof value === "object" ? (value as Record<string, number>) : undefined;
+      );
+      const Layout = Schema.Record(Schema.String, Schema.Number);
+      return Schema.is(Layout)(value) ? value : undefined;
     } catch {
       return undefined;
     }
@@ -43,7 +45,7 @@ export function FileBrowserFrame({
           <ResizablePanel id="list" defaultSize={64} minSize={38} className="min-w-0">
             {list}
           </ResizablePanel>
-          <ResizableHandle withHandle className="bg-transparent" />
+          <ResizableHandle withHandle disableDoubleClick className="bg-transparent" />
           <ResizablePanel
             id="detail"
             defaultSize={36}

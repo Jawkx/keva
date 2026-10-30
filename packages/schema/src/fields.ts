@@ -31,10 +31,11 @@ export const formatPropertyLimitFailure = (failure: PropertyLimitFailure): strin
   }
 };
 
-const encodedBytes = (value: unknown): number =>
-  new TextEncoder().encode(JSON.stringify(value)).byteLength;
+const encodedBytes = (properties: Readonly<Record<string, PropertyValue>>): number =>
+  new TextEncoder().encode(JSON.stringify(properties)).byteLength;
 
 const stringBytes = (value: string): number => new TextEncoder().encode(value).byteLength;
+const isString = Schema.is(Schema.String);
 
 export const canonicalizePropertyValue = (value: PropertyValue): PropertyValue =>
   Array.isArray(value) ? [...value].sort() : value;
@@ -64,19 +65,13 @@ export const isPropertyKey = (key: string): boolean =>
   queryKeyPattern.test(key) && key.length <= PROPERTY_LIMITS.keyLength && !isReservedKey(key);
 
 const isPropertyValueWithinLimits = (value: PropertyValue): boolean => {
-  if (typeof value === "string")
-    return value.length > 0 && stringBytes(value) <= PROPERTY_LIMITS.stringBytes;
+  if (isString(value)) return value.length > 0 && stringBytes(value) <= PROPERTY_LIMITS.stringBytes;
   if (!Array.isArray(value)) return true;
   return (
     value.length > 0 &&
     value.length <= PROPERTY_LIMITS.arrayItems &&
     new Set(value).size === value.length &&
-    value.every(
-      (entry) =>
-        typeof entry === "string" &&
-        entry.length > 0 &&
-        stringBytes(entry) <= PROPERTY_LIMITS.stringBytes,
-    )
+    value.every((entry) => entry.length > 0 && stringBytes(entry) <= PROPERTY_LIMITS.stringBytes)
   );
 };
 
@@ -100,7 +95,7 @@ export interface FieldDescriptor {
   readonly column: string;
   readonly itemField: keyof KevaItem;
   readonly queryType: FieldQueryType;
-  readonly valueSchema?: Schema.Schema<string, string>;
+  readonly valueSchema?: Schema.Schema<string>;
 }
 
 export const FIELDS: readonly FieldDescriptor[] = [

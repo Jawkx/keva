@@ -40,24 +40,24 @@ export function pictureInPictureFeature(): MediaFeature<PictureInPictureStore> {
       [PICTURE_IN_PICTURE_FEATURE_KEY]: {
         active: false,
         enter: async () => {
-          const media = get().media.mediaElement as PictureInPictureMedia | null;
-          if (!media || media.nodeName.toLowerCase() !== "video") return;
+          const media = getPictureInPictureMedia(get().media.mediaElement);
+          if (!media) return;
 
           await Effect.runPromise(
             enterPictureInPictureEffect(media).pipe(
-              Effect.catchAll((error) =>
+              Effect.catch((error) =>
                 Effect.sync(() => console.error("Failed to enter Picture-in-Picture mode:", error)),
               ),
             ),
           );
         },
         exit: async () => {
-          const media = get().media.mediaElement as PictureInPictureMedia | null;
+          const media = getPictureInPictureMedia(get().media.mediaElement);
           if (!media) return;
 
           await Effect.runPromise(
             exitPictureInPictureEffect(media, document).pipe(
-              Effect.catchAll((error) =>
+              Effect.catch((error) =>
                 Effect.sync(() => console.error("Failed to exit Picture-in-Picture mode:", error)),
               ),
             ),
@@ -88,6 +88,10 @@ export function usePictureInPictureStore<TSelected>(
   );
 }
 
+function getPictureInPictureMedia(media: HTMLMediaElement | null): PictureInPictureMedia | null {
+  return media instanceof HTMLVideoElement ? media : null;
+}
+
 function hasVideoTrack(media: HTMLVideoElement): boolean {
   return media.videoWidth > 0 && media.videoHeight > 0;
 }
@@ -98,8 +102,8 @@ function PictureInPictureSetup() {
   const mediaElement = useMediaStore((state) => state.mediaElement);
 
   React.useEffect(() => {
-    const media = mediaElement as PictureInPictureMedia | null;
-    if (!media || media.nodeName.toLowerCase() !== "video") return noop;
+    const media = getPictureInPictureMedia(mediaElement);
+    if (!media) return noop;
 
     const updatePictureInPictureSupport = () => {
       const browserSupports =

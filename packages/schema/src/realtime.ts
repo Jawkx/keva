@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { IsoInstant, ItemId } from "./common.js";
 
-export const RealtimeEventReason = Schema.Literal(
+export const RealtimeEventReason = Schema.Literals([
   "uploaded",
   "patched",
   "restored",
@@ -11,7 +11,7 @@ export const RealtimeEventReason = Schema.Literal(
   "thumbnail_ready",
   "thumbnail_failed",
   "bulk_changed",
-);
+]);
 export type RealtimeEventReason = typeof RealtimeEventReason.Type;
 
 export const RealtimeEvent = Schema.Struct({

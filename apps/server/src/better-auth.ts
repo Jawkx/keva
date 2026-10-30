@@ -3,6 +3,7 @@ import { items } from "@keva/core/postgres";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import type { Polar } from "@polar-sh/sdk";
 import type { Subscription } from "@polar-sh/sdk/models/components/subscription";
+import type { BetterAuthOptions } from "better-auth";
 import { betterAuth } from "better-auth/minimal";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import {
@@ -14,6 +15,7 @@ import {
   withMcpAuth,
 } from "better-auth/plugins";
 import { and, eq } from "drizzle-orm";
+import { Option, Schema } from "effect";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { SessionResolver } from "./auth.js";
 import { serializeAvatarRecipe } from "./avatar.js";
@@ -41,8 +43,6 @@ export interface BetterAuthConfig {
     readonly onSubscription: (subscription: Subscription, eventAt: Date) => Promise<void>;
   };
 }
-
-export type KevaAuth = ReturnType<typeof betterAuth>;
 
 export const personalOrganizationSlug = (userId: string): string => `keva-${userId}`;
 
@@ -141,9 +141,48 @@ export const isAllowedMcpRedirectUri = (value: string): boolean => {
   }
 };
 
+type BetterAuthMcpRuntime = Parameters<typeof withMcpAuth>[0] &
+  Parameters<typeof oAuthDiscoveryMetadata>[0] &
+  Parameters<typeof oAuthProtectedResourceMetadata>[0];
+
+interface OrganizationApi {
+  readonly listOrganizations: (input: {
+    headers: Headers;
+  }) => Promise<ReadonlyArray<{ id: string }>>;
+  readonly createOrganization: (input: {
+    headers: Headers;
+    body: { name: string; slug: string };
+  }) => Promise<{ id: string } | null>;
+  readonly setActiveOrganization: (input: {
+    headers: Headers;
+    body: { organizationId: string };
+  }) => Promise<void>;
+}
+
+interface AuthApiSession {
+  readonly user: {
+    readonly id: string;
+    readonly name: string;
+    readonly email: string;
+    readonly isAnonymous: boolean | null | undefined;
+  };
+  readonly session: { readonly activeOrganizationId: string | null | undefined };
+}
+
+interface KevaAuthApi {
+  readonly organization: OrganizationApi;
+  readonly getSession: (input: { headers: Headers }) => Promise<AuthApiSession | null>;
+}
+
+export type KevaAuth = BetterAuthMcpRuntime & {
+  readonly handler: (request: Request) => Promise<Response>;
+  readonly kevaApi: KevaAuthApi;
+};
+
 export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
   const sendVerificationEmail = config.sendVerificationEmail;
-  return betterAuth({
+  const polarConfig = config.polar;
+  const options = {
     database: drizzleAdapter(config.database, {
       provider: "pg",
       schema: authSchema,
@@ -155,24 +194,7 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
       enabled: true,
       requireEmailVerification: Boolean(config.sendVerificationEmail),
     },
-    ...(config.googleOAuth
-      ? {
-          socialProviders: {
-            google: {
-              clientId: config.googleOAuth.clientId,
-              clientSecret: config.googleOAuth.clientSecret,
-            },
-          },
-          account: {
-            accountLinking: {
-              enabled: true,
-              disableImplicitLinking: false,
-              requireLocalEmailVerified: config.googleOAuth.requireLocalEmailVerified,
-              allowDifferentEmails: false,
-            },
-          },
-        }
-      : {}),
+
     user: {
       additionalFields: {
         avatar: {
@@ -205,35 +227,31 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
         },
       },
     },
-    ...(sendVerificationEmail
-      ? {
-          emailVerification: {
-            sendOnSignUp: true,
-            sendOnSignIn: false,
-            autoSignInAfterVerification: true,
-            sendVerificationEmail: ({ user, url }: { user: { email: string }; url: string }) =>
-              sendVerificationEmail({ email: user.email, url }),
-          },
-        }
-      : {}),
+
     experimental: { joins: true },
     hooks: {
       before: createAuthMiddleware(async (context) => {
         if (context.path !== "/mcp/register") return;
-        const body =
-          typeof context.body === "object" && context.body !== null
-            ? (context.body as Record<string, unknown>)
-            : {};
-        const redirectUris = body.redirect_uris;
+        const decodedBody = Schema.decodeUnknownOption(
+          Schema.Record(Schema.String, Schema.Unknown),
+        )(context.body);
+        if (Option.isNone(decodedBody)) {
+          throw new APIError("BAD_REQUEST", { message: "Invalid OAuth redirect URI" });
+        }
+        const body = decodedBody.value;
+        const redirectUris = Schema.decodeUnknownOption(Schema.Array(Schema.String))(
+          body.redirect_uris,
+        );
         if (
-          !Array.isArray(redirectUris) ||
-          redirectUris.length === 0 ||
-          redirectUris.length > 10 ||
-          redirectUris.some((value) => typeof value !== "string" || !isAllowedMcpRedirectUri(value))
+          Option.isNone(redirectUris) ||
+          redirectUris.value.length === 0 ||
+          redirectUris.value.length > 10 ||
+          redirectUris.value.some((value) => !isAllowedMcpRedirectUri(value))
         ) {
           throw new APIError("BAD_REQUEST", { message: "Invalid OAuth redirect URI" });
         }
-        const suppliedName = typeof body.client_name === "string" ? body.client_name.trim() : "";
+        const clientName = Schema.decodeUnknownOption(Schema.String)(body.client_name);
+        const suppliedName = Option.isSome(clientName) ? clientName.value.trim() : "";
         return {
           context: {
             body: {
@@ -254,28 +272,33 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
         },
       }),
       organization(),
-      ...(config.polar
+      ...(polarConfig
         ? [
             polar({
-              client: config.polar.client,
+              client: polarConfig.client,
               createCustomerOnSignUp: true,
               use: [
                 checkout({
-                  products: [...config.polar.products],
+                  products: [...polarConfig.products],
                   successUrl: `${config.baseURL.replace(/\/$/, "")}/settings?checkout=complete`,
                   returnUrl: `${config.baseURL.replace(/\/$/, "")}/settings`,
                   authenticatedUsersOnly: true,
                 }),
                 portal({ returnUrl: `${config.baseURL.replace(/\/$/, "")}/settings` }),
                 webhooks({
-                  secret: config.polar.webhookSecret,
-                  onPayload: async (payload) => {
-                    if (!payload.type.startsWith("subscription.")) return;
-                    await config.polar!.onSubscription(
-                      payload.data as Subscription,
-                      payload.timestamp,
-                    );
-                  },
+                  secret: polarConfig.webhookSecret,
+                  onSubscriptionCreated: (payload) =>
+                    polarConfig.onSubscription(payload.data, payload.timestamp),
+                  onSubscriptionUpdated: (payload) =>
+                    polarConfig.onSubscription(payload.data, payload.timestamp),
+                  onSubscriptionActive: (payload) =>
+                    polarConfig.onSubscription(payload.data, payload.timestamp),
+                  onSubscriptionCanceled: (payload) =>
+                    polarConfig.onSubscription(payload.data, payload.timestamp),
+                  onSubscriptionRevoked: (payload) =>
+                    polarConfig.onSubscription(payload.data, payload.timestamp),
+                  onSubscriptionUncanceled: (payload) =>
+                    polarConfig.onSubscription(payload.data, payload.timestamp),
                 }),
               ],
             }),
@@ -303,22 +326,63 @@ export const createBetterAuth = (config: BetterAuthConfig): KevaAuth => {
         },
       }),
     ],
-  }) as unknown as KevaAuth;
+  } satisfies BetterAuthOptions;
+  if (config.googleOAuth) {
+    Object.assign(options, {
+      socialProviders: {
+        google: {
+          clientId: config.googleOAuth.clientId,
+          clientSecret: config.googleOAuth.clientSecret,
+        },
+      },
+      account: {
+        accountLinking: {
+          enabled: true,
+          disableImplicitLinking: false,
+          requireLocalEmailVerified: config.googleOAuth.requireLocalEmailVerified,
+          allowDifferentEmails: false,
+        },
+      },
+    });
+  }
+  if (sendVerificationEmail) {
+    Object.assign(options, {
+      emailVerification: {
+        sendOnSignUp: true,
+        sendOnSignIn: false,
+        autoSignInAfterVerification: true,
+        sendVerificationEmail: ({ user, url }: { user: { email: string }; url: string }) =>
+          sendVerificationEmail({ email: user.email, url }),
+      },
+    });
+  }
+  const auth = betterAuth(options);
+  const organizationApiAdapter: OrganizationApi = {
+    listOrganizations: (input) => auth.api.listOrganizations(input),
+    createOrganization: (input) => auth.api.createOrganization(input),
+    setActiveOrganization: async (input) => {
+      await auth.api.setActiveOrganization(input);
+    },
+  };
+  return Object.assign(auth, {
+    kevaApi: {
+      organization: organizationApiAdapter,
+      getSession: async (input: { headers: Headers }) => {
+        const result = await auth.api.getSession(input);
+        if (!result) return null;
+        return {
+          user: {
+            id: result.user.id,
+            name: result.user.name,
+            email: result.user.email,
+            isAnonymous: result.user.isAnonymous,
+          },
+          session: { activeOrganizationId: result.session.activeOrganizationId },
+        };
+      },
+    },
+  });
 };
-
-interface OrganizationApi {
-  readonly listOrganizations: (input: {
-    headers: Headers;
-  }) => Promise<ReadonlyArray<{ id: string }>>;
-  readonly createOrganization: (input: {
-    headers: Headers;
-    body: { name: string; slug: string };
-  }) => Promise<{ id: string } | null>;
-  readonly setActiveOrganization: (input: {
-    headers: Headers;
-    body: { organizationId: string };
-  }) => Promise<unknown>;
-}
 
 export interface BetterAuthSessionApi {
   readonly getSession: (input: { headers: Headers }) => Promise<{ user: { id: string } } | null>;
@@ -351,7 +415,7 @@ export const makeAuthHandler =
       return auth.handler(request);
     }
 
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await auth.kevaApi.getSession({ headers: request.headers });
     if (!session) {
       const login = new URL("/login", baseURL);
       login.search = url.search;
@@ -385,23 +449,25 @@ export const makeAuthHandler =
     return auth.handler(request);
   };
 
-type BetterAuthMcpRuntime = Parameters<typeof withMcpAuth>[0] &
-  Parameters<typeof oAuthDiscoveryMetadata>[0] &
-  Parameters<typeof oAuthProtectedResourceMetadata>[0];
+const organizationApi = (auth: KevaAuth): OrganizationApi => auth.kevaApi.organization;
 
-const organizationApi = (auth: KevaAuth): OrganizationApi => auth.api as unknown as OrganizationApi;
-
-export const betterAuthSessionApi = (auth: KevaAuth): BetterAuthSessionApi =>
-  auth.api as unknown as BetterAuthSessionApi;
+export const betterAuthSessionApi = (auth: KevaAuth): BetterAuthSessionApi => ({
+  getSession: async (input) => {
+    const session = await auth.kevaApi.getSession(input);
+    return session ? { user: { id: session.user.id } } : null;
+  },
+});
 
 export const makeMcpAuthorizationServer = (auth: KevaAuth): McpAuthorizationServer => {
-  const runtime = auth as unknown as BetterAuthMcpRuntime;
+  const runtime: BetterAuthMcpRuntime = auth;
   const authorizationServerMetadata = oAuthDiscoveryMetadata(runtime);
   return {
     authorizationServerMetadata: async (request) => {
       const response = await authorizationServerMetadata(request);
       if (!response.ok) return response;
-      const metadata = (await response.json()) as Record<string, unknown>;
+      const metadata = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+        await response.json(),
+      );
       const headers = new Headers(response.headers);
       headers.delete("content-length");
       return Response.json(
@@ -429,11 +495,30 @@ type ResolvedAuthUser = {
   readonly isAnonymous?: boolean | undefined;
 };
 
+interface ResolvedAuthSession {
+  readonly user: ResolvedAuthUser;
+  readonly session: { readonly activeOrganizationId?: string | null };
+}
+
 const authSession = async (
   auth: KevaAuth,
   headers: Headers,
-): Promise<{ readonly user: ResolvedAuthUser } | null> =>
-  (await auth.api.getSession({ headers })) as { readonly user: ResolvedAuthUser } | null;
+): Promise<ResolvedAuthSession | null> => {
+  const result = await auth.kevaApi.getSession({ headers });
+  if (!result) return null;
+  return {
+    user: {
+      id: result.user.id,
+      name: result.user.name,
+      email: result.user.email,
+      isAnonymous: Boolean(result.user.isAnonymous),
+    },
+    session:
+      result.session.activeOrganizationId === undefined
+        ? {}
+        : { activeOrganizationId: result.session.activeOrganizationId },
+  };
+};
 
 export const betterAuthIdentityResolver = (auth: KevaAuth) => async (headers: Headers) => {
   const result = await authSession(auth, headers);
@@ -459,8 +544,7 @@ export const betterAuthSessionResolver =
     if (!tenantId) return null;
     // Only write the session when the active organization actually changes, so
     // a steady-state authenticated request performs no session write.
-    const activeOrganizationId = (result as { session?: { activeOrganizationId?: string | null } })
-      .session?.activeOrganizationId;
+    const activeOrganizationId = result.session.activeOrganizationId;
     if (activeOrganizationId !== tenantId) {
       await organizationApi(auth).setActiveOrganization({
         headers,

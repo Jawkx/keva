@@ -159,6 +159,14 @@ const THUMBNAIL_FOCUS_RING_CLASS =
 type PageRotationDeltas = Map<number, Rotation>;
 type ThumbnailSelectionMode = "replace" | "toggle" | "range";
 
+interface SelectionPluginWithEndSelection {
+  endSelection?: (documentId: string, modeId: string) => void;
+}
+
+interface ThumbnailPluginWithWindowState {
+  calculateWindowState?: (documentId: string) => void;
+}
+
 function getPageIndexRange(from: number, to: number): Set<number> {
   const start = Math.min(from, to);
   const end = Math.max(from, to);
@@ -182,7 +190,9 @@ function arePageIndexSetsEqual(left: Set<number>, right: Set<number>) {
 }
 
 function normalizeRotation(rotation: number): Rotation {
-  return (((rotation % 4) + 4) % 4) as Rotation;
+  const normalized = ((rotation % 4) + 4) % 4;
+  if (normalized === 1 || normalized === 2 || normalized === 3) return normalized;
+  return 0;
 }
 
 function useSharedPdfEngine() {
@@ -210,7 +220,7 @@ function useSharedPdfEngine() {
 }
 
 function rotationToDegrees(rotation: Rotation) {
-  return (rotation as number) * 90;
+  return rotation * 90;
 }
 
 function normalizeDegrees(rotation: number) {
@@ -718,19 +728,16 @@ function PDFViewerSearchControl({
 
       const firstRect = result.rects[0];
 
-      scroll.scrollToPage({
-        pageNumber: result.pageIndex + 1,
-        ...(firstRect
-          ? {
-              pageCoordinates: {
-                x: firstRect.origin.x,
-                y: firstRect.origin.y,
-              },
-              alignY: 30,
-            }
-          : {}),
-        behavior: "auto",
-      });
+      if (firstRect) {
+        scroll.scrollToPage({
+          pageNumber: result.pageIndex + 1,
+          pageCoordinates: { x: firstRect.origin.x, y: firstRect.origin.y },
+          alignY: 30,
+          behavior: "auto",
+        });
+      } else {
+        scroll.scrollToPage({ pageNumber: result.pageIndex + 1, behavior: "auto" });
+      }
     },
     [scroll, state.results],
   );
@@ -772,19 +779,19 @@ function PDFViewerSearchControl({
           searchProvider.goToResult(0);
           const firstRect = firstResult.rects[0];
 
-          scrollProvider.scrollToPage({
-            pageNumber: firstResult.pageIndex + 1,
-            ...(firstRect
-              ? {
-                  pageCoordinates: {
-                    x: firstRect.origin.x,
-                    y: firstRect.origin.y,
-                  },
-                  alignY: 30,
-                }
-              : {}),
-            behavior: "auto",
-          });
+          if (firstRect) {
+            scrollProvider.scrollToPage({
+              pageNumber: firstResult.pageIndex + 1,
+              pageCoordinates: { x: firstRect.origin.x, y: firstRect.origin.y },
+              alignY: 30,
+              behavior: "auto",
+            });
+          } else {
+            scrollProvider.scrollToPage({
+              pageNumber: firstResult.pageIndex + 1,
+              behavior: "auto",
+            });
+          }
         }
         setIsSearching(false);
       },
@@ -1349,9 +1356,8 @@ function PDFViewerSelectionReleaseGuard({ documentId }: { documentId: string }) 
         if (!selectionState.selecting) return;
 
         if (selectionState.selection && selectionPlugin) {
-          const pluginWithEndSelection = selectionPlugin as unknown as {
-            endSelection?: (documentId: string, modeId: string) => void;
-          };
+          // SAFETY: EmbedPDF's selection plugin implements endSelection, but omits it from its public type.
+          const pluginWithEndSelection = selectionPlugin as SelectionPluginWithEndSelection;
 
           pluginWithEndSelection.endSelection?.(
             documentId,
@@ -1931,19 +1937,20 @@ function PDFViewerInner({
       scrollToPageArea: (pageNumber, area, options) => {
         const pageSize = pdfDocument?.pages[pageNumber - 1]?.size;
 
-        scroll?.scrollToPage({
-          pageNumber,
-          ...(pageSize
-            ? {
-                pageCoordinates: {
-                  x: ((area.left ?? 0) / 100) * pageSize.width,
-                  y: (area.top / 100) * pageSize.height,
-                },
-                alignY: 25,
-              }
-            : {}),
-          behavior: options?.behavior === "smooth" ? "smooth" : "auto",
-        });
+        const behavior = options?.behavior === "smooth" ? "smooth" : "auto";
+        if (pageSize) {
+          scroll?.scrollToPage({
+            pageNumber,
+            pageCoordinates: {
+              x: ((area.left ?? 0) / 100) * pageSize.width,
+              y: (area.top / 100) * pageSize.height,
+            },
+            alignY: 25,
+            behavior,
+          });
+        } else {
+          scroll?.scrollToPage({ pageNumber, behavior });
+        }
       },
       getViewportElement: () => viewportElementRef.current,
     }),
@@ -2053,11 +2060,9 @@ function PDFViewerInner({
       if (viewport && scrollDelta !== 0) {
         viewport.scrollTop += scrollDelta;
       }
-      (
-        thumbnailPlugin as {
-          calculateWindowState?: (documentId: string) => void;
-        } | null
-      )?.calculateWindowState?.(documentId);
+      // SAFETY: EmbedPDF's thumbnail plugin provides this refresh hook outside its public type.
+      const thumbnailWindowState = thumbnailPlugin as ThumbnailPluginWithWindowState | null;
+      thumbnailWindowState?.calculateWindowState?.(documentId);
     },
     [
       activePage,

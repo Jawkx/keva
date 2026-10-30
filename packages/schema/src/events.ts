@@ -3,18 +3,18 @@ import { ItemId } from "./common.js";
 import { Actor } from "./principal.js";
 import { PropertyValue } from "./properties.js";
 
-export const ItemEventAction = Schema.Literal(
+export const ItemEventAction = Schema.Literals([
   "uploaded",
   "updated",
   "renamed",
   "properties_changed",
   "deleted",
-);
+]);
 export type ItemEventAction = typeof ItemEventAction.Type;
 
 const PropertyChanges = Schema.Struct({
-  set: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
-  previous: Schema.optional(Schema.Record({ key: Schema.String, value: PropertyValue })),
+  set: Schema.optional(Schema.Record(Schema.String, PropertyValue)),
+  previous: Schema.optional(Schema.Record(Schema.String, PropertyValue)),
   unset: Schema.optional(Schema.Array(Schema.String)),
 });
 

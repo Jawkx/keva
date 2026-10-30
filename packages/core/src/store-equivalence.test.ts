@@ -12,13 +12,13 @@ const sql = testSql();
 const store = makePostgresMetadataStore(sql);
 afterAll(() => sql.end({ timeout: 5 }));
 
-const SEED: ReadonlyArray<[string, string, Record<string, unknown>]> = [
+const SEED: ReadonlyArray<[string, string, KevaItem["properties"]]> = [
   ["alpha", "text/plain", { kind: "doc", tags: ["x", "y"], note: "hello world" }],
   ["bravo", "image/png", { kind: "image", tags: ["y", "z"] }],
   ["carol", "application/pdf", { kind: "doc", label: null }],
 ];
 
-const QUERIES: Record<string, Query> = {
+const QUERIES = {
   eqString: {
     where: [{ key: "kind", op: "has_value", value: "doc" }],
     limit: 100,
@@ -73,9 +73,9 @@ const QUERIES: Record<string, Query> = {
     limit: 100,
     order: "created_at_asc",
   },
-};
+} satisfies Readonly<Record<string, Query>>;
 
-const EXPECTED: Record<string, string[]> = {
+const EXPECTED = {
   eqString: ["alpha", "carol"],
   neqString: ["alpha", "carol"],
   arrayMember: ["alpha", "bravo"],
@@ -88,7 +88,7 @@ const EXPECTED: Record<string, string[]> = {
   inSysContentType: ["alpha", "carol"],
   inPropString: ["alpha", "bravo", "carol"],
   inArrayProp: ["bravo"],
-};
+} satisfies Record<keyof typeof QUERIES, string[]>;
 
 const readyItem = (
   tenantId: string,
@@ -123,7 +123,7 @@ const seed = async (): Promise<string> => {
       store.insert(
         readyItem(tenant, crypto.randomUUID(), name, timestamp, {
           contentType,
-          properties: properties as KevaItem["properties"],
+          properties,
         }),
       ),
     );
@@ -198,13 +198,13 @@ const patchAtPropertyLimit = async () => {
     store.patch(tenant, id, { fields: {}, set: properties, unset: [] }, timestamp),
   );
   const rejected = await Effect.runPromise(
-    Effect.either(
+    Effect.result(
       store.patch(tenant, id, { fields: {}, set: { overflow: "yes" }, unset: [] }, timestamp),
     ),
   );
   const item = await Effect.runPromise(store.get(tenant, id));
   return {
-    rejected: rejected._tag === "Left" ? rejected.left._tag : null,
+    rejected: rejected._tag === "Failure" ? rejected.failure._tag : null,
     properties: item?.properties,
   };
 };
@@ -260,9 +260,7 @@ const seedAndListEvents = async () => {
   const pageCursors: boolean[] = [];
   let cursor: string | undefined;
   do {
-    const page = await Effect.runPromise(
-      store.listEvents(tenant, itemId, { limit: 2, ...(cursor ? { cursor } : {}) }),
-    );
+    const page = await Effect.runPromise(store.listEvents(tenant, itemId, { limit: 2, cursor }));
     pages.push([...page.events]);
     pageCursors.push(Boolean(page.nextCursor));
     cursor = page.nextCursor;
@@ -392,7 +390,7 @@ describe("postgres store semantics", () => {
     );
 
     const result = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         store.query(tenant, {
           where: [],
           limit: 1,
@@ -401,6 +399,6 @@ describe("postgres store semantics", () => {
         }),
       ),
     );
-    expect(result).toMatchObject({ _tag: "Left", left: { _tag: "ValidationError" } });
+    expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "ValidationError" } });
   });
 });

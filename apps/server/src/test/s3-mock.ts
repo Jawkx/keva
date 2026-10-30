@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type IncomingMessage, type Server, ServerResponse, createServer } from "node:http";
-import { type AddressInfo } from "node:net";
+import { Schema } from "effect";
 
 // Does not validate signatures; exercises the S3BlobStore's signed HTTP requests.
 
@@ -27,7 +27,7 @@ const readBody = (req: IncomingMessage): Promise<Buffer> =>
     req.on("error", reject);
   });
 
-const parsePath = (pathname: string): { bucket: string; key: string } => {
+const parsePath = (pathname: string) => {
   const parts = pathname.replace(/^\//, "").split("/").map(decodeURIComponent);
   return { bucket: parts[0] ?? "", key: parts.slice(1).join("/") };
 };
@@ -42,7 +42,7 @@ export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
 
     if (method === "PUT") {
       const copySource = req.headers["x-amz-copy-source"];
-      if (typeof copySource === "string") {
+      if (copySource !== undefined && !Array.isArray(copySource)) {
         const { key: fromKey } = parsePath(copySource);
         const src = store.get(fromKey);
         if (!src) {
@@ -58,7 +58,7 @@ export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
         return;
       }
       const bytes = await readBody(req);
-      const contentType = (req.headers["content-type"] as string) ?? "application/octet-stream";
+      const contentType = req.headers["content-type"] ?? "application/octet-stream";
       const etag = md5(bytes);
       store.set(key, { bytes, contentType, etag });
       res.writeHead(200, { ETag: etag }).end();
@@ -90,7 +90,9 @@ export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
   });
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const port = (server.address() as AddressInfo).port;
+  const { port } = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(
+    server.address(),
+  );
 
   return {
     endpoint: `http://127.0.0.1:${port}`,

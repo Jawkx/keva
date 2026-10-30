@@ -3,9 +3,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { makeThumbnailJobStore, type ClaimedThumbnailJob } from "@keva/core/postgres";
 import { AwsClient } from "aws4fetch";
+import { Data, Effect } from "effect";
 import { fileTypeFromFile } from "file-type";
 import postgres, { type Sql } from "postgres";
 import sharp from "sharp";
@@ -14,7 +16,6 @@ const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_INPUT_PIXELS = 100_000_000;
 const OUTPUT_SIZE = 640;
-const OUTPUT_QUALITY = 80;
 const PROCESSING_TIMEOUT_MS = 30_000;
 const STORAGE_TIMEOUT_MS = 30_000;
 const LEASE_DURATION_MS = PROCESSING_TIMEOUT_MS + STORAGE_TIMEOUT_MS * 2 + 30_000;
@@ -28,223 +29,256 @@ interface StorageConfig {
   readonly bucket: string;
   readonly forcePathStyle: boolean;
 }
-
 interface ProcessedItem {
   readonly tenantId: string;
   readonly itemId: string;
 }
-
-interface DrainSummary {
+export interface DrainSummary {
   readonly attempted: number;
   readonly readyItems: readonly ProcessedItem[];
   readonly failedItems: readonly ProcessedItem[];
   readonly retriedItems: readonly ProcessedItem[];
 }
+export class ConfigurationError extends Data.TaggedError("ConfigurationError")<{
+  readonly message: string;
+}> {}
+export class ProcessingError extends Data.TaggedError("ProcessingError")<{
+  readonly message: string;
+  readonly permanent: boolean;
+  readonly cause?: unknown;
+}> {}
 
-class PermanentProcessingError extends Error {}
-
-const required = (name: string): string => {
+const required = (name: string) => {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is required`);
-  return value;
+  return value
+    ? Effect.succeed(value)
+    : Effect.fail(new ConfigurationError({ message: `${name} is required` }));
 };
 
-const storageConfig = (): StorageConfig => ({
-  endpoint: required("S3_ENDPOINT"),
-  region: process.env.S3_REGION || "auto",
-  accessKeyId: required("S3_ACCESS_KEY_ID"),
-  secretAccessKey: required("S3_SECRET_ACCESS_KEY"),
-  bucket: required("S3_BUCKET"),
-  forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== "false",
+const storageConfig = Effect.gen(function* () {
+  return {
+    endpoint: yield* required("S3_ENDPOINT"),
+    region: process.env.S3_REGION || "auto",
+    accessKeyId: yield* required("S3_ACCESS_KEY_ID"),
+    secretAccessKey: yield* required("S3_SECRET_ACCESS_KEY"),
+    bucket: yield* required("S3_BUCKET"),
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== "false",
+  } satisfies StorageConfig;
 });
 
-const objectUrl = (config: StorageConfig, key: string): URL => {
+const objectUrl = (config: StorageConfig, key: string) => {
   const endpoint = new URL(config.endpoint);
-  const path = key
-    .split("/")
-    .map((part) => encodeURIComponent(part))
-    .join("/");
+  const path = key.split("/").map(encodeURIComponent).join("/");
   return config.forcePathStyle
     ? new URL(`/${encodeURIComponent(config.bucket)}/${path}`, endpoint)
     : new URL(`${endpoint.protocol}//${config.bucket}.${endpoint.host}/${path}`);
 };
-
-const awsClient = (config: StorageConfig): AwsClient =>
+const awsClient = (config: StorageConfig) =>
   new AwsClient({
     accessKeyId: config.accessKeyId,
     secretAccessKey: config.secretAccessKey,
     region: config.region,
     service: "s3",
   });
+const processingError = (message: string, permanent = false, cause?: unknown) =>
+  new ProcessingError({ message, permanent, cause });
+const tryProcessing = <A>(try_: (signal: AbortSignal) => Promise<A>, message: string) =>
+  Effect.tryPromise({
+    try: try_,
+    catch: (cause) =>
+      processingError(cause instanceof Error ? cause.message : message, false, cause),
+  });
 
-const boundedDownload = async (
+const boundedDownload = (
   client: AwsClient,
   config: StorageConfig,
   key: string,
   destination: string,
-): Promise<void> => {
-  const response = await client.fetch(objectUrl(config, key), {
-    signal: AbortSignal.timeout(STORAGE_TIMEOUT_MS),
+) =>
+  Effect.gen(function* () {
+    const response = yield* tryProcessing(
+      (signal) => client.fetch(objectUrl(config, key), { signal }),
+      "SourceDownload",
+    ).pipe(
+      Effect.timeoutOrElse({
+        duration: STORAGE_TIMEOUT_MS,
+        orElse: () => Effect.fail(processingError("StorageTimeout")),
+      }),
+    );
+    const responseBody = response.body;
+    if (!response.ok || !responseBody)
+      return yield* processingError(`SourceDownload${response.status}`);
+    if (Number(response.headers.get("content-length") || "0") > MAX_SOURCE_BYTES)
+      return yield* processingError("SourceTooLarge", true);
+    let received = 0;
+    const limiter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        received += chunk.length;
+        callback(
+          received > MAX_SOURCE_BYTES ? processingError("SourceTooLarge", true) : null,
+          chunk,
+        );
+      },
+    });
+    yield* tryProcessing(() => {
+      // SAFETY: Fetch and node:stream/web implement the same Web ReadableStream contract.
+      const source = responseBody as NodeReadableStream;
+      return pipeline(Readable.fromWeb(source), limiter, createWriteStream(destination));
+    }, "SourceDownload");
   });
-  if (!response.ok || !response.body) throw new Error(`SourceDownload${response.status}`);
-  const declaredSize = Number(response.headers.get("content-length") || "0");
-  if (declaredSize > MAX_SOURCE_BYTES) throw new PermanentProcessingError("SourceTooLarge");
-  let received = 0;
-  const limiter = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      received += chunk.length;
-      callback(
-        received > MAX_SOURCE_BYTES ? new PermanentProcessingError("SourceTooLarge") : null,
-        chunk,
-      );
-    },
-  });
-  await pipeline(Readable.fromWeb(response.body as never), limiter, createWriteStream(destination));
-};
 
-export const renderImageThumbnail = async (
-  inputPath: string,
-  outputPath: string,
-): Promise<{ readonly width: number; readonly height: number; readonly size: number }> => {
-  const detected = await fileTypeFromFile(inputPath);
-  if (!detected || !ALLOWED_TYPES.has(detected.mime)) {
-    throw new PermanentProcessingError("UnsupportedSourceType");
-  }
-  const image = sharp(inputPath, { limitInputPixels: MAX_INPUT_PIXELS })
-    .rotate()
-    .resize({
-      width: OUTPUT_SIZE,
-      height: OUTPUT_SIZE,
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .webp({ quality: OUTPUT_QUALITY });
-  const render = image.toFile(outputPath);
-  let timedOut = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      timedOut = true;
-      image.destroy();
-      reject(new Error("ProcessingTimeout"));
-    }, PROCESSING_TIMEOUT_MS);
-    timer.unref();
-  });
-  try {
-    const info = await Promise.race([render, timeout]);
-    if (info.size > MAX_OUTPUT_BYTES) throw new PermanentProcessingError("OutputTooLarge");
+export const renderImageThumbnail = (inputPath: string, outputPath: string) =>
+  Effect.gen(function* () {
+    const detected = yield* tryProcessing(
+      () => fileTypeFromFile(inputPath),
+      "SourceDetectionFailed",
+    );
+    if (!detected || !ALLOWED_TYPES.has(detected.mime))
+      return yield* processingError("UnsupportedSourceType", true);
+    const image = sharp(inputPath, { limitInputPixels: MAX_INPUT_PIXELS })
+      .rotate()
+      .resize({ width: OUTPUT_SIZE, height: OUTPUT_SIZE, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 80 });
+    const info = yield* tryProcessing(() => image.toFile(outputPath), "ProcessingFailed").pipe(
+      Effect.timeoutOrElse({
+        duration: PROCESSING_TIMEOUT_MS,
+        orElse: () => Effect.fail(processingError("ProcessingTimeout")),
+      }),
+      Effect.ensuring(Effect.sync(() => image.destroy())),
+    );
+    if (info.size > MAX_OUTPUT_BYTES) return yield* processingError("OutputTooLarge", true);
     return { width: info.width, height: info.height, size: info.size };
-  } catch (error) {
-    if (timedOut) await render.catch(() => undefined);
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-};
-
-const verifyClaim = async (sql: Sql, job: ClaimedThumbnailJob): Promise<boolean> => {
-  const rows = await sql<{ valid: boolean }[]>`
-    select exists(
-      select 1 from items as item
-      join thumbnail_jobs as thumbnail on thumbnail.tenant_id = item.tenant_id
-        and thumbnail.item_id = item.id
-      where item.tenant_id = ${job.tenantId} and item.id = ${job.itemId}
-        and item.status = 'ready' and item.deleted_at is null
-        and item.etag is not distinct from ${job.sourceEtag}
-        and thumbnail.state = 'processing' and thumbnail.lease_token = ${job.leaseToken}
-    ) as valid
-  `;
-  return rows[0]?.valid ?? false;
-};
-
-const uploadOutput = async (
-  client: AwsClient,
-  config: StorageConfig,
-  key: string,
-  body: Uint8Array,
-): Promise<void> => {
-  const response = await client.fetch(objectUrl(config, key), {
-    method: "PUT",
-    signal: AbortSignal.timeout(STORAGE_TIMEOUT_MS),
-    headers: {
-      "content-length": String(body.byteLength),
-      "content-type": "image/webp",
-    },
-    body: body as unknown as BodyInit,
   });
-  await response.body?.cancel();
-  if (!response.ok) throw new Error(`OutputUpload${response.status}`);
-};
 
-const processJob = async (
+const verifyClaim = (sql: Sql, job: ClaimedThumbnailJob) =>
+  tryProcessing(async () => {
+    const rows = await sql<
+      { valid: boolean }[]
+    >`select exists(select 1 from items as item join thumbnail_jobs as thumbnail on thumbnail.tenant_id = item.tenant_id and thumbnail.item_id = item.id where item.tenant_id = ${job.tenantId} and item.id = ${job.itemId} and item.status = 'ready' and item.deleted_at is null and item.etag is not distinct from ${job.sourceEtag} and thumbnail.state = 'processing' and thumbnail.lease_token = ${job.leaseToken}) as valid`;
+    return rows[0]?.valid ?? false;
+  }, "ClaimVerificationFailed");
+
+const uploadOutput = (client: AwsClient, config: StorageConfig, key: string, body: Uint8Array) =>
+  Effect.gen(function* () {
+    const response = yield* tryProcessing(
+      (signal) =>
+        client.fetch(objectUrl(config, key), {
+          method: "PUT",
+          signal,
+          headers: { "content-length": String(body.byteLength), "content-type": "image/webp" },
+          body: Buffer.from(body),
+        }),
+      "OutputUpload",
+    ).pipe(
+      Effect.timeoutOrElse({
+        duration: STORAGE_TIMEOUT_MS,
+        orElse: () => Effect.fail(processingError("StorageTimeout")),
+      }),
+    );
+    yield* tryProcessing(() => response.body?.cancel() ?? Promise.resolve(), "ResponseCleanup");
+    if (!response.ok) return yield* processingError(`OutputUpload${response.status}`);
+  });
+
+const processJob = (
   sql: Sql,
   job: ClaimedThumbnailJob,
   client: AwsClient,
   config: StorageConfig,
-): Promise<"ready" | "retry" | "failed"> => {
+) => {
   const jobs = makeThumbnailJobStore(sql);
-  const directory = await mkdtemp(join(tmpdir(), "keva-thumbnail-"));
-  const inputPath = join(directory, "source");
-  const outputPath = join(directory, "thumbnail.webp");
-  const outputKey = `thumbnails/${job.tenantId}/${job.itemId}/v${job.recipeVersion}.webp`;
-  try {
-    if (!(await verifyClaim(sql, job))) throw new PermanentProcessingError("SourceChanged");
-    await boundedDownload(client, config, job.storageKey, inputPath);
-    const info = await renderImageThumbnail(inputPath, outputPath);
-    const output = await readFile(outputPath);
-    if (!(await verifyClaim(sql, job))) throw new PermanentProcessingError("SourceChanged");
-    await uploadOutput(client, config, outputKey, output);
-    const finalized = await jobs.markReady(job.tenantId, job.itemId, job.leaseToken, {
-      key: outputKey,
-      contentType: "image/webp",
-      size: info.size,
-      width: info.width,
-      height: info.height,
-    });
-    if (!finalized) return "failed";
-    return "ready";
-  } catch (error) {
-    const errorCode =
-      error instanceof Error ? error.message.slice(0, 128) : "UnknownProcessingError";
-    if (error instanceof PermanentProcessingError) {
-      await jobs.markFailed(job.tenantId, job.itemId, job.leaseToken, errorCode);
-      return "failed";
-    }
-    const result = await jobs.markRetry(job.tenantId, job.itemId, job.leaseToken, errorCode);
-    return result?.state === "failed" ? "failed" : "retry";
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  const run = Effect.acquireUseRelease(
+    tryProcessing(() => mkdtemp(join(tmpdir(), "keva-thumbnail-")), "TempDirectoryCreate"),
+    (directory) =>
+      Effect.gen(function* () {
+        const inputPath = join(directory, "source");
+        const outputPath = join(directory, "thumbnail.webp");
+        const outputKey = `thumbnails/${job.tenantId}/${job.itemId}/v${job.recipeVersion}.webp`;
+        if (!(yield* verifyClaim(sql, job))) return yield* processingError("SourceChanged", true);
+        yield* boundedDownload(client, config, job.storageKey, inputPath);
+        const info = yield* renderImageThumbnail(inputPath, outputPath);
+        const output = yield* tryProcessing(() => readFile(outputPath), "OutputReadFailed");
+        if (!(yield* verifyClaim(sql, job))) return yield* processingError("SourceChanged", true);
+        yield* uploadOutput(client, config, outputKey, output);
+        const finalized = yield* tryProcessing(
+          () =>
+            jobs.markReady(job.tenantId, job.itemId, job.leaseToken, {
+              key: outputKey,
+              contentType: "image/webp",
+              size: info.size,
+              width: info.width,
+              height: info.height,
+            }),
+          "FinalizeFailed",
+        );
+        return finalized ? ("ready" as const) : ("failed" as const);
+      }),
+    (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true })),
+  );
+  return run.pipe(
+    Effect.catch((error) => {
+      const code = error.message.slice(0, 128);
+      return error.permanent
+        ? tryProcessing(
+            () => jobs.markFailed(job.tenantId, job.itemId, job.leaseToken, code),
+            "MarkFailed",
+          ).pipe(Effect.as("failed" as const))
+        : tryProcessing(
+            () => jobs.markRetry(job.tenantId, job.itemId, job.leaseToken, code),
+            "MarkRetry",
+          ).pipe(
+            Effect.map((result) =>
+              result?.state === "failed" ? ("failed" as const) : ("retry" as const),
+            ),
+          );
+    }),
+  );
 };
 
-export const drainThumbnailJobs = async (): Promise<DrainSummary> => {
-  const sql = postgres(required("DATABASE_URL"), { max: 1, connect_timeout: 10, idle_timeout: 5 });
+const database = (url: string) =>
+  Effect.acquireRelease(
+    Effect.sync(() => postgres(url, { max: 1, connect_timeout: 10, idle_timeout: 5 })),
+    (sql) => Effect.promise(() => sql.end({ timeout: 5 })),
+  );
+
+export const drainThumbnailJobs = Effect.gen(function* () {
+  const databaseUrl = yield* required("DATABASE_URL");
+  const config = yield* storageConfig;
+  const configured = Number(process.env.THUMBNAIL_BATCH_SIZE ?? 5);
+  if (!Number.isSafeInteger(configured) || configured < 1)
+    return yield* new ConfigurationError({
+      message: "THUMBNAIL_BATCH_SIZE must be a positive integer",
+    });
+  const batchSize = Math.min(20, configured);
+  const sql = yield* database(databaseUrl);
   const jobs = makeThumbnailJobStore(sql);
-  const config = storageConfig();
   const client = awsClient(config);
-  const configuredBatchSize = Number(process.env.THUMBNAIL_BATCH_SIZE ?? 5);
-  if (!Number.isSafeInteger(configuredBatchSize) || configuredBatchSize < 1) {
-    throw new Error("THUMBNAIL_BATCH_SIZE must be a positive integer");
-  }
-  const batchSize = Math.min(20, configuredBatchSize);
-  const deadline = Date.now() + 8 * 60_000;
   const readyItems: ProcessedItem[] = [];
   const failedItems: ProcessedItem[] = [];
   const retriedItems: ProcessedItem[] = [];
   let attempted = 0;
-  try {
-    while (attempted < batchSize && Date.now() < deadline) {
-      const job = await jobs.claimNext({ leaseMs: LEASE_DURATION_MS });
-      if (!job) break;
-      attempted += 1;
-      const result = await processJob(sql, job, client, config);
-      const item = { tenantId: job.tenantId, itemId: job.itemId };
-      if (result === "ready") readyItems.push(item);
-      else if (result === "failed") failedItems.push(item);
+  let exhausted = false;
+  yield* Effect.whileLoop({
+    while: () => attempted < batchSize && !exhausted,
+    body: () =>
+      tryProcessing(() => jobs.claimNext({ leaseMs: LEASE_DURATION_MS }), "ClaimFailed").pipe(
+        Effect.flatMap((job) => {
+          if (!job) return Effect.succeed(undefined);
+          attempted += 1;
+          return processJob(sql, job, client, config).pipe(
+            Effect.map((result) => ({ job, result })),
+          );
+        }),
+      ),
+    step: (processed) => {
+      if (!processed) {
+        exhausted = true;
+        return;
+      }
+      const item = { tenantId: processed.job.tenantId, itemId: processed.job.itemId };
+      if (processed.result === "ready") readyItems.push(item);
+      else if (processed.result === "failed") failedItems.push(item);
       else retriedItems.push(item);
-    }
-    return { attempted, readyItems, failedItems, retriedItems };
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
-};
+    },
+  });
+  return { attempted, readyItems, failedItems, retriedItems } satisfies DrainSummary;
+}).pipe(Effect.scoped);

@@ -18,14 +18,14 @@ import { Authenticator } from "./auth.js";
 import { BillingMeter, isProgrammaticPrincipal } from "./billing.js";
 import { defectTypes, failureOrElse } from "./effect-failure.js";
 
-export const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
-  Schema.decodeUnknown(schema)(value).pipe(
+export const decode = <A, Input>(schema: Schema.ConstraintDecoder<A>, value: Input) =>
+  Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError(() => new ValidationError({ message: "Request validation failed" })),
   );
 
 export const jsonBody = (context: Context) =>
   Effect.tryPromise({
-    try: () => context.req.json() as Promise<unknown>,
+    try: () => context.req.json<unknown>(),
     catch: () => new ValidationError({ message: "Request body must be JSON" }),
   });
 
@@ -38,7 +38,7 @@ export const failureFrom = (cause: Cause.Cause<KevaError>): KevaError =>
   failureOrElse(cause, () => new Internal({ message: "Internal server error" }));
 
 export const reportDefect = (context: Context, cause: Cause.Cause<unknown>): void => {
-  if (Option.isSome(Cause.failureOption(cause))) return;
+  if (Option.isSome(Cause.findErrorOption(cause))) return;
   console.error(
     JSON.stringify({
       event: "http.request.defect",
@@ -61,17 +61,38 @@ export const reportServiceFailure = (context: Context, error: KevaError): void =
   );
 };
 
-export const execute = async <A>(
+export const execute = async <A extends {}>(
   context: Context,
   effect: Effect.Effect<A, KevaError, RuntimeServices>,
   runtime: ManagedRuntime.ManagedRuntime<RuntimeServices, never>,
 ): Promise<Response> => {
   const exit = await runtime.runPromiseExit(effect);
-  if (Exit.isSuccess(exit)) return context.json(exit.value as never);
+  if (Exit.isSuccess(exit)) return context.json(exit.value);
   reportDefect(context, exit.cause);
   const error = failureFrom(exit.cause);
-  if (Option.isSome(Cause.failureOption(exit.cause))) reportServiceFailure(context, error);
-  return context.json(error, statusFor(error) as never);
+  if (Option.isSome(Cause.findErrorOption(exit.cause))) reportServiceFailure(context, error);
+  switch (error._tag) {
+    case "ValidationError":
+      return context.json(error, 400);
+    case "Unauthorized":
+      return context.json(error, 401);
+    case "Forbidden":
+      return context.json(error, 403);
+    case "NotFound":
+      return context.json(error, 404);
+    case "Conflict":
+      return context.json(error, 409);
+    case "QuotaExceeded":
+      return context.json(error, 413);
+    case "SubscriptionRequired":
+      return context.json(error, 402);
+    case "RateLimitExceeded":
+      return context.json(error, 429);
+    case "StorageUnavailable":
+      return context.json(error, 502);
+    case "Internal":
+      return context.json(error, 500);
+  }
 };
 
 export const principalEffect = (headers: Headers) =>

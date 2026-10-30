@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { itemListsQueryKey, itemQueryKey } from "./items-cache";
-import { subscribeToRealtime, type EventSourceConstructor } from "./realtime-client";
+import { subscribeToRealtime } from "./realtime-client";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -20,7 +20,7 @@ class FakeEventSource {
   }
 
   emit(type: string, data = "") {
-    this.listeners.get(type)?.({ data } as MessageEvent);
+    this.listeners.get(type)?.(new MessageEvent(type, { data }));
   }
 }
 
@@ -41,7 +41,7 @@ describe("realtime client", () => {
   it("subscribes with credentials, recovers on every open, and closes once", () => {
     const client = new QueryClient();
     client.setQueryData(itemListsQueryKey, []);
-    const cleanup = subscribeToRealtime(client, FakeEventSource as EventSourceConstructor);
+    const cleanup = subscribeToRealtime(client, FakeEventSource);
     const source = FakeEventSource.instances[0]!;
 
     expect(source.url).toBe("/api/events");
@@ -61,7 +61,7 @@ describe("realtime client", () => {
     const key = itemQueryKey(validEvent.itemId);
     client.setQueryData(key, {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    subscribeToRealtime(client, FakeEventSource as EventSourceConstructor);
+    subscribeToRealtime(client, FakeEventSource);
     const source = FakeEventSource.instances[0]!;
 
     source.emit("items.changed", "not json");

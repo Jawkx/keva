@@ -20,7 +20,10 @@ export const TrashResult = Schema.Struct({
 export type TrashResult = typeof TrashResult.Type;
 
 export const BatchRestore = Schema.Struct({
-  ids: Schema.Array(ItemId).pipe(Schema.minItems(1), Schema.maxItems(1000)),
+  ids: Schema.Array(ItemId).pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(1000)),
+  ),
 });
 export type BatchRestore = typeof BatchRestore.Type;
 

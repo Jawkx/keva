@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it, vi } from "vitest";
 import type { OwnerItem } from "@keva/schema";
 import { ClientSafeToolError, createKevaMcpServer, type McpEngine } from "./index.js";
@@ -108,11 +109,13 @@ const toolNames = async (scopes: string[]): Promise<string[]> => {
   }
 };
 
-const textOf = (result: { content: Array<{ type: string; text?: string }> }): string =>
-  result.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text ?? "")
+const textOf = (result: Awaited<ReturnType<Client["callTool"]>>): string => {
+  const parsed = CallToolResultSchema.safeParse(result);
+  if (!parsed.success) return "";
+  return parsed.data.content
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
+};
 
 describe("createKevaMcpServer tool registration", () => {
   it("exposes no keva tools for an empty scope set", async () => {
@@ -246,7 +249,7 @@ describe("createKevaMcpServer tool execution", () => {
       }),
     );
     expect(result.isError).toBeFalsy();
-    expect(JSON.parse(textOf(result as never))).toMatchObject({
+    expect(JSON.parse(textOf(result))).toMatchObject({
       items: [{ id: item.id }],
       nextCursor: "c1",
     });
@@ -290,7 +293,7 @@ describe("createKevaMcpServer tool execution", () => {
       unset: ["draft"],
     });
     expect(result.isError).toBeFalsy();
-    expect(JSON.parse(textOf(result as never))).toMatchObject({
+    expect(JSON.parse(textOf(result))).toMatchObject({
       updated: [
         { id: item.id, revision: 2 },
         { id: secondId, revision: 2 },
@@ -387,7 +390,7 @@ describe("createKevaMcpServer tool execution", () => {
       const result = await client.callTool({ name: "get_item", arguments: { id: item.id } });
 
       expect(result.isError).toBe(true);
-      expect(textOf(result as never)).toBe("Item not found");
+      expect(textOf(result)).toBe("Item not found");
     } finally {
       await close();
     }
@@ -403,8 +406,8 @@ describe("createKevaMcpServer tool execution", () => {
       const result = await client.callTool({ name: "get_item", arguments: { id: item.id } });
 
       expect(result.isError).toBe(true);
-      expect(textOf(result as never)).toBe("Tool execution failed");
-      expect(textOf(result as never)).not.toContain("secret-123");
+      expect(textOf(result)).toBe("Tool execution failed");
+      expect(textOf(result)).not.toContain("secret-123");
     } finally {
       await close();
     }

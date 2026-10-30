@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Dices, RotateCcw } from "lucide-react";
-import { AVATAR_VARIANTS, type AvatarRecipe } from "@keva/schema";
+import { AVATAR_VARIANTS, AvatarRecipe } from "@keva/schema";
+import { Schema } from "effect";
 import { avatarRecipeForUser, parseAvatarRecipe, resolveAvatarRecipe } from "../lib/avatar";
 import { UserAvatar } from "./UserAvatar";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ const variantNumber = (value: string): string => {
 
 const nextValue = <Value,>(values: readonly Value[], current: Value, direction: -1 | 1): Value => {
   const index = values.indexOf(current);
-  return values[(index + direction + values.length) % values.length]!;
+  return values[(index + direction + values.length) % values.length] ?? current;
 };
 
 interface PartStepperProps {
@@ -86,8 +87,14 @@ export function AvatarEditor({ userId, name, avatar, onSave }: AvatarEditorProps
   };
 
   const cycleVariant = (field: VariantField, values: readonly string[], direction: -1 | 1) => {
-    const current = recipe[field] ?? values[0]!;
-    updateRecipe({ ...recipe, [field]: nextValue(values, current, direction) } as AvatarRecipe);
+    const current = recipe[field] ?? values[0];
+    if (current === undefined) return;
+    updateRecipe(
+      Schema.decodeUnknownSync(AvatarRecipe)({
+        ...recipe,
+        [field]: nextValue(values, current, direction),
+      }),
+    );
   };
 
   const cycleOptionalVariant = (
@@ -95,11 +102,13 @@ export function AvatarEditor({ userId, name, avatar, onSave }: AvatarEditorProps
     values: readonly string[],
     direction: -1 | 1,
   ) => {
-    const choices = [null, ...values] as const;
-    updateRecipe({
-      ...recipe,
-      [field]: nextValue(choices, recipe[field] ?? null, direction),
-    } as AvatarRecipe);
+    const choices: readonly (string | null)[] = [null, ...values];
+    updateRecipe(
+      Schema.decodeUnknownSync(AvatarRecipe)({
+        ...recipe,
+        [field]: nextValue(choices, recipe[field] ?? null, direction),
+      }),
+    );
   };
 
   const onOpenChange = (nextOpen: boolean) => {

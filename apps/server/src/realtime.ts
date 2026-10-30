@@ -14,7 +14,7 @@ const decodeRealtimeEvent = Schema.decodeUnknownSync(RealtimeEvent, {
   onExcessProperty: "error",
 });
 
-export const validateRealtimeEvent = (value: unknown): RealtimeEventValue =>
+export const validateRealtimeEvent = <Input>(value: Input): RealtimeEventValue =>
   decodeRealtimeEvent(value);
 
 export const encodeReadyFrame = (): string =>

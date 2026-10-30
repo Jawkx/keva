@@ -1,4 +1,5 @@
 import type { PropertyValue } from "@keva/schema";
+import { Schema } from "effect";
 
 export const formatBytes = (size: number | null): string => {
   if (size === null) return "—";
@@ -43,27 +44,27 @@ export const formatRelative = (iso: string): string => {
   return relativeFormatter.format(Math.round(seconds), "second");
 };
 
-const CONTENT_TYPE_LABELS: Record<string, string> = {
-  jpeg: "JPEG",
-  json: "JSON",
-  pdf: "PDF",
-  csv: "CSV",
-  svg: "SVG",
-  html: "HTML",
-  xml: "XML",
-  plain: "Text",
-  markdown: "Markdown",
-  "octet-stream": "Binary",
-};
+const CONTENT_TYPE_LABELS = new Map([
+  ["jpeg", "JPEG"],
+  ["json", "JSON"],
+  ["pdf", "PDF"],
+  ["csv", "CSV"],
+  ["svg", "SVG"],
+  ["html", "HTML"],
+  ["xml", "XML"],
+  ["plain", "Text"],
+  ["markdown", "Markdown"],
+  ["octet-stream", "Binary"],
+]);
 
 export const formatContentType = (contentType: string): string => {
   const subtype = contentType.split(";")[0]?.split("/")[1] ?? contentType;
   const clean = subtype.replace(/^(x-|vnd\.)/, "").split("+")[0] ?? subtype;
-  return CONTENT_TYPE_LABELS[clean] ?? clean.toUpperCase();
+  return CONTENT_TYPE_LABELS.get(clean) ?? clean.toUpperCase();
 };
 
 export const formatPropertyValue = (value: PropertyValue): string => {
   if (value === null) return "Tag";
   if (Array.isArray(value)) return `[${value.map((item) => JSON.stringify(item)).join(", ")}]`;
-  return typeof value === "string" ? value : "";
+  return Schema.is(Schema.String)(value) ? value : "";
 };

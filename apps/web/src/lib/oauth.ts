@@ -6,6 +6,10 @@ const MCP_AUTHORIZE_PATH = "/api/auth/mcp/authorize";
 const CONSENT_PATH = "/api/auth/oauth2/consent";
 
 const ConsentResponse = Schema.Struct({ redirectURI: Schema.String });
+const ConsentErrorResponse = Schema.Struct({
+  error_description: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+});
 
 export class OAuthConsentError extends Error {
   readonly _tag = "OAuthConsentError";
@@ -51,16 +55,14 @@ export const submitConsentEffect = (
     });
     const payload: unknown = yield* Effect.promise(() => response.json().catch(() => undefined));
     if (!response.ok) {
-      const message =
-        typeof payload === "object" && payload !== null
-          ? ((payload as { error_description?: string }).error_description ??
-            (payload as { message?: string }).message)
-          : undefined;
+      const message = Schema.is(ConsentErrorResponse)(payload)
+        ? (payload.error_description ?? payload.message)
+        : undefined;
       return yield* Effect.fail(
         new OAuthConsentError(message ?? "Could not record your decision."),
       );
     }
-    const result = yield* Schema.decodeUnknown(ConsentResponse)(payload).pipe(
+    const result = yield* Schema.decodeUnknownEffect(ConsentResponse)(payload).pipe(
       Effect.mapError(() => new KevaProtocolError("Consent response was invalid")),
     );
     return result.redirectURI;
@@ -69,7 +71,9 @@ export const submitConsentEffect = (
 export const submitConsent = (accept: boolean, consentCode: string): Promise<string> =>
   runEffectPromise(submitConsentEffect(accept, consentCode));
 
-export const SCOPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
+interface ScopeDescriptions extends Readonly<Record<string, string>> {}
+
+export const SCOPE_DESCRIPTIONS: ScopeDescriptions = {
   "keva:read": "Read your items, their metadata, and file contents",
   "keva:write": "Upload items and update their names and properties",
   "keva:delete": "Delete items and their contents",

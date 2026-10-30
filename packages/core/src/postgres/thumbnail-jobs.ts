@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Sql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 import {
   GENERATED_THUMBNAIL_CONTENT_TYPE_ALLOWLIST,
   THUMBNAIL_RECIPE_VERSION,
@@ -51,7 +51,7 @@ const boundedErrorCode = (errorCode: string): string => errorCode.slice(0, MAX_E
 const iso = (value: Date): string => value.toISOString();
 
 export const enqueueThumbnailJob = async (
-  sql: Sql,
+  sql: Sql | TransactionSql,
   input: {
     readonly tenantId: string;
     readonly itemId: string;

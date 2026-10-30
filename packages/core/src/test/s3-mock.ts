@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type IncomingMessage, type Server, ServerResponse, createServer } from "node:http";
-import { type AddressInfo } from "node:net";
+import { Schema } from "effect";
 
 // Does not validate signatures; exercises the S3BlobStore's signed HTTP requests.
 
@@ -27,10 +27,12 @@ const readBody = (req: IncomingMessage): Promise<Buffer> =>
     req.on("error", reject);
   });
 
-const parsePath = (pathname: string): { bucket: string; key: string } => {
+const parsePath = (pathname: string) => {
   const parts = pathname.replace(/^\//, "").split("/").map(decodeURIComponent);
   return { bucket: parts[0] ?? "", key: parts.slice(1).join("/") };
 };
+
+const ListeningAddress = Schema.Struct({ port: Schema.Number });
 
 export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
   const store = new Map<string, StoredObject>();
@@ -42,7 +44,7 @@ export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
 
     if (method === "PUT") {
       const copySource = req.headers["x-amz-copy-source"];
-      if (typeof copySource === "string") {
+      if (copySource !== undefined && !Array.isArray(copySource)) {
         const { key: fromKey } = parsePath(copySource);
         const src = store.get(fromKey);
         if (!src) {
@@ -58,7 +60,10 @@ export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
         return;
       }
       const bytes = await readBody(req);
-      const contentType = (req.headers["content-type"] as string) ?? "application/octet-stream";
+      const contentTypeHeader = req.headers["content-type"];
+      const contentType = Array.isArray(contentTypeHeader)
+        ? (contentTypeHeader[0] ?? "application/octet-stream")
+        : (contentTypeHeader ?? "application/octet-stream");
       const etag = md5(bytes);
       store.set(key, { bytes, contentType, etag });
       res.writeHead(200, { ETag: etag }).end();
@@ -90,7 +95,7 @@ export const startS3Mock = async (bucket = "keva"): Promise<S3Mock> => {
   });
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const port = (server.address() as AddressInfo).port;
+  const port = Schema.decodeUnknownSync(ListeningAddress)(server.address()).port;
 
   return {
     endpoint: `http://127.0.0.1:${port}`,
@@ -117,10 +122,12 @@ export const putObject = async (
   bytes: Uint8Array,
   contentType: string,
 ): Promise<void> => {
+  const body = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(body).set(bytes);
   const res = await fetch(`${mock.endpoint}/${mock.bucket}/${key}`, {
     method: "PUT",
     headers: { "content-type": contentType, "content-length": String(bytes.byteLength) },
-    body: bytes.slice().buffer as ArrayBuffer,
+    body,
   });
   if (!res.ok) throw new Error(`mock PUT failed: ${res.status}`);
 };

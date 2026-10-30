@@ -98,10 +98,9 @@ export interface ShareGrantStoreService {
   ) => Effect.Effect<ViewRecord | null, StorageUnavailable | Conflict | Forbidden>;
 }
 
-export class ShareGrantStore extends Context.Tag("@keva/server/ShareGrantStore")<
-  ShareGrantStore,
-  ShareGrantStoreService
->() {}
+export class ShareGrantStore extends Context.Service<ShareGrantStore, ShareGrantStoreService>()(
+  "@keva/server/ShareGrantStore",
+) {}
 
 // `view_conditions` is joined in from the referenced view (share_grants no
 // longer stores its own conditions) — read live, so the record and the resolved
@@ -237,30 +236,52 @@ const viewRecord = (row: ViewRow): ViewRecord => ({
   updatedAt: iso(row.updated_at)!,
 });
 
+type SharePrincipal = Extract<Principal, { readonly via: "share" }>;
+type ShareActor = NonNullable<SharePrincipal["actor"]>;
+type ShareContext = NonNullable<SharePrincipal["share"]>;
+
+interface ShareActorBuilder {
+  user?: ShareActor["user"];
+  share: ShareActor["share"];
+}
+
+interface ShareContextBuilder {
+  grantId: ShareContext["grantId"];
+  identityId?: ShareContext["identityId"];
+  conditions: ShareContext["conditions"];
+  writeStamp?: ShareContext["writeStamp"];
+  allowOwnDelete: ShareContext["allowOwnDelete"];
+  limits: ShareContext["limits"];
+}
+
 const shareGrantPrincipal = (
   row: ShareRow,
   user?: { readonly id: string; readonly name: string },
-): Principal => ({
-  tenantId: row.tenant_id,
-  scopes: [...row.scopes],
-  via: "share",
-  actor: {
-    ...(user ? { user } : {}),
+): Principal => {
+  const actor: ShareActorBuilder = {
     share: { grantId: row.id, name: row.name },
-  },
-  share: {
+  };
+  if (user) actor.user = user;
+  const share: ShareContextBuilder = {
     grantId: row.id,
-    ...(user ? { identityId: user.id } : {}),
     conditions: [...row.view_conditions],
-    ...(row.write_stamp ? { writeStamp: row.write_stamp } : {}),
     allowOwnDelete: row.allow_own_delete,
     limits: {
       maxItemBytes: numOrNull(row.max_item_bytes),
       maxTotalBytes: numOrNull(row.max_total_bytes),
       maxItems: numOrNull(row.max_items),
     },
-  },
-});
+  };
+  if (user) share.identityId = user.id;
+  if (row.write_stamp) share.writeStamp = row.write_stamp;
+  return {
+    tenantId: row.tenant_id,
+    scopes: [...row.scopes],
+    via: "share",
+    actor,
+    share,
+  };
+};
 
 // A failed share-store query is infrastructure unavailability, not a bad token:
 // surface StorageUnavailable (-> 502) rather than a silent 401/500.

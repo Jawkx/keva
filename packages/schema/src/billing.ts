@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-export const BillingPlanSlug = Schema.Literal("100gb", "500gb", "1tb", "2tb");
+export const BillingPlanSlug = Schema.Literals(["100gb", "500gb", "1tb", "2tb"]);
 export type BillingPlanSlug = typeof BillingPlanSlug.Type;
 
 export interface BillingPlanDefinition {
@@ -59,13 +59,13 @@ export const TRIAL_LIMITS = {
   monthlyApiRequests: 10_000,
 } as const;
 
-export const BillingSubscriptionStatus = Schema.Literal(
+export const BillingSubscriptionStatus = Schema.Literals([
   "unsubscribed",
   "trialing",
   "active",
   "past_due",
   "canceled",
-);
+]);
 export type BillingSubscriptionStatus = typeof BillingSubscriptionStatus.Type;
 
 export const BillingPlan = Schema.Struct({

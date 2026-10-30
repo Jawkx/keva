@@ -1,4 +1,5 @@
-import type { Properties, PropertyValue, QueryCondition } from "@keva/schema";
+import { type Properties, type PropertyValue, type QueryCondition } from "@keva/schema";
+import { Schema } from "effect";
 
 export const uploadStampFrom = (conditions: readonly QueryCondition[]): Properties => {
   const requirements = new Map<
@@ -17,7 +18,7 @@ export const uploadStampFrom = (conditions: readonly QueryCondition[]): Properti
     else if (condition.op === "is_tag") requirement.tag = true;
     else if (
       (condition.op === "has_value" || condition.op === "contains_text") &&
-      typeof condition.value === "string"
+      Schema.is(Schema.String)(condition.value)
     )
       requirement.values.add(condition.value);
     else if (condition.op === "has_all" && Array.isArray(condition.value))

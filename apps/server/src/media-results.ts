@@ -12,28 +12,25 @@ export interface MediaDrainResult {
   readonly failedItems?: readonly ProcessedMediaItem[];
 }
 
-export const publishMediaResults = async (
-  realtime: RealtimeGateway,
-  result: MediaDrainResult,
-): Promise<void> => {
+export const publishMediaResults = (realtime: RealtimeGateway, result: MediaDrainResult) => {
   const occurredAt = new Date().toISOString();
-  await Promise.all(
-    [
-      ...(result.readyItems ?? []).map((item) => ({ ...item, reason: "thumbnail_ready" as const })),
-      ...(result.failedItems ?? []).map((item) => ({
-        ...item,
-        reason: "thumbnail_failed" as const,
-      })),
-    ].map(({ tenantId, itemId, reason }) =>
-      Effect.runPromise(
-        realtime.publisher.publish(tenantId, {
-          id: randomUUID(),
-          type: "items.changed",
-          reason,
-          itemId,
-          occurredAt,
-        }),
-      ),
-    ),
+  const items = [
+    ...(result.readyItems ?? []).map((item) => ({ ...item, reason: "thumbnail_ready" as const })),
+    ...(result.failedItems ?? []).map((item) => ({
+      ...item,
+      reason: "thumbnail_failed" as const,
+    })),
+  ];
+  return Effect.forEach(
+    items,
+    ({ tenantId, itemId, reason }) =>
+      realtime.publisher.publish(tenantId, {
+        id: randomUUID(),
+        type: "items.changed",
+        reason,
+        itemId,
+        occurredAt,
+      }),
+    { concurrency: "unbounded", discard: true },
   );
 };

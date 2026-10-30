@@ -51,6 +51,18 @@ const McpOwnerQueryResult = Schema.Struct({
 });
 
 type AppRuntime = ManagedRuntime.ManagedRuntime<RuntimeServices, never>;
+type SetPropertiesInput = Parameters<McpEngine["setProperties"]>[0];
+
+interface ItemEventOptions {
+  limit?: number;
+  cursor?: string;
+}
+
+interface PropertyPatchInput {
+  set?: SetPropertiesInput["set"];
+  unset?: SetPropertiesInput["unset"];
+  expectedRevision?: SetPropertiesInput["expectedRevision"];
+}
 
 const McpItemContentResult = Schema.Struct({
   item: OwnerItem,
@@ -85,8 +97,8 @@ export const principalFromMcpToken = (
   },
 });
 
-const decode = <A, I>(schema: Schema.Schema<A, I, never>, value: unknown) =>
-  Schema.decodeUnknown(schema)(value).pipe(
+const decode = <A, Input>(schema: Schema.ConstraintDecoder<A>, value: Input) =>
+  Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError(() => new ValidationError({ message: "Tool input validation failed" })),
   );
 
@@ -96,7 +108,7 @@ const runEngine = async <A>(
 ): Promise<A> => {
   const exit = await runtime.runPromiseExit(effect);
   if (Exit.isSuccess(exit)) return exit.value;
-  if (Option.isNone(Cause.failureOption(exit.cause))) {
+  if (Option.isNone(Cause.findErrorOption(exit.cause))) {
     console.error(
       JSON.stringify({ event: "mcp.engine.defect", defectTypes: defectTypes(exit.cause) }),
     );
@@ -105,16 +117,16 @@ const runEngine = async <A>(
   throw new ClientSafeToolError(error.message);
 };
 
-const runValidated = <A, I>(
+const runValidated = <A>(
   runtime: AppRuntime,
   effect: Effect.Effect<A, KevaError, RuntimeServices>,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.ConstraintDecoder<A>,
 ): Promise<A> =>
   runEngine(
     runtime,
     effect.pipe(
       Effect.flatMap((value) =>
-        Schema.decodeUnknown(schema)(value).pipe(
+        Schema.decodeUnknownEffect(schema)(value).pipe(
           Effect.mapError(() => new Internal({ message: "Invalid engine response" })),
         ),
       ),
@@ -159,10 +171,10 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, id);
-          return yield* engine.events(itemId, {
-            ...(limit !== undefined ? { limit } : {}),
-            ...(cursor !== undefined ? { cursor } : {}),
-          });
+          const options: ItemEventOptions = {};
+          if (limit !== undefined) options.limit = limit;
+          if (cursor !== undefined) options.cursor = cursor;
+          return yield* engine.events(itemId, options);
         }),
         ItemEventsResult,
       ),
@@ -226,9 +238,9 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
             },
             catch: () => new StorageUnavailable({ message: "Blob upload failed" }),
           }).pipe(
-            Effect.timeoutFail({
+            Effect.timeoutOrElse({
               duration: 30_000,
-              onTimeout: () => new StorageUnavailable({ message: "Blob upload failed" }),
+              orElse: () => Effect.fail(new StorageUnavailable({ message: "Blob upload failed" })),
             }),
           );
           return toOwnerItem(yield* engine.confirm(result.item.id));
@@ -240,13 +252,13 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
         runtime,
         Effect.gen(function* () {
           const itemId = yield* decode(ItemId, input.id);
-          const patch = yield* decode(ItemPatch, {
-            ...(input.set !== undefined ? { set: input.set } : {}),
-            ...(input.unset !== undefined ? { unset: input.unset } : {}),
-            ...(input.expectedRevision !== undefined
-              ? { expectedRevision: input.expectedRevision }
-              : {}),
-          });
+          const patchInput: PropertyPatchInput = {};
+          if (input.set !== undefined) patchInput.set = input.set;
+          if (input.unset !== undefined) patchInput.unset = input.unset;
+          if (input.expectedRevision !== undefined) {
+            patchInput.expectedRevision = input.expectedRevision;
+          }
+          const patch = yield* decode(ItemPatch, patchInput);
           return toOwnerItem(yield* engine.patch(itemId, patch));
         }),
         OwnerItem,
@@ -277,16 +289,20 @@ const makeMcpEngine = (principal: Principal, runtime: AppRuntime): McpEngine => 
             itemIds,
             (id) =>
               engine.delete(id).pipe(
-                Effect.as({ id, error: undefined as string | undefined }),
-                Effect.catchAll((error) => Effect.succeed({ id, error: error.message })),
+                Effect.map(() => ({ status: "deleted" as const, id })),
+                Effect.catch((error) =>
+                  Effect.succeed({ status: "failed" as const, id, error: error.message }),
+                ),
               ),
             { concurrency: 8 },
           );
           return {
-            deleted: results.filter((result) => !result.error).map((result) => result.id),
+            deleted: results
+              .filter((result) => result.status === "deleted")
+              .map((result) => result.id),
             failed: results
-              .filter((result) => result.error)
-              .map((result) => ({ id: result.id, error: result.error! })),
+              .filter((result) => result.status === "failed")
+              .map((result) => ({ id: result.id, error: result.error })),
           };
         }),
         BatchDeleteResult,
@@ -429,18 +445,18 @@ export const mountMcp = (app: Hono, withServices: WithMcpServices): void => {
         const names = await deps.resolveActorNames(session.userId, session.clientId);
         const principal = principalFromMcpToken(session, tenantId, names);
         const metered = await runtime.runPromise(
-          Effect.either(
+          Effect.result(
             Effect.gen(function* () {
               const billing = yield* BillingMeter;
               yield* billing.consumeApiRequest(tenantId);
             }),
           ),
         );
-        if (metered._tag === "Left") {
+        if (metered._tag === "Failure") {
           return Response.json(
             {
               jsonrpc: "2.0",
-              error: { code: -32029, message: metered.left.message },
+              error: { code: -32029, message: metered.failure.message },
               id: null,
             },
             { status: 429, headers: { "Retry-After": "3600" } },

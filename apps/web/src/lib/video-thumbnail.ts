@@ -60,12 +60,17 @@ export type ThumbnailError =
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(maximum, Math.max(minimum, value));
 
+interface Dimensions {
+  readonly width: number;
+  readonly height: number;
+}
+
 const dimensionsWithin = (
   width: number,
   height: number,
   maxWidth: number,
   maxHeight: number,
-): { readonly width: number; readonly height: number } => {
+): Dimensions => {
   const scale = Math.min(maxWidth / width, maxHeight / height, 1);
   return {
     width: Math.max(1, Math.round(width * scale)),
@@ -194,7 +199,7 @@ const waitForMediaEvent = (
   successEvent: string,
   trigger?: () => void,
 ): Effect.Effect<void, VideoDecodeFailed> =>
-  Effect.async<void, VideoDecodeFailed>((resume) => {
+  Effect.callback<void, VideoDecodeFailed>((resume) => {
     const cleanup = () => {
       target.removeEventListener(successEvent, onSuccess);
       target.removeEventListener("error", onError);
@@ -226,9 +231,9 @@ const seekVideoEffect = (
   return waitForMediaEvent(video, "seeked", () => {
     video.currentTime = time;
   }).pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: SEEK_TIMEOUT_MS,
-      onTimeout: () => new VideoSeekTimedOut({ time }),
+      orElse: () => Effect.fail(new VideoSeekTimedOut({ time })),
     }),
   );
 };
@@ -238,7 +243,7 @@ const canvasBlobEffect = (
   contentType: "image/jpeg" | "image/webp",
   quality: number,
 ): Effect.Effect<Blob, ThumbnailEncodingFailed> =>
-  Effect.async<Blob, ThumbnailEncodingFailed>((resume) => {
+  Effect.callback<Blob, ThumbnailEncodingFailed>((resume) => {
     canvas.toBlob(
       (blob) =>
         resume(
@@ -285,9 +290,9 @@ export const generateVideoThumbnailEffect = (
         yield* waitForMediaEvent(video, "loadedmetadata", () => {
           video.src = sourceUrl;
         }).pipe(
-          Effect.timeoutFail({
+          Effect.timeoutOrElse({
             duration: METADATA_TIMEOUT_MS,
-            onTimeout: () => new VideoMetadataTimedOut(),
+            orElse: () => Effect.fail(new VideoMetadataTimedOut()),
           }),
         );
 

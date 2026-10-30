@@ -34,8 +34,8 @@ export interface UploadState {
   readonly item?: SharedItem;
 }
 
-const isShareGoneError = (error: unknown): boolean =>
-  error instanceof Unauthorized || error instanceof NotFound || error instanceof Forbidden;
+const isShareGoneError = (cause: unknown): boolean =>
+  cause instanceof Unauthorized || cause instanceof NotFound || cause instanceof Forbidden;
 
 const ensureShareIdentityEffect = authOperationEffect(() => authClient.getSession()).pipe(
   Effect.flatMap((session) =>
@@ -116,9 +116,9 @@ export function useShareUpload(): ShareUpload {
       }),
     );
 
-  const failUploads = (entries: readonly UploadState[], error: unknown) => {
+  const failUploads = (entries: readonly UploadState[], cause: unknown) => {
     const ids = new Set(entries.map((entry) => entry.id));
-    const message = errorMessage(error);
+    const message = errorMessage(cause);
     setUploads((prev) =>
       prev.map((upload) =>
         ids.has(upload.id) ? { ...upload, status: "error", error: message } : upload,
@@ -132,7 +132,7 @@ export function useShareUpload(): ShareUpload {
     const identity = self.allowOwnDelete ? ensureShareIdentityEffect : Effect.void;
     const workflow = identity.pipe(
       Effect.andThen(Effect.forEach(entries, uploadOne, { concurrency: 3, discard: true })),
-      Effect.catchAll((error) => Effect.sync(() => failUploads(entries, error))),
+      Effect.catch((error) => Effect.sync(() => failUploads(entries, error))),
       Effect.ensuring(Effect.sync(() => controllers.current.delete(controller))),
     );
     void Effect.runPromise(workflow, { signal: controller.signal });

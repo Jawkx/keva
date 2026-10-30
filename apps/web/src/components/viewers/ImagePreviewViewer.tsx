@@ -6,8 +6,7 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const normalizeRotation = (rotation: number): ImageRotation =>
-  (((rotation % 360) + 360) % 360) as ImageRotation;
+const normalizeRotation = (rotation: number): number => ((rotation % 360) + 360) % 360;
 
 const nearestEquivalentRotation = (rotation: ImageRotation, reference: number): number =>
   rotation + Math.round((reference - rotation) / 360) * 360;
@@ -134,6 +133,7 @@ export function ImagePreviewViewer({
       <img
         src={src}
         alt={alt}
+        draggable={false}
         className={cn(
           "h-full w-full object-contain",
           animateRotation &&
@@ -179,6 +179,7 @@ export function ImagePreviewViewer({
             <img
               src={src}
               alt={alt}
+              draggable={false}
               className="h-full w-full object-contain"
               style={{ transform: `rotate(${displayRotation}deg) scale(${scale})` }}
             />

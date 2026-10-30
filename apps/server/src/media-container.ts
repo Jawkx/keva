@@ -23,13 +23,8 @@ export interface MediaContainerConfig {
   readonly s3ForcePathStyle: string;
 }
 
-interface MediaContainerStub {
-  readonly fetchWithConfig: (request: Request, config: MediaContainerConfig) => Promise<Response>;
-}
-
-interface MediaContainerNamespace {
-  readonly getByName: (name: string) => MediaContainerStub;
-}
+export type MediaContainerStub = ReturnType<typeof getContainer<MediaContainer>>;
+export type MediaContainerNamespace = Parameters<typeof getContainer<MediaContainer>>[0];
 
 export class MediaContainer extends Container<MediaContainerEnvironment> {
   defaultPort = 8080;
@@ -57,4 +52,4 @@ export class MediaContainer extends Container<MediaContainerEnvironment> {
 export const mediaContainerFor = (
   namespace: MediaContainerNamespace,
   environment: string,
-): MediaContainerStub => getContainer(namespace as never, `keva-media-${environment}`) as never;
+): MediaContainerStub => getContainer(namespace, `keva-media-${environment}`);

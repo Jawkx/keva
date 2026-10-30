@@ -130,8 +130,8 @@ export function PropertiesEditor({ properties, systemRows, onPatch }: Properties
           size="sm"
           value={[mode]}
           onValueChange={(value) => {
-            const next = value[0] as Mode | undefined;
-            if (!next || next === mode) return;
+            const next = value[0];
+            if ((next !== "rows" && next !== "json") || next === mode) return;
             if (jsonDirty.current && !window.confirm("Discard your unsaved JSON changes?")) return;
             jsonDirty.current = false;
             setMode(next);

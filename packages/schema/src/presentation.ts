@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-export const ImageRotation = Schema.Literal(0, 90, 180, 270);
+export const ImageRotation = Schema.Literals([0, 90, 180, 270]);
 export type ImageRotation = typeof ImageRotation.Type;
 
 export const ImagePresentation = Schema.Struct({

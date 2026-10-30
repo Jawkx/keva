@@ -1,4 +1,5 @@
-import type { QueryOrder } from "@keva/schema";
+import { QueryOrder } from "@keva/schema";
+import { Schema } from "effect";
 
 export type FileSortColumn = "createdAt" | "updatedAt" | "name" | "size";
 
@@ -16,7 +17,9 @@ const FILE_ORDERS = new Set<QueryOrder>([
 ]);
 
 export const fileOrderFromParam = (value: string | null): QueryOrder =>
-  value && FILE_ORDERS.has(value as QueryOrder) ? (value as QueryOrder) : DEFAULT_FILE_ORDER;
+  value !== null && Schema.is(QueryOrder)(value) && FILE_ORDERS.has(value)
+    ? value
+    : DEFAULT_FILE_ORDER;
 
 export const fileSortColumn = (order: QueryOrder): FileSortColumn => {
   if (order.startsWith("size_")) return "size";

@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
@@ -19,6 +19,8 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 
+const LoginLocationState = Schema.Struct({ from: Schema.optional(Schema.String) });
+
 export function LoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState("");
@@ -26,7 +28,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(() => authErrorMessage(window.location.search));
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
-  const from = (location.state as { from?: unknown } | null)?.from;
+  const from = Schema.is(LoginLocationState)(location.state) ? location.state.from : undefined;
   const continuationSearch = authContinuationSearch(window.location.search);
   const destination = loginContinuation(continuationSearch, from);
   const authPage = `${window.location.pathname}${continuationSearch}`;

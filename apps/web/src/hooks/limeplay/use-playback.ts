@@ -34,6 +34,21 @@ export const MediaReadyState = {
 
 export type MediaReadyState = (typeof MediaReadyState)[keyof typeof MediaReadyState];
 
+function getMediaReadyState(media: HTMLMediaElement): MediaReadyState {
+  switch (media.readyState) {
+    case MediaReadyState.HAVE_CURRENT_DATA:
+      return MediaReadyState.HAVE_CURRENT_DATA;
+    case MediaReadyState.HAVE_FUTURE_DATA:
+      return MediaReadyState.HAVE_FUTURE_DATA;
+    case MediaReadyState.HAVE_ENOUGH_DATA:
+      return MediaReadyState.HAVE_ENOUGH_DATA;
+    case MediaReadyState.HAVE_METADATA:
+      return MediaReadyState.HAVE_METADATA;
+    default:
+      return MediaReadyState.HAVE_NOTHING;
+  }
+}
+
 export const PLAYBACK_FEATURE_KEY = "playback";
 
 export interface PlaybackEvents {
@@ -144,7 +159,7 @@ export function playbackFeature(): MediaFeature<PlaybackStore> {
               playback.ended = media.ended;
               playback.loop = media.loop;
               playback.networkState = media.networkState;
-              playback.readyState = media.readyState as MediaReadyState;
+              playback.readyState = getMediaReadyState(media);
             }
           });
 
@@ -224,7 +239,7 @@ function PlaybackSetup() {
         playback.loop = media.loop;
         playback.networkState = media.networkState;
         playback.paused = media.paused;
-        playback.readyState = media.readyState as MediaReadyState;
+        playback.readyState = getMediaReadyState(media);
         playback.status = status;
       });
     };
@@ -309,7 +324,7 @@ function PlaybackSetup() {
     const loadedMetadataHandler = () => {
       store.setState(({ playback }) => {
         playback.ended = false;
-        playback.readyState = media.readyState as MediaReadyState;
+        playback.readyState = getMediaReadyState(media);
       });
     };
 
@@ -317,14 +332,14 @@ function PlaybackSetup() {
       store.setState(({ playback }) => {
         playback.canPlay = media.readyState >= MediaReadyState.HAVE_FUTURE_DATA;
         playback.ended = false;
-        playback.readyState = media.readyState as MediaReadyState;
+        playback.readyState = getMediaReadyState(media);
       });
     };
 
     const canPlayHandler = () => {
       store.setState(({ playback }) => {
         playback.canPlay = true;
-        playback.readyState = media.readyState as MediaReadyState;
+        playback.readyState = getMediaReadyState(media);
         playback.status = media.paused ? "paused" : "playing";
       });
     };
@@ -333,7 +348,7 @@ function PlaybackSetup() {
       store.setState(({ playback }) => {
         playback.canPlay = true;
         playback.canPlayThrough = true;
-        playback.readyState = media.readyState as MediaReadyState;
+        playback.readyState = getMediaReadyState(media);
         playback.status = media.paused ? "paused" : "playing";
       });
     };

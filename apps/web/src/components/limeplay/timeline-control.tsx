@@ -1,11 +1,19 @@
 import { Slider as SliderPrimitive } from "@base-ui/react/slider";
-import React, { useImperativeHandle, useRef } from "react";
+import { composeRefs } from "@radix-ui/react-compose-refs";
+import React, { useRef } from "react";
 
 import { cn } from "@/lib/utils";
 import { MediaReadyState, usePlaybackStore } from "@/hooks/limeplay/use-playback";
 import { usePlayerStore } from "@/hooks/limeplay/use-player";
 import { useTimelineStore } from "@/hooks/limeplay/use-timeline";
 import { useTrackEvents } from "@/hooks/limeplay/use-track-events";
+
+interface TimelineCssProperties extends React.CSSProperties {
+  "--lp-buffered-start"?: string;
+  "--lp-buffered-width"?: string;
+  "--lp-played-width"?: string;
+  "--lp-timeline-thumb-position"?: string;
+}
 
 export type TimelineRootPropsDocs = Pick<
   React.ComponentProps<typeof SliderPrimitive.Root>,
@@ -16,7 +24,7 @@ export const Root = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<typeof SliderPrimitive.Root>
 >((props, ref) => {
-  const internalRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
+  const internalRef = useRef<HTMLDivElement>(null);
   const { className, orientation = "horizontal", ...etc } = props;
 
   const player = usePlayerStore((state) => state.instance);
@@ -28,7 +36,6 @@ export const Root = React.forwardRef<
   const currentValue = duration ? (currentTime / duration) * 100 : 0;
   const disabled = props.disabled || readyState < MediaReadyState.HAVE_METADATA;
 
-  useImperativeHandle(ref, () => internalRef.current);
   const seek = useTimelineStore((state) => state.seek);
   const setHoveringTime = useTimelineStore((state) => state.setHoveringTime);
   const setIsHovering = useTimelineStore((state) => state.setIsHovering);
@@ -101,7 +108,7 @@ export const Root = React.forwardRef<
         className,
       )}
       orientation={orientation}
-      ref={internalRef}
+      ref={composeRefs(ref, internalRef)}
       value={[currentValue]}
       {...trackEvents}
       {...etc}
@@ -143,16 +150,15 @@ export const Progress = React.forwardRef<
   const { className, ...etc } = props;
 
   const progress = useTimelineStore((state) => state.progress);
+  const progressStyle: TimelineCssProperties = {
+    "--lp-played-width": `${progress * 100}%`,
+  };
 
   return (
     <SliderPrimitive.Indicator
       className={cn("h-full w-(--lp-played-width)! bg-primary", className)}
       ref={ref}
-      style={
-        {
-          "--lp-played-width": `${progress * 100}%`,
-        } as React.CSSProperties
-      }
+      style={progressStyle}
       {...etc}
     />
   );
@@ -201,22 +207,24 @@ export const Buffered = React.forwardRef<HTMLDivElement, BufferedProps>((props, 
 
   return (
     <div className={cn("absolute size-full", className)} ref={ref} {...etc}>
-      {normalizedPercentages.map(({ startPercent, widthPercent }, index) => (
-        <SliderPrimitive.Indicator
-          className={cn(
-            `left-(--lp-buffered-start)! h-full w-(--lp-buffered-width)! bg-foreground/30`,
-            variant === "from-zero" && "rounded-e-full",
-            className,
-          )}
-          key={`${index}_${startPercent}`}
-          style={
-            {
-              "--lp-buffered-start": `${startPercent}%`,
-              "--lp-buffered-width": `${widthPercent}%`,
-            } as React.CSSProperties
-          }
-        />
-      ))}
+      {normalizedPercentages.map(({ startPercent, widthPercent }, index) => {
+        const bufferedStyle: TimelineCssProperties = {
+          "--lp-buffered-start": `${startPercent}%`,
+          "--lp-buffered-width": `${widthPercent}%`,
+        };
+
+        return (
+          <SliderPrimitive.Indicator
+            className={cn(
+              `left-(--lp-buffered-start)! h-full w-(--lp-buffered-width)! bg-foreground/30`,
+              variant === "from-zero" && "rounded-e-full",
+              className,
+            )}
+            key={`${index}_${startPercent}`}
+            style={bufferedStyle}
+          />
+        );
+      })}
     </div>
   );
 });
@@ -243,6 +251,10 @@ export const Thumb = React.forwardRef<HTMLDivElement, ThumbProps>((props, ref) =
     finalPosition = (currentTime / duration) * 100;
   }
 
+  const thumbStyle: TimelineCssProperties = {
+    "--lp-timeline-thumb-position": `${finalPosition}%`,
+  };
+
   return (
     <SliderPrimitive.Thumb
       className={cn(
@@ -254,11 +266,7 @@ export const Thumb = React.forwardRef<HTMLDivElement, ThumbProps>((props, ref) =
       )}
       ref={ref}
       {...etc}
-      style={
-        {
-          "--lp-timeline-thumb-position": `${finalPosition}%`,
-        } as React.CSSProperties
-      }
+      style={thumbStyle}
     />
   );
 });

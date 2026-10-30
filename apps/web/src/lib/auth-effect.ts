@@ -27,15 +27,20 @@ export class AuthProtocolError extends Data.TaggedError("AuthProtocolError")<{
 export type AuthOperationError = AuthRejected | AuthTransportError | AuthProtocolError;
 
 export const authOperationEffect = <A>(
-  operation: (signal: AbortSignal) => Promise<AuthResult<A>>,
+  operation: (signal: AbortSignal) => Promise<AuthResult<A> | null | undefined>,
 ): Effect.Effect<A | null | undefined, AuthOperationError> =>
   Effect.gen(function* () {
-    const result = yield* Effect.tryPromise<AuthResult<A>, AuthTransportError>({
+    const result = yield* Effect.tryPromise<AuthResult<A> | null | undefined, AuthTransportError>({
       try: operation,
       catch: (cause) =>
         new AuthTransportError({ cause, message: "Could not reach the authentication service" }),
     });
-    if (!result || typeof result !== "object") {
+    if (
+      result === null ||
+      result === undefined ||
+      Object(result) !== result ||
+      result instanceof Function
+    ) {
       return yield* new AuthProtocolError({
         message: "The authentication service returned an invalid response",
       });

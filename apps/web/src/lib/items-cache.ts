@@ -44,12 +44,11 @@ export function removeItemsFromPages(data: ItemsCache, ids: Iterable<string>): I
   const drop = new Set(ids);
   const items = data.items.filter((item) => !drop.has(item.id));
   const removedCount = data.items.length - items.length;
+  if (data.totalCount === undefined) return { ...data, items };
   return {
     ...data,
     items,
-    ...(data.totalCount === undefined
-      ? {}
-      : { totalCount: Math.max(0, data.totalCount - removedCount) }),
+    totalCount: Math.max(0, data.totalCount - removedCount),
   };
 }
 
@@ -61,11 +60,9 @@ export function replaceItemInPages(data: ItemsCache, item: KevaItem): ItemsCache
 }
 
 export function prependItemToPages(data: ItemsCache, item: KevaItem): ItemsCache {
-  return {
-    ...data,
-    items: [item, ...data.items],
-    ...(data.totalCount === undefined ? {} : { totalCount: data.totalCount + 1 }),
-  };
+  const items = [item, ...data.items];
+  if (data.totalCount === undefined) return { ...data, items };
+  return { ...data, items, totalCount: data.totalCount + 1 };
 }
 
 export const invalidatePropertyDiscovery = (queryClient: QueryClient) => {

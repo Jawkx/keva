@@ -3,6 +3,7 @@ node_modules
 .pnpm-store/
 dist
 .turbo
+.wrangler
 coverage
 .env
 .env.*

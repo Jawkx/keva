@@ -28,6 +28,17 @@ export default function VideoPreview({
     [contentType, loadSource],
   );
 
+  let mediaProps: NonNullable<VideoPlayerProps["mediaProps"]> = {
+    "aria-label": `Video preview of ${fileName}`,
+    onLoadedMetadata: (event) => {
+      const { videoHeight, videoWidth } = event.currentTarget;
+      if (videoHeight > 0 && videoWidth > 0) setAspectRatio(videoWidth / videoHeight);
+    },
+    playsInline: true,
+    preload: "metadata",
+  };
+  if (posterUrl) mediaProps = { ...mediaProps, poster: posterUrl };
+
   return (
     <div className="@container flex min-h-0 w-full flex-1 items-start justify-center overflow-hidden">
       <VideoPlayer
@@ -35,16 +46,7 @@ export default function VideoPreview({
         layout="fill"
         loading={loading}
         source={{ id: itemId, title: fileName }}
-        mediaProps={{
-          "aria-label": `Video preview of ${fileName}`,
-          onLoadedMetadata: (event) => {
-            const { videoHeight, videoWidth } = event.currentTarget;
-            if (videoHeight > 0 && videoWidth > 0) setAspectRatio(videoWidth / videoHeight);
-          },
-          playsInline: true,
-          preload: "metadata",
-          ...(posterUrl ? { poster: posterUrl } : {}),
-        }}
+        mediaProps={mediaProps}
         style={{
           aspectRatio,
           height: `min(100cqh, calc(100cqw / ${aspectRatio}))`,
